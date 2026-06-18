@@ -55,6 +55,25 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Resolution.** One logical tenant (Kroger Sourcing); keep `client_id` on every row as cheap insurance + shared-schema + Postgres RLS as the standard isolation pattern; **database-per-tenant deferred**, revisited only if divisions must be walled off, the system is offered externally (SaaS), or a compliance rule mandates physical separation. Resolves the Security/DevOps "topology" fork (mobilization report §6) with their default. Sponsor confirmed the "one org" framing.
 **Linked:** ADR-0004, Security plan, DevOps plan.
 
+### D9 — Cycle pricing grain · **RATIFIED 2026-06-18 → one model per RFP + item-level participation**
+**Question.** Can one RFP carry different pricing setups per product group, or a single model?
+**Resolution (sponsor).** **One pricing model per RFP** — the pricing *structure* (basis / cadence / safeties) is declared once at the cycle. Prices are captured at the **item level** (per line). Product heterogeneity is handled by **selecting which items participate** (scope in/out), not by mixing pricing structures. So `cyc.cycle_pricing` is one-per-cycle; the keystone needs a strong item-participation switch (`cyc.cycle_scope_item.participates`). Supersedes the PM lean toward per-scope pricing; resolves the kickoff-spec open question.
+**Linked:** KICKOFF_KEYSTONE_SPEC.md (G5/E-14).
+
+### D10 — Split awards behavior · **RATIFIED 2026-06-18 → auto max-2 output + free manual per-cell selection** (confirms G1)
+**Question.** Splits everywhere, or gated by a flag?
+**Resolution (sponsor).** Splitting a DC across suppliers is done occasionally but avoided. The **auto engine run outputs a maximum of two suppliers per DC** (`max_sup_dc` default 2, configurable). The human keeps full convenience to **hand-select lot-specific suppliers for any DC×lot**. Data model: `eng.scenario_award` / `awd.award` support N suppliers per cell with `volume_share`; the auto allocation caps at 2; `cap_breach_flag` surfaces when a manual selection exceeds the cap. **No separate per-DC "splittable" flag** — the cap is the default and human selection is unrestricted.
+**Linked:** gap G1, ADR-0006, V3_ENGINE_LOGIC.md.
+
+### D11 — Incumbent & historical/baseline cost source · **RATIFIED 2026-06-18 → BOTH sources, display both**
+**Question.** Is DC-level prior pricing / incumbent-by-DC available, and from where?
+**Resolution (sponsor).** From **both**, shown side by side:
+- **Prior RFP bid/award data in the system** — used when a previous cycle exists for that lot×DC (the historical payoff that compounds from cycle 2 onward).
+- **iTrade receipt history** (`perf.itrade_receipt`, DC No + Vendor + FOB per receipt, DC grain) — the actual purchase reality (e.g. min/max FOB per lot×DC); always available, the only source on cycle 1.
+**Rule:** pull prior-RFP data when present, fall back to iTrade when absent, and **always display both**. Supplies the engine's **Historical** factor (delta vs baseline) and **Continuity** factor (incumbent). Ties to E-08 (iTrade importer) + the cross-cycle store.
+**Defaults (PM-set, revisit anytime — not blocking):** (a) display iTrade **min / max / volume-weighted avg** per lot×DC over STLY-aligned periods (STLY is the headline metric); (b) the engine **scores** the Historical factor against the prior-RFP awarded price when present, else iTrade — **both always displayed**; (c) **incumbent** = prior-RFP awarded supplier if present, else iTrade's top shipper by volume for that DC×lot.
+**Linked:** gaps G6/G2, FEEDS_ITRADE.md (E-08), V3_ENGINE_LOGIC.md.
+
 ---
 
 ## Dependencies (logistics blockers)
