@@ -36,6 +36,14 @@ The `Scorecard` vs `Scorecard (Signoff)` tab pair confirms **two frozen scorecar
 (kickoff window + sign-off window). The `KCMS (subcomm)` vs `KCMS (GTIN)` pair confirms the
 scan feed at **two grains** (subcommodity and GTIN). Both findings carried into the keystone spec.
 
+## Additional feed samples (non-kickoff)
+
+| # | Clean name | Type | Purpose | Classification | Received |
+|---|---|---|---|---|---|
+| 6 | iTrade by commodity (with calendar) | `.xlsx` — 43-col "Data" sheet, ~114k rows | Real iTrade receipt feed → `perf.itrade_receipt` importer (E-08); derived structure in `project/squads/platform-data/FEEDS_ITRADE.md` | Real commercial values — QUARANTINED, gitignored | 2026-06-18 |
+
+(Two byte-identical copies were uploaded; one retained. The 51-column "Query/Calendar" variant is still outstanding.)
+
 ## Handling rules (binding)
 
 1. Raw files stay under `reference/samples/*` — gitignored. Never copy contents verbatim into a
