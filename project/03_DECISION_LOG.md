@@ -71,8 +71,9 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 - **Prior RFP bid/award data in the system** — used when a previous cycle exists for that lot×DC (the historical payoff that compounds from cycle 2 onward).
 - **iTrade receipt history** (`perf.itrade_receipt`, DC No + Vendor + FOB per receipt, DC grain) — the actual purchase reality (e.g. min/max FOB per lot×DC); always available, the only source on cycle 1.
 **Rule:** pull prior-RFP data when present, fall back to iTrade when absent, and **always display both**. Supplies the engine's **Historical** factor (delta vs baseline) and **Continuity** factor (incumbent). Ties to E-08 (iTrade importer) + the cross-cycle store.
-**Defaults (PM-set, revisit anytime — not blocking):** (a) display iTrade **min / max / volume-weighted avg** per lot×DC over STLY-aligned periods (STLY is the headline metric); (b) the engine **scores** the Historical factor against the prior-RFP awarded price when present, else iTrade — **both always displayed**; (c) **incumbent** = prior-RFP awarded supplier if present, else iTrade's top shipper by volume for that DC×lot.
-**Linked:** gaps G6/G2, FEEDS_ITRADE.md (E-08), V3_ENGINE_LOGIC.md.
+**Savings baseline (sponsor-refined 2026-06-18 — supersedes prior default):** the yardstick for **actual savings** (and the engine's **Historical** scoring factor, and "Savings vs STLY") is the **iTrade volume-weighted average of what was ACTUALLY PAID over the full corresponding prior RFP period** — *not* the prior contracted/awarded rate. **Rationale:** a contracted rate may never have been effective (market swings, fired escalators/de-escalators, off-contract buys), so actual-paid is the honest baseline. The prior-RFP **contracted** price and iTrade **min/max** are still **displayed** for context (contracted-vs-paid is itself a story; min/max gives the range), but they are not the savings baseline. **Incumbent** identity = prior-RFP awarded supplier if present, else iTrade top shipper by volume for the DC×lot.
+**Implication:** E-08 (iTrade importer) must derive a volume-weighted average actual-paid per lot×DC per fiscal period; this is a first-class baseline derivation, not just raw receipts.
+**Linked:** gaps G6/G2, FEEDS_ITRADE.md (E-08), V3_ENGINE_LOGIC.md, ADR-0006.
 
 ---
 
