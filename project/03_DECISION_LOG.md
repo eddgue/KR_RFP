@@ -96,6 +96,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Scope.** Gate closures = kickoff in-gate (G12), each round close, award freeze (G3), sign-off out-gate. Each already emits an `audit.event_log` entry + a frozen snapshot; D15 adds a **portable export** of the full cycle state at that point (+ generated docs). Implemented as E-31.
 **Linked:** E-31, governance model (Ways of Working §3), `awd.generated_document`, freeze-and-layer (ADR-004/D-equivalent).
 
+### D16 — AI assistant (read-only) · **WISH-LIST (lowest priority)** 2026-06-18
+**Requirement (sponsor, wish-list).** An AI layer for **drafting** (emails/letters) and **quick data recall** (NL Q&A). **Read-only — it never writes to the database**; it reads and answers, or drafts. Lowest priority / post-MVP.
+**Guardrails (binding when built).** Read-only; **RBAC/tenant-scoped** reads (only what the requesting user may see); **decision-support-only** (never auto-asserts an award; drafts pass the human + draft→sent gate G9); auditable (reads/answers logged); built on the **latest Claude models**. The governed store + event log make it a clean, trustworthy retrieval source. Implemented as E-32.
+**Linked:** E-32, Security plan (RBAC/tenancy), gap G9 (draft→sent), ADR-0006 (decision-support-only).
+
 ---
 
 ## Dependencies (logistics blockers)
