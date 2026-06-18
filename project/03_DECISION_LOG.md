@@ -17,16 +17,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ## Decisions
 
-### D1 — Build path · **OPEN** · needed by: Phase 0 exit
+### D1 — Build path · **RATIFIED 2026-06-18 → clean-room reconciliation** (ADR-0001)
 **Question.** Reconcile-and-extend the existing 63-table store, or greenfield the brief's 36-table schema?
-**Recommendation.** **Reconcile-and-extend.** A real governed store exists; greenfield would discard 46 identity FKs, the calc-run spine, and proven landed-cost/eligibility/VSP work (R3).
-**Impact if changed.** Flips the Platform & Data squad's entire migration plan; greenfield re-incurs the rigor the as-built already has.
-**Linked:** audit D1, DEP-1.
+**Resolution.** **Clean-room reconciliation.** New clean codebase; the AS-BUILT *schema* (re-expressed as clean PostgreSQL) is the migration baseline; the existing repo stays isolated in the sponsor's GitHub and is never imported (sponsor constraint: "i dont want it contaminating this build … keep it isolated"). The seven KEEP capabilities are re-modeled, not inherited; the wrong brain and SQLite-isms are dropped by construction. See ADR-0001 for the isolation protocol.
+**Linked:** audit D1, DEP-1, ADR-0001.
 
-### D2 — The brain · **OPEN** · needed by: Phase D entry
+### D2 — The brain · **IN SPIKE** · needed by: Phase D entry
 **Question.** Adopt v3's 5-factor scoring + split allocation as the engine (retiring min-cost to a reference lens), or extend the as-built Scenario A?
-**Recommendation.** **Adopt v3.** It is the brief's ground truth; the min-cost solver becomes Scenario A = "lowest-cost reference." Ship G1+G2 together.
-**Impact if changed.** Keeps a single-winner grain at the core (R2); contradicts the brief.
+**Status.** Sponsor deferred to an **architecture spike** (2026-06-18). The Engine & Domain squad runs a head-to-head against the verified v3 behavior and brings a recommendation, captured in `project/squads/engine-domain/SPIKE_D2_engine.md` → then ratified here as an ADR.
+**PM/Architect lean (non-binding until the spike):** Adopt v3; min-cost becomes Scenario A = "lowest-cost reference"; ship G1+G2 together.
 **Linked:** audit D2, gaps G1/G2.
 
 ### D3 — Pricing placement & safeties · **OPEN** · needed by: Phase C/D
@@ -45,14 +44,13 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Recommendation.** **Yes — design tenancy in now** (cheap before breadth, expensive after); author the security/NFR spec in parallel with Phase A; make the real-data pilot Phase B's exit gate.
 **Linked:** audit D5, gaps net-new, R7.
 
-### D6 — Frontend / "enterprise web app" stack · **OPEN (new — raised by the build mandate)** · needed by: Experience squad mobilization
-**Question.** The user mandated an "enterprise-level web app." The as-built front end is **Streamlit**, which is not an enterprise SPA. Options: (a) **React/Next.js + TypeScript SPA on the FastAPI backend** (true enterprise web app); (b) keep & harden Streamlit (faster, weaker UX/governance); (c) other.
-**Recommendation.** **(a) React/Next.js + TypeScript SPA.** Matches the "enterprise web app" mandate, gives a real auth/RBAC surface, and is a clean view onto the API. Streamlit was already flagged "structurally bad UI on a stateless engine" in the intake.
-**Impact.** Shapes the Experience and DevOps squads (build pipeline, hosting, auth integration).
+### D6 — Frontend / "enterprise web app" stack · **RATIFIED 2026-06-18 → React/Next.js + TypeScript SPA** (ADR-0002)
+**Resolution.** React + Next.js (App Router) + TypeScript, a pure client of the FastAPI backend, types generated from OpenAPI, built last (ADR-001). Streamlit is retired, not hardened.
+**Linked:** ADR-0002.
 
-### D7 — Execution mode for this engagement · **OPEN (new)** · needed by: now
-**Question.** What does "start the project / full deliverable" mean for *this* engagement? (a) **Plan & mobilize** — produce the full enterprise delivery plan (charter ✓, squads ✓, backlog, architecture, roadmap, estimates) and stand up the structure, then build on your go; (b) **Plan then start the foundation now** — also begin building Phase 0/A scaffolding (repo skeleton, validated schema, CI) with the agent squads this session; (c) **Build-first** — start implementing immediately against the recommended decisions.
-**Recommendation.** **(b)** — finish planning with the squads, then immediately scaffold Phase 0/A so there is running ground, treating the recommended decisions as working assumptions until you ratify.
+### D7 — Execution mode for this engagement · **RATIFIED 2026-06-18 → plan then scaffold now** (ADR-0003)
+**Resolution.** Finish detailed squad planning, then stand up Phase 0/A running ground this engagement (validated schema baseline, backend skeleton, tenancy/RBAC foundation, CI, infra), treating ratified decisions as binding and D2 as in-spike.
+**Linked:** ADR-0003.
 
 ---
 
@@ -60,7 +58,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 | ID | Dependency | Blocks | Owner | Status |
 |---|---|---|---|---|
-| **DEP-1** | Access to the **actual codebase** (`models.py`, Alembic chain, tests) **and the ECLS** (`RFP_ENGINE_CONTROL_LAYER_SPEC_v1_0.md`, the as-built's stated source of truth) | D1 execution, Phase 0/A, R6 | Sponsor | **OPEN** — not in the audited packages |
+| **DEP-1** | **Isolated, read-only** access to the existing repo (`models.py`, Alembic chain, tests, ECLS) — in the sponsor's GitHub; read via an isolated worktree agent per ADR-0001, never imported | ECLS/test verification, R6 | Sponsor | **OPEN — non-blocking** (we baseline from the as-built schema we already hold) |
 | DEP-2 | One **real iTrade pull** + one **real bid round** (synthetic-only today) | Phase B pilot, S2, R1 | Sponsor | OPEN |
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
