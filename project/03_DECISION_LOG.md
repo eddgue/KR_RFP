@@ -80,6 +80,16 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Resolution.** **Storage:** period-grain component facts (supplier × lot/item × DC × **period** × price); fixed deals repeat the price across periods, index deals store components and resolve, period-by-period is native to the grain; one table, the basis decides which columns carry weight. **Display:** the **setup file** (`cyc.cycle` pricing declaration — basis, cadence, components shown, safeties) is the **render contract**; the system renders each RFP from stored facts + the setup file, so the **same data renders identically live or historic** (the mechanism behind "open last cycle"). Complements D3/G4 (pricing declared at kickoff) and D9 (one model per RFP).
 **Linked:** ADR-0013, intake locked truths #1 (period grain) & #5 (setup drives the read), D3/D9.
 
+### D13 — Pricing safeties = contractual execution terms, NOT engine inputs · **RATIFIED 2026-06-18** (ADR-0014)
+**Reframe (sponsor).** The five safeties are **contract terms** (risk-sharing incentives to get suppliers to participate), declared at kickoff, governing **post-award price movement** during execution. **They do not affect the scoring/allocation math** — the engine stays clean.
+**Mechanics (confirm — see ADR-0014):** **Collar** = cap (Kroger upside protection on a hike) + floor (supplier downside protection; Kroger will go to 0), fixed + market. **Rolling midpoint** = every 8 wks, price = midpoint of trailing 4-wk market, for next 8 wks. **Tolerance band** = sustained anomaly (price outside band ≥2 wks) → temporary reprice to market midpoint below collar for 2 wks → review. **Disaster / inverse triggers** = discretionary; generalized spike/drop → human evaluates & reprices; **always reverts to contract after the disaster period**.
+**Consequences.** Safeties move from "engine" to a **contract/execution module** (Phase E+): `cyc.cycle_safety` stores terms; `awd.award_layer` records reprices; feeds E-28 (contracted-vs-effective). The **pilot/engine work is independent of safeties.** Open: a **market-price feed** (USDA?) is needed for the formulaic ones.
+**Linked:** gap G4, ADR-0014, D3, E-28.
+
+### D14 — Attribute taxonomy: one shared catalog, sparsely populated · **RATIFIED 2026-06-18**
+**Resolution (sponsor).** It is **one shared attribute taxonomy** — not separate per-commodity schemas. The *catalog* of attributes is common; **which fields are populated varies by item** ("not every item has data in every column"). So `norm.attribute_def` is one superset catalog and `norm.lot_attribute` is **sparse** (a lot carries only its applicable attributes). Simplifies G8: no per-commodity confirmation pass beyond extending the shared catalog when a genuinely new attribute appears.
+**Linked:** gap G8, KICKOFF_KEYSTONE_SPEC.md, intake Session 3.
+
 ---
 
 ## Dependencies (logistics blockers)
@@ -91,6 +101,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
+| DEP-6 | **Market-price feed** (e.g. the USDA market data referenced in the kickoff docs) | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Data | OPEN |
 
 ---
 

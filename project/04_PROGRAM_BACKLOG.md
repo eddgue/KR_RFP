@@ -30,7 +30,8 @@ The twelve gaps, the seven "keep" capabilities, and the net-new enterprise layer
 | **E-12** | Two origins + `zip_centroid` distance | G7 | B | Plat&Data | P1 | `grow_origin`/`ship_from_zip` separate; distance derived (lift `calculate_distances`) |
 | **E-13** | **REAL-DATA PILOT** (Phase B exit gate; retires R1) | — | B | QA+all | P0 | One real cycle end-to-end on real iTrade + bids; engine reproduces v3 (S2) |
 | **E-14** | Kickoff keystone — rich `cyc.*` (objective, pricing+safeties, PBA, working capital, KPM, RFI, narrative) | G5 | C | Product+Plat&Data | P0 | A cycle declared from a real kickoff doc; structured drives system, prose stays prose |
-| **E-15** | Pricing lifted to kickoff + five **safeties executable/visualizable** | G4 | C/D | Engine | P0 | Disaster trigger fires on real terms; safeties visualize as calcs (S6) |
+| **E-15** | Pricing model + **safety TERMS** declared & stored at kickoff | G4 | C | Product+Plat&Data | P0 | `cyc.cycle_pricing` + `cyc.cycle_safety` store the declared contract terms/params; **the engine does NOT consume them** (D13/ADR-0014) |
+| **E-29** | **Contract execution — safety reprice + market feed + reprice-and-layer** | G4 | E+ | Engine+Plat&Data | P1 | Formulaic safeties (rolling midpoint, tolerance band, collar) compute/visualize; disaster/inverse triggers flag for human reprice (revert-to-contract); every move lands in `awd.award_layer`; needs market-price feed (DEP-6) |
 | **E-16** | Process rail generated from the cycle timeline | G10 | C | Experience+Engine | P1 | Console renders the rail from `cycle_timeline_event`, not hardcoded |
 | **E-17** | Stage-0 governance **in-gate** | G12 | C | Security | P1 | A cycle cannot open on real data without the in-gate approval |
 | **E-18** | v3 brain → `bid_score` 5-factor scoring + eligibility inputs | G2 | D | Engine | P0 | Reproduces v3 banded scoring (Price.35/Cov.25/Hist.20/Z.10/Cont.10) |
