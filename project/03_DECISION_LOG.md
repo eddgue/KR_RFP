@@ -75,6 +75,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Implication:** E-08 (iTrade importer) must derive a volume-weighted average actual-paid per lot×DC per fiscal period; this is a first-class baseline derivation, not just raw receipts.
 **Linked:** gaps G6/G2, FEEDS_ITRADE.md (E-08), V3_ENGINE_LOGIC.md, ADR-0006.
 
+### D12 — Pricing storage vs display · **RATIFIED 2026-06-18 → period-grain storage, setup-file-driven display** (ADR-0013)
+**Principle (sponsor-raised, from the intake's locked truths).** Separate *how pricing is stored* from *how it is displayed*.
+**Resolution.** **Storage:** period-grain component facts (supplier × lot/item × DC × **period** × price); fixed deals repeat the price across periods, index deals store components and resolve, period-by-period is native to the grain; one table, the basis decides which columns carry weight. **Display:** the **setup file** (`cyc.cycle` pricing declaration — basis, cadence, components shown, safeties) is the **render contract**; the system renders each RFP from stored facts + the setup file, so the **same data renders identically live or historic** (the mechanism behind "open last cycle"). Complements D3/G4 (pricing declared at kickoff) and D9 (one model per RFP).
+**Linked:** ADR-0013, intake locked truths #1 (period grain) & #5 (setup drives the read), D3/D9.
+
 ---
 
 ## Dependencies (logistics blockers)
