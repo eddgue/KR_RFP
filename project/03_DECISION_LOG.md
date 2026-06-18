@@ -91,6 +91,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Resolution (sponsor).** It is **one shared attribute taxonomy** — not separate per-commodity schemas. The *catalog* of attributes is common; **which fields are populated varies by item** ("not every item has data in every column"). So `norm.attribute_def` is one superset catalog and `norm.lot_attribute` is **sparse** (a lot carries only its applicable attributes). Simplifies G8: no per-commodity confirmation pass beyond extending the shared catalog when a genuinely new attribute appears.
 **Linked:** gap G8, KICKOFF_KEYSTONE_SPEC.md, intake Session 3.
 
+### D15 — Gate-closure backup export · **RATIFIED 2026-06-18**
+**Requirement (sponsor).** Every gate that closes at a decision point must generate a **downloadable backup file** the sponsor can save to the drives for historic archival / **emergency recovery**. The system is authoritative, but a portable, point-in-time snapshot at each gate is required as DR + a trust bridge from the shared-drive era.
+**Scope.** Gate closures = kickoff in-gate (G12), each round close, award freeze (G3), sign-off out-gate. Each already emits an `audit.event_log` entry + a frozen snapshot; D15 adds a **portable export** of the full cycle state at that point (+ generated docs). Implemented as E-31.
+**Linked:** E-31, governance model (Ways of Working §3), `awd.generated_document`, freeze-and-layer (ADR-004/D-equivalent).
+
 ---
 
 ## Dependencies (logistics blockers)
