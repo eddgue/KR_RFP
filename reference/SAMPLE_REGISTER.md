@@ -41,8 +41,12 @@ scan feed at **two grains** (subcommodity and GTIN). Both findings carried into 
 | # | Clean name | Type | Purpose | Classification | Received |
 |---|---|---|---|---|---|
 | 6 | iTrade by commodity (with calendar) | `.xlsx` — 43-col "Data" sheet, ~114k rows | Real iTrade receipt feed → `perf.itrade_receipt` importer (E-08); derived structure in `project/squads/platform-data/FEEDS_ITRADE.md` | Real commercial values — QUARANTINED, gitignored | 2026-06-18 |
+| 7 | rfp_analysis_engine_v3 | `.py` — 4,198 lines | **The v3 engine source.** Clean-room: logic LIFTED into our own engine, never imported, raw never committed (ADR-0001). In `reference/v3-engine/` | Proprietary code — QUARANTINED, gitignored | 2026-06-18 |
+| 8 | RFP_Analysis_Engine | `.ipynb` — Colab harness | The runner notebook for v3 | Proprietary code — QUARANTINED, gitignored | 2026-06-18 |
+| 9 | Potato 2026 RFP **input** | `.xlsx` — 13 sheets (CONFIG / IN_* / DIM_*) | **Golden-master INPUT.** Drives the engine-reproducibility test (E-13) | Real commercial values — QUARANTINED, gitignored | 2026-06-18 |
+| 10 | Potato 2026 RFP **analysis output** | `.xlsx` — 20 sheets | **Golden-master OUTPUT** (known-good v3 result). The thing the new engine must reproduce | Real commercial values — QUARANTINED, gitignored | 2026-06-18 |
 
-(Two byte-identical copies were uploaded; one retained. The 51-column "Query/Calendar" variant is still outstanding.)
+(iTrade: two byte-identical copies uploaded; one retained; the 51-column "Query/Calendar" variant is still outstanding. Items 7–10 are the long-awaited golden v3 pair + engine source — the linchpin for Phase D + the pilot.)
 
 ## Handling rules (binding)
 

@@ -42,3 +42,6 @@ Thumbs.db
 # ---- local infra ----
 infra/postgres/data/
 *.local
+
+# clean-room: v3 engine read as reference, logic lifted into our own code, raw never committed (ADR-0001)
+reference/v3-engine/
