@@ -22,11 +22,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Resolution.** **Clean-room reconciliation.** New clean codebase; the AS-BUILT *schema* (re-expressed as clean PostgreSQL) is the migration baseline; the existing repo stays isolated in the sponsor's GitHub and is never imported (sponsor constraint: "i dont want it contaminating this build … keep it isolated"). The seven KEEP capabilities are re-modeled, not inherited; the wrong brain and SQLite-isms are dropped by construction. See ADR-0001 for the isolation protocol.
 **Linked:** audit D1, DEP-1, ADR-0001.
 
-### D2 — The brain · **IN SPIKE** · needed by: Phase D entry
+### D2 — The brain · **SPIKE COMPLETE → recommends Option A · awaiting sponsor ratification** · needed by: Phase D entry
 **Question.** Adopt v3's 5-factor scoring + split allocation as the engine (retiring min-cost to a reference lens), or extend the as-built Scenario A?
-**Status.** Sponsor deferred to an **architecture spike** (2026-06-18). The Engine & Domain squad runs a head-to-head against the verified v3 behavior and brings a recommendation, captured in `project/squads/engine-domain/SPIKE_D2_engine.md` → then ratified here as an ADR.
-**PM/Architect lean (non-binding until the spike):** Adopt v3; min-cost becomes Scenario A = "lowest-cost reference"; ship G1+G2 together.
-**Linked:** audit D2, gaps G1/G2.
+**Spike result (2026-06-18).** `project/squads/engine-domain/SPIKE_D2_engine.md` recommends **Option A — adopt v3**: five-factor banded scoring + `max_two_per_dc` split as the engine library; the as-built min-cost solver becomes "Scenario A = lowest-cost reference." Strongest reason: only A is faithful to the verified real behavior (deck splits + cost-is-35% scoring, both confirmed in code); B installs a single-winner min-cost brain the evidence contradicts (R2). Ship G1+G2 together, after the Phase-B pilot.
+**Status.** Ready for sponsor ratification → then ADR-0006. **Non-blocking:** the engine *interface* is frozen regardless (Architect), so store/contract/tests proceed against a deterministic stub.
+**Linked:** audit D2, gaps G1/G2, SPIKE_D2_engine.md.
 
 ### D3 — Pricing placement & safeties · **OPEN** · needed by: Phase C/D
 **Question.** Lift pricing + the five safeties to kickoff and make the safeties executable, keeping the as-built's commercial component storage?

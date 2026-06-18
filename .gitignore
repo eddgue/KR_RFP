@@ -1,0 +1,44 @@
+# ---- secrets & env (never commit) ----
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+
+# ---- clean-room quarantine: real sample data not committed until classified (ADR-0001, Security) ----
+reference/samples/*
+!reference/samples/.gitkeep
+!reference/samples/README.md
+
+# ---- python (backend) ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ---- node (frontend) ----
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- os / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- local infra ----
+infra/postgres/data/
+*.local
