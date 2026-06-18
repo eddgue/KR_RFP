@@ -22,11 +22,9 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Resolution.** **Clean-room reconciliation.** New clean codebase; the AS-BUILT *schema* (re-expressed as clean PostgreSQL) is the migration baseline; the existing repo stays isolated in the sponsor's GitHub and is never imported (sponsor constraint: "i dont want it contaminating this build … keep it isolated"). The seven KEEP capabilities are re-modeled, not inherited; the wrong brain and SQLite-isms are dropped by construction. See ADR-0001 for the isolation protocol.
 **Linked:** audit D1, DEP-1, ADR-0001.
 
-### D2 — The brain · **SPIKE COMPLETE → recommends Option A · awaiting sponsor ratification** · needed by: Phase D entry
-**Question.** Adopt v3's 5-factor scoring + split allocation as the engine (retiring min-cost to a reference lens), or extend the as-built Scenario A?
-**Spike result (2026-06-18).** `project/squads/engine-domain/SPIKE_D2_engine.md` recommends **Option A — adopt v3**: five-factor banded scoring + `max_two_per_dc` split as the engine library; the as-built min-cost solver becomes "Scenario A = lowest-cost reference." Strongest reason: only A is faithful to the verified real behavior (deck splits + cost-is-35% scoring, both confirmed in code); B installs a single-winner min-cost brain the evidence contradicts (R2). Ship G1+G2 together, after the Phase-B pilot.
-**Status.** Ready for sponsor ratification → then ADR-0006. **Non-blocking:** the engine *interface* is frozen regardless (Architect), so store/contract/tests proceed against a deterministic stub.
-**Linked:** audit D2, gaps G1/G2, SPIKE_D2_engine.md.
+### D2 — The brain · **RATIFIED 2026-06-18 → adopt v3 (Option A)** (ADR-0006)
+**Resolution.** Sponsor ratified the spike ("D2 Spike ok!"). Adopt v3's five-factor banded scoring + `max_two_per_dc` split allocation as the engine library, behind the frozen `run()` interface; retire the as-built min-cost solver to "Scenario A = lowest-cost reference." Decision-support only — the engine never auto-asserts an award. **G1 (split) + G2 (scoring) ship together** in Phase D, after the Phase-B pilot, behind feature flags; validated by golden-master reproduction of v3.
+**Linked:** spike SPIKE_D2_engine.md, gaps G1/G2, ADR-0006.
 
 ### D3 — Pricing placement & safeties · **OPEN** · needed by: Phase C/D
 **Question.** Lift pricing + the five safeties to kickoff and make the safeties executable, keeping the as-built's commercial component storage?
@@ -51,6 +49,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 ### D7 — Execution mode for this engagement · **RATIFIED 2026-06-18 → plan then scaffold now** (ADR-0003)
 **Resolution.** Finish detailed squad planning, then stand up Phase 0/A running ground this engagement (validated schema baseline, backend skeleton, tenancy/RBAC foundation, CI, infra), treating ratified decisions as binding and D2 as in-spike.
 **Linked:** ADR-0003.
+
+### D8 — Tenancy model · **RATIFIED 2026-06-18 → multi-tenant-capable, single-tenant-operated** (ADR-0004)
+**Question (plain).** Who uses this system (one org vs many), and how physically separate must each group's data be?
+**Resolution.** One logical tenant (Kroger Sourcing); keep `client_id` on every row as cheap insurance + shared-schema + Postgres RLS as the standard isolation pattern; **database-per-tenant deferred**, revisited only if divisions must be walled off, the system is offered externally (SaaS), or a compliance rule mandates physical separation. Resolves the Security/DevOps "topology" fork (mobilization report §6) with their default. Sponsor confirmed the "one org" framing.
+**Linked:** ADR-0004, Security plan, DevOps plan.
 
 ---
 
