@@ -58,9 +58,7 @@ class DeterministicStubEngine(Engine):
             awards=tuple(awards),
         )
 
-    def _score(
-        self, all_bids: tuple[BidInput, ...], eligible: list[BidInput]
-    ) -> list[BidScore]:
+    def _score(self, all_bids: tuple[BidInput, ...], eligible: list[BidInput]) -> list[BidScore]:
         """Cost-only price score: cheapest eligible bid -> 100, linear down to 0. Deterministic."""
 
         costs = [b.landed_cost_per_case for b in eligible]

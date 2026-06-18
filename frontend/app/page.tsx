@@ -5,6 +5,10 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+// Health lives under the versioned API prefix — the backend mounts the health router at
+// /api/v1 (see backend/app/api/router.py + main.py). Keep this in lockstep with that prefix.
+const HEALTH_URL = `${API_BASE_URL}/api/v1/health`;
+
 type HealthState =
   | { status: "ok"; payload: unknown }
   | { status: "down"; detail: string };
@@ -12,7 +16,7 @@ type HealthState =
 // Server Component: fetches once on render. No caching so the seam reflects live backend state.
 async function probeHealth(): Promise<HealthState> {
   try {
-    const res = await fetch(`${API_BASE_URL}/health`, { cache: "no-store" });
+    const res = await fetch(HEALTH_URL, { cache: "no-store" });
     if (!res.ok) {
       return { status: "down", detail: `HTTP ${res.status}` };
     }
@@ -45,9 +49,9 @@ export default async function Page() {
           background: health.status === "ok" ? "#f3fbf4" : "#fdf3f3",
         }}
       >
-        <h2 style={{ marginTop: 0 }}>Backend /health</h2>
+        <h2 style={{ marginTop: 0 }}>Backend /api/v1/health</h2>
         <p>
-          Target: <code>{API_BASE_URL}/health</code>
+          Target: <code>{HEALTH_URL}</code>
         </p>
         {health.status === "ok" ? (
           <pre style={{ overflowX: "auto" }}>

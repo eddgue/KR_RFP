@@ -25,7 +25,7 @@ def get_principal(request: Request) -> Principal:
     established (security/PLAN §2).
     """
 
-    principal = getattr(request.state, "principal", None)
+    principal: Principal | None = getattr(request.state, "principal", None)
     if principal is None:
         raise AppError(
             code=ErrorCode.UNAUTHENTICATED,

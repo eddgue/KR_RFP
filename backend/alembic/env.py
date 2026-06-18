@@ -12,9 +12,6 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.core.config.settings import get_settings
-from app.core.db.base import SCHEMAS, metadata
-
 # Import every domain models module so their tables register on the shared metadata.
 # (Most are stubs this phase, but importing them fixes the seam and keeps autogenerate honest.)
 import app.domain.audit.models  # noqa: F401
@@ -25,6 +22,8 @@ import app.domain.eng.models  # noqa: F401
 import app.domain.norm.models  # noqa: F401
 import app.domain.perf.models  # noqa: F401
 import app.domain.ref.models  # noqa: F401
+from app.core.config.settings import get_settings
+from app.core.db.base import SCHEMAS, metadata
 
 config = context.config
 
@@ -40,9 +39,7 @@ target_metadata = metadata
 def _include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
     """Only manage objects in our eight layer schemas (ignore anything else present)."""
 
-    if type_ == "table" and getattr(obj, "schema", None) not in SCHEMAS:
-        return False
-    return True
+    return not (type_ == "table" and getattr(obj, "schema", None) not in SCHEMAS)
 
 
 def run_migrations_offline() -> None:

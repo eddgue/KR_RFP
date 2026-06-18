@@ -33,9 +33,7 @@ async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
     return _response(exc.to_problem(instance=_request_id(request)))
 
 
-async def _handle_validation_error(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def _handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     problem = ProblemDetail(
         code=ErrorCode.VALIDATION_ERROR,
         title="Validation Error",
@@ -47,9 +45,7 @@ async def _handle_validation_error(
     return _response(problem)
 
 
-async def _handle_http_exception(
-    request: Request, exc: StarletteHTTPException
-) -> JSONResponse:
+async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     code = ErrorCode.NOT_FOUND if exc.status_code == 404 else ErrorCode.INTERNAL
     problem = ProblemDetail(
         code=code,

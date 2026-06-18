@@ -10,6 +10,8 @@ are stable across migrations and round-trip cleanly (kills SQLite-ism / autogene
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
 
@@ -34,11 +36,13 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
-def SchemaBase(schema: str) -> type[Base]:  # noqa: N802 (factory returns a class)
+def SchemaBase(schema: str) -> Any:  # noqa: N802 (factory returns a class)
     """Return an abstract declarative base bound to `schema`.
 
     Domain packages subclass the returned base so all their tables land in the right
-    PostgreSQL schema without repeating `__table_args__` on every model.
+    PostgreSQL schema without repeating `__table_args__` on every model. Returns `Any` because
+    the base is produced dynamically — mypy cannot treat a runtime-built class as a statically
+    known base, and SQLAlchemy's typed mapping still validates the concrete model attributes.
     """
 
     if schema not in SCHEMAS:

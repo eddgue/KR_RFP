@@ -30,7 +30,7 @@ class CommodityRepository:
         stmt = (
             select(Commodity)
             .where(Commodity.client_id == self._tenant_id)
-            .order_by(Commodity.code)
+            .order_by(Commodity.commodity_code)
         )
         return self._session.execute(stmt).scalars().all()
 
@@ -39,7 +39,7 @@ class CommodityRepository:
 
         stmt = select(Commodity).where(
             Commodity.client_id == self._tenant_id,
-            Commodity.code == code,
+            Commodity.commodity_code == code,
         )
         return self._session.execute(stmt).scalar_one_or_none()
 
@@ -60,5 +60,5 @@ class ClientRepository:
         return self._session.get(Client, tenant_id)
 
     def get_by_code(self, code: str) -> Client | None:
-        stmt = select(Client).where(Client.code == code)
+        stmt = select(Client).where(Client.client_code == code)
         return self._session.execute(stmt).scalar_one_or_none()

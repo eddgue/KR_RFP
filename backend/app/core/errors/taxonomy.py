@@ -45,7 +45,9 @@ class ProblemDetail(BaseModel):
 
     code: ErrorCode = Field(description="Stable machine-readable error code.")
     title: str = Field(description="Short, human-readable summary.")
-    detail: str = Field(description="Human-readable explanation (no C3 values, no other-tenant ids).")
+    detail: str = Field(
+        description="Human-readable explanation (no C3 values, no other-tenant ids)."
+    )
     status: int = Field(description="HTTP status code.")
     instance: str | None = Field(default=None, description="Request correlation id, if any.")
     errors: list[dict[str, Any]] | None = Field(

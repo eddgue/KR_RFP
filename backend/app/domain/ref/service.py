@@ -35,7 +35,7 @@ class CommodityService:
         Stamps `client_id` from context, refuses a duplicate code, adds + flushes (no commit).
         """
 
-        if self._repo.get_by_code(data.code) is not None:
+        if self._repo.get_by_code(data.commodity_code) is not None:
             raise AppError(
                 code=ErrorCode.CONFLICT,
                 message="A commodity with this code already exists for the tenant.",
@@ -44,8 +44,9 @@ class CommodityService:
 
         commodity = Commodity(
             client_id=self._tenant.tenant_id,
-            code=data.code,
-            name=data.name,
+            commodity_code=data.commodity_code,
+            commodity_name=data.commodity_name,
+            abbreviation=data.abbreviation,
         )
         self._repo.add(commodity)  # add + flush -> commodity.id populated
 
@@ -58,7 +59,7 @@ class CommodityService:
                 actor=self._principal.actor,
                 source=self._principal.source,
                 before=None,
-                after={"code": commodity.code, "name": commodity.name},
+                after={"code": commodity.commodity_code, "name": commodity.commodity_name},
             )
         )
         return commodity

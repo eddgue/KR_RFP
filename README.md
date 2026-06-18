@@ -25,14 +25,35 @@ project/               PHASE 2 — the build, run as an enterprise program (PM-o
   00_PROJECT_CHARTER.md          vision, scope, success criteria S1..S8, governance
   01_TEAM_STRUCTURE_AND_RACI.md  6 delivery squads + leadership; RACI; staffing
   02_WAYS_OF_WORKING.md          cadence, engineering standards, governance invariants, DoR/DoD
-  03_DECISION_LOG.md             D1..D7 (OPEN, with recommendations) + dependencies DEP-1..4
+  03_DECISION_LOG.md             D1..D7 (D1/D6/D7 ratified; D2 spike→Option A) + deps DEP-1..4
   04_PROGRAM_BACKLOG.md          gaps G1..G12 → epics E-00..E-27, mapped to phases & squads
   05_MILESTONE_ROADMAP.md        phases 0/A..F, gates, dependency graph, squad load
+  06_MOBILIZATION_REPORT.md      integration of all 6 squad plans + the D2 spike outcome
+  squads/                        each squad's detailed plan (architecture incl. SKELETON spec)
+
+docs/adr/              Architecture Decision Records (0001 clean-room, 0002 frontend, 0003 exec model)
+
+— Phase 0/A scaffold (running ground) —
+backend/               FastAPI + SQLAlchemy 2.x + Alembic system of record (the only writer)
+  app/core/                config · db (unit-of-work owns commit) · security (tenant+RBAC) · audit (hash-chain) · errors
+  app/domain/<layer>/      8 logical layers as PG schemas; ref wired end-to-end, others stubbed
+  app/engine/              frozen run() interface + deterministic stub (D2-independent)
+  app/api/v1/              health live; cycle/bid/run/award/document/ingest routers present (empty)
+  alembic/                 0001 applies db/baseline/schema.sql; tests/ incl. clean-room import guard
+db/baseline/           the as-built schema re-expressed as clean PG (migration baseline) + NAMING_MAP
+infra/                 docker-compose (postgres+backend+adminer) + schema init
+frontend/              Next.js + TypeScript stub (built last, ADR-0002); proves the API seam
+reference/             clean-room quarantine — input only; never imported (CI-enforced)
+.github/workflows/     CI: lint · types · clean-room guard · migration roundtrip · tests · frontend
 ```
 
-The project has moved from **audit** to **build**. The audit is now a frozen input; `project/` runs the
-delivery. Several foundational decisions (`project/03_DECISION_LOG.md`) are OPEN and awaiting the sponsor —
-they gate detailed squad planning and are the first thing to resolve.
+The project moved **audit → build**. Decisions D1 (clean-room reconciliation), D6 (React/Next.js),
+and D7 (plan-then-scaffold) are ratified; **D2 (engine brain) — the spike recommends adopting v3's
+scoring + split — awaits sponsor ratification.** The **Phase 0/A scaffold is in and verified**: the
+six database-free checks pass (clean-room import guard + engine-stub purity), ruff + mypy are clean,
+the FastAPI app builds, and the baseline schema was proven idempotent on real PostgreSQL. What gates
+the next phase is sponsor input — the golden v3 input/output pair and the pilot data set
+(`project/06_MOBILIZATION_REPORT.md` §5).
 
 ## The one-line conclusion
 
