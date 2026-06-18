@@ -1,0 +1,61 @@
+# Local dev stack (Phase 0/A) — DevOps PLAN §2, SKELETON §4.
+# One command to a working store: a healthy Postgres 15, the backend (migrate then serve),
+# and adminer as a lightweight DB UI. The frontend (`web`) is added at Phase F (ADR-0002).
+#
+# Usage: see README.md. Copy .env.example -> .env first (never commit .env).
+name: kr-rfp
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kr_rfp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kr_rfp}
+      POSTGRES_DB: ${POSTGRES_DB:-kr_rfp}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Idempotent schema + app-role bootstrap. Runs once on an empty data volume.
+      # Alembic also ensures the schemas, so a fresh container and a fresh DB agree.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kr_rfp} -d ${POSTGRES_DB:-kr_rfp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    # Run migrations to head, then serve. `alembic upgrade head` applies db/baseline (rev 0001).
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      # The backend talks to the `db` service over the compose network (host = service name).
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://kr_rfp:kr_rfp@db:5432/kr_rfp}
+      APP_ENV: ${APP_ENV:-dev}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Source mount for hot-reload in dev (DevOps PLAN §2).
+      - ../backend:/app
+    ports:
+      - "8000:8000"
+
+  adminer:
+    image: adminer:4
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
