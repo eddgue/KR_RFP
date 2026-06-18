@@ -43,6 +43,7 @@ The twelve gaps, the seven "keep" capabilities, and the net-new enterprise layer
 | **E-25** | REST API hardening (contract-first, authn/authz) | — | F | Engine+Security | P0 | OpenAPI complete; every endpoint guarded |
 | **E-26** | Enterprise web app (stack D6) — the console | — | F | Experience | P0 | Live + historic cycles render identically from the store; ADR-001 honored |
 | **E-27** | Platform: environments, CI/CD, IaC, observability | net-new | 0→F | DevOps | P0 | 3 envs; pipeline green; migrations automated; metrics/logs live |
+| **E-28** | **Supplier behavior — contracted-vs-effective analytics** | net-new | E / post-pilot | Engine+Plat&Data | P1 | Per supplier×DC×lot: **contracted price vs iTrade actual-paid (effective) delta**, plus fill rate / rejection / on-time / supply-continuity from iTrade; merchandiser-facing flags ("priority supplier's effective rate ran above contract", "stopped supplying this DC", off-contract drift). Derivation over `perf.itrade_receipt` + `awd.award` + historical booking guides. Compounds from cycle 2. |
 
 ## Cross-references
 
@@ -52,5 +53,6 @@ The twelve gaps, the seven "keep" capabilities, and the net-new enterprise layer
 ## Notes
 
 - **E-18 and E-20 are a single increment** (Ed's "ship together" rule): scoring and split both touch the solver core.
+- **E-28 is mostly a derivation, not new plumbing:** once awards, iTrade actuals, and booking guides are in the store, it is a read/analytics + merchandiser-reporting layer over data we already model. It rides on the D11 savings-baseline work and the scorecard (E-10). Historical booking guides (DEP-5) backfill prior **contracted** terms so contracted-vs-effective works even before a full cycle has run in-system.
 - Epics are phase-anchored but groomed into vertical-slice stories at phase entry (Ways of Working §1).
 - Estimates are deliberately omitted until D1–D7 and DEP-1 are resolved (they swing the sizing materially).
