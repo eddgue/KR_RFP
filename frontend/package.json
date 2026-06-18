@@ -1,0 +1,27 @@
+{
+  "name": "kr-rfp-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "KR_RFP enterprise web app — pure client of the FastAPI backend. Built last (Phase F, ADR-0002). This phase: a stub that holds the API seam and the generated-types pipeline.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "gen:api": "echo '[gen:api] placeholder — at Phase F, generate the typed client from the backend OpenAPI contract into lib/api/ (e.g. openapi-typescript). No-op stub for now.'"
+  },
+  "dependencies": {
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,220 @@
+# .github/workflows/ci.yml — the program's non-negotiables in code (DevOps PLAN §3, SKELETON §6).
+# One workflow. Independent jobs run in parallel and fan into a single required `ci-pass`
+# status (the only check branch protection needs to require).
+#
+# PR (branch -> main): runs the full gate (jobs below + ci-pass).
+# Push to main: runs the gate PLUS image build-push + deploy-to-staging — those land when
+#               DEP-4 (cloud + IdP) resolves (DevOps PLAN §4). See the note in `ci-pass` /
+#               the commented main-only stanza at the bottom.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Python/Node pins match the backend skeleton + ADR-0002: Python 3.12, Node 20.
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1. lint — ruff (format + lint). Fast, no DB.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install backend (dev extras)
+        run: pip install -e "backend/[dev]"
+      - name: ruff check
+        run: ruff check backend/
+      - name: ruff format --check
+        run: ruff format --check backend/
+
+  # 2. types — mypy on the app package. No DB.
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install backend (dev extras)
+        run: pip install -e "backend/[dev]"
+      - name: mypy
+        run: mypy backend/app
+
+  # 3. reference-guard — the clean-room invariant (ADR-0001). Runs the test that fails if
+  #    backend/ imports from reference/. This gate is a program non-negotiable, not a lint nicety.
+  reference-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install backend (dev extras)
+        run: pip install -e "backend/[dev]"
+      - name: clean-room import guard
+        working-directory: backend
+        # Must FAIL the build if backend/ imports reference/ (the test asserts the boundary).
+        run: pytest tests/test_cleanroom_import.py -v
+
+  # 4. test — real Postgres 15 service container; install backend; pytest incl. integration markers.
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kr_rfp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kr_rfp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Same variable NAME as everywhere; only the host/creds differ (DevOps PLAN §2).
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/kr_rfp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install backend (dev extras)
+        run: pip install -e "backend/[dev]"
+      - name: Apply migrations (alembic upgrade head executes db/baseline/schema.sql)
+        working-directory: backend
+        run: alembic upgrade head
+      - name: pytest (unit + service + integration markers against real Postgres)
+        working-directory: backend
+        # -m "" runs all markers incl. integration; no SQLite anywhere (architecture §7, R8).
+        run: pytest -v -m "" --cov=app --cov-report=term-missing
+
+  # 5. migration-roundtrip — WAYS-OF-WORKING §3. Fresh Postgres: upgrade head, then up->down->up,
+  #    assert the schema is clean/unchanged. (The byte-identical dump compare + `alembic check`
+  #    drift + the >=46-composite-FK floor are asserted inside test_migrations_roundtrip.py as the
+  #    full DDL lands at M0 — Platform & Data PLAN §2 / R-PD2.)
+  migration-roundtrip:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kr_rfp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kr_rfp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/kr_rfp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install backend (dev extras)
+        run: pip install -e "backend/[dev]"
+      - name: alembic upgrade head
+        working-directory: backend
+        run: alembic upgrade head
+      - name: roundtrip up->down->up + clean assertion
+        working-directory: backend
+        # The test drives downgrade base -> upgrade head and asserts the schema is identical.
+        run: pytest tests/test_migrations_roundtrip.py -v
+
+  # 6. frontend-build — path-filtered (lightweight this phase, ADR-0002). Install + typecheck only;
+  #    `next build` + the generated-OpenAPI-client check expand at Phase F. The path filter keeps it
+  #    a no-op (and green) on PRs that don't touch frontend/.
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect frontend changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.frontend == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # No lockfile committed in the stub yet, so npm cache is off this phase; it (and `npm ci`)
+          # turn on at Phase F once package-lock.json is committed.
+      - name: Install
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        # `npm install` (no lockfile) this phase; `npm ci` at Phase F.
+        run: npm install
+      - name: Typecheck
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: npm run typecheck
+
+  # 7. ci-pass — the single required status for branch protection. Goes red if any needed job did.
+  ci-pass:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, types, reference-guard, test, migration-roundtrip, frontend-build]
+    steps:
+      - name: Assert all required jobs passed
+        run: |
+          echo "lint=${{ needs.lint.result }}"
+          echo "types=${{ needs.types.result }}"
+          echo "reference-guard=${{ needs.reference-guard.result }}"
+          echo "test=${{ needs.test.result }}"
+          echo "migration-roundtrip=${{ needs.migration-roundtrip.result }}"
+          echo "frontend-build=${{ needs.frontend-build.result }}"
+          # A skipped frontend-build (path filter, no frontend changes) is acceptable.
+          for r in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.types.result }}" \
+            "${{ needs.reference-guard.result }}" \
+            "${{ needs.test.result }}" \
+            "${{ needs.migration-roundtrip.result }}"; do
+            if [ "$r" != "success" ]; then echo "REQUIRED JOB FAILED ($r)"; exit 1; fi
+          done
+          if [ "${{ needs.frontend-build.result }}" != "success" ] && \
+             [ "${{ needs.frontend-build.result }}" != "skipped" ]; then
+            echo "frontend-build failed"; exit 1
+          fi
+          echo "ci-pass: green"
+
+  # ---------------------------------------------------------------------------
+  # main-only continuation (DEP-4 pending) — DevOps PLAN §3/§4.
+  # On push to main, gated on ci-pass, the pipeline ALSO builds + pushes the immutable
+  # image and deploys the digest to staging (migrations gated per PLAN §7). These are
+  # NOT authored yet because the cloud/registry/secret-store fork on DEP-4 (sponsor):
+  #
+  #   build-push:     needs: [ci-pass]; if: github.ref == 'refs/heads/main'
+  #                   build backend image, tag :<sha> (immutable) + :main, push to registry.
+  #   deploy-staging: needs: [build-push]; deploy the digest, run gated migrations, smoke.
+  #
+  # Prod is a manual promotion of the staging-validated digest (workflow_dispatch behind an
+  # environment approval), never automatic. Tracked as DEP-4. (DEP-4 pending.)
+  # ---------------------------------------------------------------------------
