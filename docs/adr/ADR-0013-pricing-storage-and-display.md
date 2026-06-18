@@ -22,6 +22,7 @@ Getting this separation right is what makes "open last cycle" render correctly (
 - Prices are stored as **components**, not a single opaque number: FOB, freight, delivered, cross-dock, VegCool, discount; for index basis, the **basis / market reference / adder** (and QDP where applicable).
 - **Fixed** deals: the agreed price repeats across the periods it covers.
 - **Index** deals: the components are stored and the effective price **resolves** (computed), not stored as a frozen number.
+  - *Worked example (sponsor):* **Visalia onions** are priced **market mid − discount** today — an index basis where the store holds `{market reference / mid, discount}` and the price resolves to `mid − discount` (FOB falls out). Never a frozen number; re-resolves as the market moves.
 - **Period-by-period** deals (e.g. weakly-correlated commodities priced across all 13 periods, each with its own sourcing region): each period carries its own price/components — the period grain already supports this with no special case.
 - One pricing table; the **basis** determines which columns carry the weight. The double-subtraction guard (no_double_discount) is enforced in the store, not left to a note.
 

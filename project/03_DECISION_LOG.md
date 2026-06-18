@@ -103,6 +103,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
 | DEP-6 | **Market-price feed** (e.g. the USDA market data referenced in the kickoff docs) | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Data | OPEN |
+| DEP-7 | **Award files + round/negotiation analysis** (sponsor to pass later) | understanding the live-negotiation process (round loop, target-setting); E-28 backfill | Sponsor | OPEN — deferred, low urgency |
 
 ---
 
