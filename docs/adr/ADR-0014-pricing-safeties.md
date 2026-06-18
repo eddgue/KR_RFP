@@ -18,7 +18,9 @@ The intake called the five pricing safeties "the real product," and the original
 
 ## The five safeties (mechanics as specified — CONFIRM)
 
-> Default windows/cadences below are the stated defaults; all are per-cycle configurable contract parameters.
+> **All windows, cadences, and band widths are set individually per RFP** — the 4/8/2-week figures below are **illustrative, not fixed defaults.** Each cycle configures its own.
+>
+> **Governing objective (sponsor):** the safeties exist to let the awarded price **move up when warranted (a hike) and back down when warranted (a drop), within governed bounds** — controlled, bidirectional price flexibility so a deal can *breathe* without reopening the contract. The collar sets the bounds; the rolling midpoint tracks the market on a schedule; the tolerance band reacts to a sustained anomaly; the disaster triggers handle the extremes. All five are instruments of the same principle.
 
 ### 1. Collar (cap / floor) — applies to BOTH fixed and market/index
 - A tolerance band on price movement. **Cap** = how far **up** Kroger will let the price go in a market hike (Kroger's upside protection). **Floor** = the **supplier's** downside protection (Kroger is willing to go to 0; the floor exists for the supplier, not Kroger).
