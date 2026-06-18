@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS cyc.cycle_safety (
     FOREIGN KEY (cycle_id) REFERENCES cyc.cycle (cycle_id)
 );
 COMMENT ON TABLE cyc.cycle_safety IS
-    'Per-RFP pricing-safety CONTRACT terms (D13/ADR-0014). Terms only; the engine does not consume these.';
+    'Per-RFP pricing-safety CONTRACT terms (D13/ADR-0014). Terms only; engine ignores them.';
 """
 
 

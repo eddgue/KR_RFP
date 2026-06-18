@@ -76,8 +76,8 @@ CREATE TABLE IF NOT EXISTS cyc.cycle_objective (
     is_primary     boolean     NOT NULL DEFAULT false,
     objective_note text,
     PRIMARY KEY (cycle_id, objective_code),
-    CONSTRAINT ck_cycle_objective_code CHECK (
-        objective_code IN ('SAVINGS', 'SUPPLY_ASSURANCE', 'QUALITY', 'DIVERSIFICATION', 'STRATEGIC')),
+    CONSTRAINT ck_cycle_objective_code CHECK (objective_code IN (
+        'SAVINGS', 'SUPPLY_ASSURANCE', 'QUALITY', 'DIVERSIFICATION', 'STRATEGIC')),
     FOREIGN KEY (cycle_id) REFERENCES cyc.cycle (cycle_id)
 );
 -- Exactly one primary objective per cycle (partial unique index on the primary flag).
@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS cyc.cycle_pricing (
     PRIMARY KEY (cycle_id),
     CONSTRAINT ck_cycle_pricing_basis CHECK (pricing_basis IN ('FIXED', 'INDEX', 'HYBRID')),
     CONSTRAINT ck_cycle_pricing_cadence CHECK (duration_cadence IN (
-        'FULL_YEAR', 'SEASONAL', 'TIMEFRAMES', 'PERIOD_BY_PERIOD', 'QUARTERLY', 'MONTHLY', 'WEEKLY')),
+        'FULL_YEAR', 'SEASONAL', 'TIMEFRAMES', 'PERIOD_BY_PERIOD',
+        'QUARTERLY', 'MONTHLY', 'WEEKLY')),
     CONSTRAINT ck_cycle_pricing_routing CHECK (
         routing_basis IS NULL OR routing_basis IN ('FOB', 'DELIVERED', 'XDOCK', 'CBS_FREIGHT')),
     CONSTRAINT ck_cycle_pricing_cadence_n_positive CHECK (cadence_n IS NULL OR cadence_n > 0),

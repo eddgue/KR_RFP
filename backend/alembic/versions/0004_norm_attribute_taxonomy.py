@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS norm.attribute_def (
     CONSTRAINT ck_attribute_def_label_not_empty CHECK (length(label) > 0)
 );
 COMMENT ON TABLE norm.attribute_def IS
-    'One shared, superset attribute catalog (D14). Extended only when a genuinely new attribute appears.';
+    'One shared, superset attribute catalog (D14). Extended only when a new attribute appears.';
 
 -- ---------------------------------------------------------------------------
 -- norm.lot_attribute — SPARSE per-lot attributes (a lot carries only its applicable ones).
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS norm.lot_attribute (
 CREATE INDEX IF NOT EXISTS ix_lot_attribute_attribute_code
     ON norm.lot_attribute (attribute_code);
 COMMENT ON TABLE norm.lot_attribute IS
-    'Sparse per-lot attributes (D14): a lot carries only its applicable attributes from the shared catalog.';
+    'Sparse per-lot attributes (D14): a lot carries only its applicable shared-catalog attributes.';
 """
 
 

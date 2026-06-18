@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS perf.itrade_receipt (
     supplier_name           text,                          -- col 22 (→ ref.supplier_alias)
     ship_from_address       text,
     ship_from_state         varchar(8),                    -- col 24: ship-from, NOT grow-origin
-    ship_from_zip           varchar(16),                   -- col 25: freight proxy via ref.zip_centroid
+    ship_from_zip           varchar(16),                   -- col 25: freight proxy (zip_centroid)
     routing                 text,                          -- Delivered / FOB / ...
     -- performance (cols 27-29)
     qty_received            numeric(18, 3),
@@ -121,7 +121,7 @@ CREATE INDEX IF NOT EXISTS ix_itrade_receipt_grain
 CREATE INDEX IF NOT EXISTS ix_itrade_receipt_supplier
     ON perf.itrade_receipt (supplier_name);
 COMMENT ON TABLE perf.itrade_receipt IS
-    'Real 43-col iTrade "Data" feed (FEEDS_ITRADE.md / E-08). One feed, two jobs: historical cost + scorecard.';
+    'Real 43-col iTrade "Data" feed (FEEDS_ITRADE.md / E-08). Historical cost + scorecard.';
 
 -- ---------------------------------------------------------------------------
 -- perf.v_itrade_actual_paid_baseline — the D11 savings baseline.
@@ -151,7 +151,7 @@ WHERE r.flag_canceled = false
   AND r.cogs IS NOT NULL
 GROUP BY r.subcommodity_desc, r.dc_no, r.fiscal_year, r.period;
 COMMENT ON VIEW perf.v_itrade_actual_paid_baseline IS
-    'D11 savings baseline: volume-weighted average actual-paid (cogs) per lot×DC×fiscal_period; min/max kept.';
+    'D11 savings baseline: volume-weighted actual-paid (cogs) per lot/DC/period; min/max kept.';
 """
 
 

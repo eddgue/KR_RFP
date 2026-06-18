@@ -50,14 +50,19 @@ depends_on: str | Sequence[str] | None = None
 
 UPGRADE_SQL = """
 -- Split columns (additive, idempotent).
-ALTER TABLE eng.scenario_award ADD COLUMN IF NOT EXISTS volume_share    numeric(9, 6);
-ALTER TABLE eng.scenario_award ADD COLUMN IF NOT EXISTS is_fallback     boolean NOT NULL DEFAULT false;
-ALTER TABLE eng.scenario_award ADD COLUMN IF NOT EXISTS cap_breach_flag boolean NOT NULL DEFAULT false;
+ALTER TABLE eng.scenario_award
+    ADD COLUMN IF NOT EXISTS volume_share    numeric(9, 6);
+ALTER TABLE eng.scenario_award
+    ADD COLUMN IF NOT EXISTS is_fallback     boolean NOT NULL DEFAULT false;
+ALTER TABLE eng.scenario_award
+    ADD COLUMN IF NOT EXISTS cap_breach_flag boolean NOT NULL DEFAULT false;
 
 -- volume_share range guard (added once, guarded so re-run is a no-op).
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_scenario_award_volume_share_range') THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'ck_scenario_award_volume_share_range'
+    ) THEN
         ALTER TABLE eng.scenario_award
             ADD CONSTRAINT ck_scenario_award_volume_share_range
             CHECK (volume_share IS NULL OR (volume_share >= 0 AND volume_share <= 1));
@@ -70,7 +75,9 @@ $$;
 ALTER TABLE eng.scenario_award DROP CONSTRAINT IF EXISTS uq_scenario_a_cell_assignment_cell;
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_scenario_award_cell_supplier') THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_scenario_award_cell_supplier'
+    ) THEN
         ALTER TABLE eng.scenario_award
             ADD CONSTRAINT uq_scenario_award_cell_supplier
             UNIQUE (scenario_run_id, dc_id, lot_id, tf_id, supplier_id);
@@ -79,7 +86,7 @@ END
 $$;
 
 COMMENT ON COLUMN eng.scenario_award.volume_share IS
-    'G1/D10 schema prep: cell volume fraction for this supplier. Engine split LOGIC ships post-pilot behind split_award.';
+    'G1/D10 schema prep: per-supplier cell volume fraction. Split LOGIC ships post-pilot.';
 """
 
 
@@ -88,7 +95,9 @@ DOWNGRADE_SQL = """
 ALTER TABLE eng.scenario_award DROP CONSTRAINT IF EXISTS uq_scenario_award_cell_supplier;
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_scenario_a_cell_assignment_cell') THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_scenario_a_cell_assignment_cell'
+    ) THEN
         ALTER TABLE eng.scenario_award
             ADD CONSTRAINT uq_scenario_a_cell_assignment_cell
             UNIQUE (scenario_run_id, dc_id, lot_id, tf_id);
