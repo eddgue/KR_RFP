@@ -388,6 +388,7 @@ class PilotService:
             extra_done=[f"Round {round_no} alignment analysis v{version_seq} ready"],
         )
         self.export_run_data(session, runpaths)
+        self.feedback_file(session, runpaths)
         git_commit_run(
             self.vault_root,
             runpaths.slug,
@@ -438,6 +439,7 @@ class PilotService:
             session, runpaths, extra_done=[f"Award {award_code} frozen — booking guides ready"]
         )
         self.export_run_data(session, runpaths)
+        self.feedback_file(session, runpaths)
         git_commit_run(
             self.vault_root, runpaths.slug, f"award {award_code} frozen → booking guides"
         )
@@ -484,6 +486,7 @@ class PilotService:
             session, runpaths, extra_done=[f"Post-award adjustment v{version_no} recorded"]
         )
         self.export_run_data(session, runpaths)
+        self.feedback_file(session, runpaths)
         git_commit_run(
             self.vault_root, runpaths.slug, f"post-award adjustment v{version_no} recorded"
         )
@@ -672,6 +675,158 @@ class PilotService:
         }
         self._write_run_data(runpaths, snapshot)
         return runpaths.run_data_file
+
+    def feedback_file(self, session: Session, runpaths: RunPaths) -> Path:
+        """Write `<run>/FEEDBACK.md` — dev-facing signals distilled from THIS run's sealed records.
+
+        Closes the development feedback loop (PILOT_SYSTEM_DESIGN feedback note): a real run leaves
+        a clean trail, and this file turns it into a structured, DATA-DERIVED (D28) review for the
+        platform team — data-quality + competition gaps (gate flags, no-bids, thin competition,
+        coverage), concentration/cap-breach risk, template fit (where flexible ingest had to adapt),
+        process friction (alignment re-runs, renegotiations, the premium the recommendation paid),
+        and the sponsor's own notes. Names not keys (D23). Refreshed after each
+        run/freeze/adjustment and included in the close-out archive. Does NOT commit (the caller
+        commits the step).
+        """
+
+        cycle_id = self._cycle_id(runpaths)
+        if cycle_id is None:
+            runpaths.feedback_file.write_text(
+                f"# Development feedback — {runpaths.slug}\n\n_No run yet._\n", encoding="utf-8"
+            )
+            return runpaths.feedback_file
+
+        cycle = self._load_cycle(session, runpaths)
+        latest_run = session.execute(
+            text(
+                "SELECT analysis_run_id FROM eng.analysis_run WHERE cycle_id = :cyc "
+                "ORDER BY run_started_at DESC LIMIT 1"
+            ),
+            {"cyc": cycle_id},
+        ).scalar_one_or_none()
+        final_round_id = cycle.rounds[-1].id
+
+        lines: list[str] = [f"# Development feedback — {runpaths.slug}", ""]
+        lines.append(f"_Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC from the sealed records._")
+        lines.append("")
+        lines.append(f"**Cycle:** {cycle.cycle_name} — {len(cycle.dcs)} DCs, {len(cycle.lots)} "
+                     f"lots, {len(cycle.suppliers)} suppliers, {len(cycle.rounds)} rounds.")
+        lines.append("")
+
+        # --- Data quality & competition (the signals that improve the engine/invite list) ---
+        lines.append("## Data quality & competition")
+        if latest_run is None:
+            lines.append("- No alignment has run yet — no scoring signals.")
+        else:
+            flag_tally: dict[str, int] = {}
+            for (gf,) in session.execute(
+                text(
+                    "SELECT gate_flags FROM eng.bid_score WHERE analysis_run_id = :run "
+                    "AND gate_flags IS NOT NULL AND gate_flags <> ''"
+                ),
+                {"run": latest_run},
+            ).all():
+                for reason in str(gf).split(";"):
+                    reason = reason.strip()
+                    if reason:
+                        flag_tally[reason] = flag_tally.get(reason, 0) + 1
+            # scope cells vs cells with a scoreable bid in the final round
+            scope_cells = {(dc, lot) for (dc, lot, _tf) in cycle.period_cases_by_cell}
+            covered = {
+                (r[0], r[1])
+                for r in session.execute(
+                    text(
+                        "SELECT dc_id, lot_id, count(DISTINCT supplier_id) FROM bid.bid_line "
+                        "WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
+                        "GROUP BY dc_id, lot_id"
+                    ),
+                    {"cyc": cycle_id, "rnd": final_round_id},
+                ).all()
+            }
+            thin = {
+                (r[0], r[1])
+                for r in session.execute(
+                    text(
+                        "SELECT dc_id, lot_id, count(DISTINCT supplier_id) AS n FROM bid.bid_line "
+                        "WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
+                        "GROUP BY dc_id, lot_id HAVING count(DISTINCT supplier_id) < 3"
+                    ),
+                    {"cyc": cycle_id, "rnd": final_round_id},
+                ).all()
+            }
+            no_bid = scope_cells - covered
+            lines.append(f"- **No-bid lots:** {len(no_bid)} of {len(scope_cells)} (DC × lot) had "
+                         "no priced final-round bid — supply-coverage gaps to chase.")
+            lines.append(f"- **Thin competition (<3 bidders):** {len(thin)} (DC × lot) — consider "
+                         "widening the invite list there; Z-scores are less reliable.")
+            if flag_tally:
+                lines.append("- **Eligibility/gate flags raised (final round):**")
+                for reason, n in sorted(flag_tally.items(), key=lambda kv: -kv[1]):
+                    lines.append(f"    - {reason}: {n}")
+            else:
+                lines.append("- No eligibility/gate flags raised.")
+        lines.append("")
+
+        # --- Concentration / cap-breach (supply-risk to weigh against savings) ---
+        lines.append("## Concentration & split")
+        if latest_run is not None:
+            breaches = session.execute(
+                text(
+                    "SELECT count(*) FROM eng.analysis_scenario_award a "
+                    "JOIN eng.analysis_scenario s "
+                    "ON s.analysis_scenario_id = a.analysis_scenario_id "
+                    "WHERE s.analysis_run_id = :run AND s.scenario_code = 'B' "
+                    "AND a.cap_breach_flag = true"
+                ),
+                {"run": latest_run},
+            ).scalar_one()
+            lines.append(f"- Recommended (Scenario B) cap-breach cells: {int(breaches)} "
+                         "(a DC carrying more than the max suppliers).")
+        else:
+            lines.append("- No recommendation yet.")
+        lines.append("")
+
+        # --- Template fit — where flexible ingest had to adapt (improve the template/guidance) ---
+        normalized = sorted(p.name for p in runpaths.inputs.glob("*bids_normalized*"))
+        lines.append("## Template fit")
+        if normalized:
+            lines.append(f"- Flexible ingest was used {len(normalized)} time(s) — a supplier file "
+                         "didn't match the owned template and had to be re-mapped:")
+            for nm in normalized:
+                lines.append(f"    - `{nm}`")
+            lines.append("  → recurring re-mappings signal a template/guidance gap worth closing.")
+        else:
+            lines.append("- All bids came in on the owned template (no re-mapping needed).")
+        lines.append("")
+
+        # --- Process — re-runs, renegotiations, the premium the recommendation paid ---
+        hist = self.history(session, runpaths)
+        hist_runs = cast(list[dict[str, object]], hist["analysis_runs"])
+        hist_awards = cast(list[dict[str, object]], hist["awards"])
+        n_adj = sum(len(cast(list[object], a["versions"])) - 1 for a in hist_awards)
+        lines.append("## Process")
+        lines.append(f"- Alignment runs sealed: {len(hist_runs)} "
+                     f"(re-runs beyond one per round = mid-cycle iterations).")
+        lines.append(f"- Awards frozen: {len(hist_awards)}; post-award renegotiation versions: "
+                     f"{n_adj}.")
+        lines.append("")
+
+        # --- Sponsor notes (their own feedback captured during the run) ---
+        lines.append("## Sponsor notes (from NOTES.md)")
+        notes_text = (
+            runpaths.notes_md.read_text(encoding="utf-8") if runpaths.notes_md.exists() else ""
+        )
+        note_lines = [ln.strip() for ln in notes_text.splitlines() if ln.strip().startswith("- ")]
+        if note_lines:
+            lines.extend(note_lines[-12:])
+        else:
+            lines.append("- (none recorded)")
+        lines.append("")
+        lines.append("_Data stays in the private vault (clean-room); the platform team reviews "
+                     "STRUCTURE + these signals to adapt the engine, templates, and analysis._")
+
+        runpaths.feedback_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return runpaths.feedback_file
 
     def close_run(self, runpaths: RunPaths) -> Path:
         """Archive the FULL normalized history of a run into a zip; return the zip path (step 10).

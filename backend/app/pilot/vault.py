@@ -47,6 +47,10 @@ _CYCLE_ID_NAME = "cycle_id.txt"
 # Written by PilotService.export_run_data after each governed write (run/freeze/adjustment) and
 # included in the close-out archive. The sponsor's "data in git per run" — on Postgres, not Dolt.
 RUN_DATA_NAME = "run_data.json"
+# The dev-facing FEEDBACK file: per-run signals distilled from the sealed records (data-quality,
+# template-fit, process friction, sponsor notes) for the platform team to review and adapt the
+# engine/templates/analysis. Written by PilotService.feedback_file; included in the close archive.
+FEEDBACK_NAME = "FEEDBACK.md"
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,7 @@ class RunPaths:
     run_md: Path
     cycle_id_file: Path
     run_data_file: Path
+    feedback_file: Path
     slug: str
 
 
@@ -89,6 +94,7 @@ def _build_run_paths(vault_root: Path, slug: str) -> RunPaths:
         run_md=root / _RUN_NAME,
         cycle_id_file=root / _CYCLE_ID_NAME,
         run_data_file=root / RUN_DATA_NAME,
+        feedback_file=root / FEEDBACK_NAME,
         slug=slug,
     )
 
@@ -196,6 +202,14 @@ def create_run(vault_root: Path, *, commodity: str, label: str) -> RunPaths:
         '{\n  "status": "no cycle yet — run setup ingest to create the governed cycle"\n}\n',
         encoding="utf-8",
     )
+    # FEEDBACK.md starts as a placeholder; PilotService.feedback_file distills the dev signals
+    # from the sealed records once there's a run to learn from.
+    paths.feedback_file.write_text(
+        f"# Development feedback — {slug}\n\n_No run yet. This file fills in once the first "
+        "alignment runs — data-quality, template-fit, and process signals for the platform "
+        "team._\n",
+        encoding="utf-8",
+    )
     # Keep empty subdirs under git so the scaffold is identical (git ignores empty dirs).
     for subdir in (paths.inputs, paths.outputs, paths.memory):
         (subdir / ".gitkeep").write_text("", encoding="utf-8")
@@ -291,7 +305,7 @@ def _git(vault_root: Path, *args: str) -> bool:
 # The full normalized history a close-out archives (PILOT_SYSTEM_DESIGN step 10): the inputs/
 # outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
 _ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
-_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, _CYCLE_ID_NAME)
+_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, FEEDBACK_NAME, _CYCLE_ID_NAME)
 
 
 def archive_run(runpaths: RunPaths) -> Path:

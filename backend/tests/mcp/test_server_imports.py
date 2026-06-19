@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "select_award",
     "record_adjustment",
     "history",
+    "feedback",
     "remember",
     "add_memory",
     "close_run",

@@ -444,6 +444,14 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     award_suppliers = {line["supplier"] for line in run_data["awards"][0]["lines"]}
     assert award_suppliers <= {"Green Valley Farms", "Sunbelt Produce"}
 
+    # 5c) the dev-facing FEEDBACK.md is distilled from the sealed records (the feedback loop).
+    assert paths.feedback_file.is_file()
+    feedback_text = paths.feedback_file.read_text()
+    assert "Development feedback" in feedback_text
+    assert "Data quality & competition" in feedback_text
+    assert "Template fit" in feedback_text
+    assert "Process" in feedback_text
+
     # leave a memory note so the archive's memory/ is exercised.
     service.add_memory(paths, "buyer_note.txt", b"prioritize Dallas", "Buyer ask captured")
 
@@ -458,6 +466,7 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     assert any(n.startswith(f"{slug}/memory/") for n in names)
     assert f"{slug}/NOTES.md" in names
     assert f"{slug}/run_data.json" in names  # the governed-data snapshot rides the archive
+    assert f"{slug}/FEEDBACK.md" in names  # the dev-feedback file rides the archive too
     assert any("alignment_v1" in n for n in names)
     assert any("post_award_v1" in n for n in names)
 

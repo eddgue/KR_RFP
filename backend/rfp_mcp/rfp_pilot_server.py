@@ -437,6 +437,26 @@ def history(run_slug: str) -> str:
 
 
 @app.tool()
+def feedback(run_slug: str) -> str:
+    """Distil THIS run's sealed records into a dev-facing FEEDBACK.md (the platform feedback loop).
+
+    Writes/refreshes `<run>/FEEDBACK.md` — data-quality + competition gaps, concentration/cap-breach
+    risk, template fit (where flexible ingest had to adapt), process friction (re-runs,
+    renegotiations), and the sponsor's notes — for the platform team to review and adapt the engine,
+    templates, and analysis. Data stays in the private vault; only structure + signals feed dev.
+    """
+
+    paths = _paths(run_slug)
+    with unit_of_work() as session:
+        path = _service().feedback_file(session, paths)
+    return (
+        f"Wrote the development-feedback file for {run_slug} to {path}. It distils this run's "
+        "data-quality, competition, concentration, template-fit, and process signals for the "
+        "platform team — review it to adapt the engine, templates, and analysis."
+    )
+
+
+@app.tool()
 def remember(run_slug: str, note: str, related_file: str = "") -> str:
     """Append a dated note to the run's NOTES.md (optionally linking a memory/ file by name)."""
 
