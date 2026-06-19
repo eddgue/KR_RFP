@@ -13,10 +13,11 @@ The operating model for the program: cadence, engineering standards, and the gat
 
 ## 1. Delivery model
 
-- **Phased, gate-driven** (Phases 0/A–F, `05_MILESTONE_ROADMAP.md`). Each phase exits on a **demonstrated outcome**, not a task count.
+- **Modular, prototype-fidelity — NOT MVP** (D19, sponsor directive). We do **not** build boiled-down MVPs. We build **well-bounded modules**, each delivered as a **functional prototype version of the full capability** (iterated v1→v2→…), never a thinnest-possible slice. "Done" for a module = a working prototype of the *whole* capability, not a stub. (The engine's deterministic stub was only a D2 placeholder; with D2 resolved it becomes the real v3 prototype.)
+- **Phased, gate-driven** (Phases 0/A–F, `05_MILESTONE_ROADMAP.md`). Each phase exits on a **demonstrated outcome**, not a task count. Phases/epics are **modules**, each built to prototype fidelity.
 - **Backend before frontend** (ADR-001). The web app is a view onto the store and does not start until the outward-facing half (Phase E) is proven.
 - **Two changes ship together** (Ed's reconciliation): G1 (split) + G2 (scoring) land in the same engine increment because both touch the solver core.
-- **Vertical slices inside a phase**: each backlog epic is delivered as a thin end-to-end slice (schema → service → API → test) so value is demonstrable continuously.
+- **Modules built end-to-end**: each is delivered as a coherent slice (schema → service → API → test → its UI when applicable), at real fidelity — not stubbed — so it stands as a usable prototype, not a demo shell.
 
 ## 2. Cadence & ceremonies
 

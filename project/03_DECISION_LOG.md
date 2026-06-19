@@ -109,6 +109,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Principle (sponsor).** The reference files are **single-strategy molds** (one RFP's approach each). We build a **strategy-agnostic platform** where strategies are **developed** (composed, saved as reusable, versioned templates) and **run** (bound to a cycle and executed). **Nothing strategy-specific is hardcoded.** A *strategy* = objective(s) + pricing model/cadence/safeties + scoring weights/preset (or custom) + award constraints (max-sup-per-DC, single-supplier-per-lot, premium thresholds, coverage floor) + the scenario lenses to run + process rail/steps + preferences/exclusions. Generalizes the engine's commodity-agnostic/config-driven design and the per-cycle rail (locked-truth #8) into a first-class **Strategy**. **Commodity-agnostic ⊆ strategy-agnostic.** Every run records its strategy version → reproducibility + faithful historic render.
 **Linked:** ADR-0016, ADR-0006, D9/D12/D13, scenario_config_version/metric_definition_version/engine_release, intake locked-truth #8.
 
+### D19 — Build methodology: modular, full-fidelity prototype versions — **NOT MVP** · **RATIFIED 2026-06-18**
+**Directive (sponsor).** "I don't work off MVPs. Once in dev I work prototype versions and modularized builds — never a boiled-down MVP." We build **well-bounded modules**, each delivered as a **functional prototype version of the FULL capability** (iterated v1→v2→…), not a thinnest-possible slice.
+**Implications.** Definition of Done per module = a working prototype of the *whole* capability (not a stub/thin MVP cut). Aligns with the existing modular architecture (8 domain packages per schema, engine-as-a-library behind an interface, additive migrations). The engine's deterministic stub was a D2-deferral placeholder only — with D2 resolved (adopt v3), the engine module becomes the real v3 prototype. Roadmap phases/epics are **modules**, each built to prototype fidelity. **Supersedes any "MVP" framing** in prior docs.
+**Linked:** ADR-0003, ADR-0006, ADR-0016, Ways of Working §1.
+
 ---
 
 ## Dependencies (logistics blockers)
@@ -120,7 +125,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
-| DEP-6 | **Market-price feed — USDA `FVWTRDS-1662`** (the series the price-backtest HTML uses; confirmed 2026-06-18) | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Data | OPEN — feed identified, access TBD |
+| DEP-6 | **Market-price feed — USDA MARS API** (Market Analysis & Reporting Service; series `FVWTRDS-1662`). **Sponsor HAS an API key.** | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Security | **RESOLVED (access available)** — key goes to the secret store at build time, never chat/repo |
 | DEP-7 | **Award files + round/negotiation analysis** (sponsor to pass later) | understanding the live-negotiation process (round loop, target-setting); E-28 backfill | Sponsor | OPEN — deferred, low urgency |
 
 ---
