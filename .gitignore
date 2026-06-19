@@ -48,3 +48,7 @@ reference/v3-engine/
 
 # generated demo artifacts (regenerated each run; synthetic)
 backend/demo/output/
+
+# ---- claude code transient agent worktrees (auto-cleaned; never commit) ----
+.claude/worktrees/
+.claude/settings.local.json
