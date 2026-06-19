@@ -48,6 +48,7 @@ from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -156,6 +157,16 @@ _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _CENTER = Alignment(horizontal="center", vertical="center")
 _LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
 _WRAP_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+# Comparison-tool accent fills (the alignment surfaces highlight the picture the team debates).
+_MIN_FILL = PatternFill("solid", fgColor="C6EFCE")  # best/min price per row (green)
+_MIN_FONT = Font(bold=True, color="006100")
+_BENCH_FILL = PatternFill("solid", fgColor="FCE4D6")  # Scenario A benchmark row (peach)
+_REC_FILL = PatternFill("solid", fgColor="DDEBF7")  # Scenario B recommendation row (blue)
+_REC_PICK_FILL = PatternFill("solid", fgColor="BDD7EE")  # the recommended supplier cell (blue)
+_INCUMBENT_FILL = PatternFill("solid", fgColor="FFF2CC")  # incumbent marker (amber)
+_BREACH_FILL = PatternFill("solid", fgColor="FFC7CE")  # cap-breach (red)
+_BREACH_FONT = Font(bold=True, color="9C0006")
 
 # The standard provenance strap every presentation surface carries (ADR-0006).
 DECISION_SUPPORT_STRAP = "DECISION-SUPPORT — recommends, does not assert"
@@ -1382,26 +1393,41 @@ def _sheet_title(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 8) INTERACTIVE SCENARIO WORKBOOK (D25) — SCENARIO_WORKBOOK.xlsx
+# 8) ALIGNMENT / COMPARISON SCENARIO WORKBOOK (D26) — SCENARIO_WORKBOOK.xlsx
 #
-# A live workbook the buyer can PLAY on, generated from the sealed records:
-#   * Summary          — cycle/strategy header + the A-G scenario spend table.
-#   * Scored Bids      — per bid: names + the 5 factors + RecScore + eligible?.
-#   * Allocation (Rec B) — per cell: recommended supplier + $/case + volume + savings.
-#   * Custom Scenario  — THE INTERACTIVE TAB. One row per (DC x lot x item x TF) cell
-#                        with a data-validation DROPDOWN of the eligible suppliers (by
-#                        NAME) and LIVE Excel formulas: the chosen supplier's $/case is
-#                        looked up from the hidden `_Prices` grid (SUMIFS over a key
-#                        column), line spend = price x volume, and everything rolls to a
-#                        TOTAL spend + savings-vs-baseline + a per-DC cap-breach flag
-#                        (distinct suppliers per DC > max_sup_dc). Pre-filled with
-#                        Scenario B's picks so it opens on the recommendation; changing
-#                        any dropdown recomputes live.
-#   * _Prices (hidden) — the supplier x cell price grid the formulas reference.
+# The team-alignment tool — the comparison surfaces buyers/category/sourcing work through to
+# DECIDE in the alignment call (D26), NOT a flat summary. Generated from the sealed records:
+#   * Summary             — the headline: cycle/strategy + the A-vs-B alignment call + a guide.
+#   * Scenario Comparison — the lenses A-G SIDE BY SIDE (which lens): spend, Δ between lenses,
+#                           savings vs baseline / vs STLY, supplier count, cap-breaches, # cells;
+#                           A (benchmark) + B (recommendation) highlighted. Below it a PER-DC
+#                           MATRIX (DCs down, scenarios across → spend + supplier mix) so the team
+#                           sees WHERE the lenses differ.
+#   * Supplier Comparison — THE CENTERPIECE (the v3 FOB comparison). One row per (DC x lot x item
+#                           x TF) cell with demand, baseline + incumbent $/case, then ONE COLUMN
+#                           PER SUPPLIER (all-in $/case, blank if no bid). The MIN per row is
+#                           highlighted (best price); incumbent + recommended pick flagged. Min
+#                           $/case, Recommended supplier + RecScore, then a second block = cost
+#                           impact vs baseline % per supplier (the premium each carries). The
+#                           competitive picture the team scans to compare suppliers per cell.
+#   * Custom Scenario     — THE INTERACTIVE TAB (D25). One row per cell with a data-validation
+#                           DROPDOWN of the eligible suppliers (by NAME) and LIVE formulas: the
+#                           chosen supplier's $/case (SUMIFS over the hidden `_Prices` grid), vs Min
+#                           / vs Incumbent / vs Baseline %, line spend = price x volume; everything
+#                           rolls to a TOTAL spend + savings-vs-baseline + a per-DC cap-breach flag.
+#                           Pre-filled with Scenario B; changing any dropdown recomputes live.
+#   * Scored Bids         — per bid: names + the 5 factors + RecScore + eligible?.
+#   * _Prices (hidden)    — the supplier x cell price grid + per-cell Min/Incumbent/Baseline
+#                           reference grid the live formulas reference.
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class CellInfo:
-    """One (DC x lot x item x TF) allocation cell, resolved to names + economics."""
+    """One (DC x lot x item x TF) allocation cell, resolved to names + the competitive picture.
+
+    The unit the Supplier Comparison + Custom Scenario tabs are built on: every eligible supplier's
+    $/case side by side, the recommended pick + its RecScore, the incumbent, and the baseline — the
+    v3 FOB-comparison the team debates per cell (D26).
+    """
 
     dc_id: str
     lot_id: str
@@ -1414,9 +1440,12 @@ class CellInfo:
     tf_name: str
     volume: Decimal  # projected period cases for the cell
     baseline_price: Decimal  # incumbent routing baseline $/case
+    incumbent_name: str  # the incumbent supplier NAME for this DC x lot (reference point)
     eligible_suppliers: list[str]  # supplier NAMES eligible for this cell (dropdown list)
     rec_supplier: str  # Scenario B recommended supplier NAME (the pre-filled pick)
+    rec_score: Decimal  # the recommended pick's RecScore (0-100)
     price_by_supplier: dict[str, Decimal]  # supplier NAME -> $/case for this cell
+    score_by_supplier: dict[str, Decimal]  # supplier NAME -> RecScore for this cell
 
 
 def _gather_cells(
@@ -1426,11 +1455,12 @@ def _gather_cells(
     final_round_id: str,
     award: SelectedAward,
 ) -> list[CellInfo]:
-    """Resolve every allocation cell to names + the price grid + eligibility + the B pick.
+    """Resolve every allocation cell to names + the competitive picture (the v3 FOB comparison).
 
-    Prices come from the FINAL-round `bid.bid_line` rows (the priced reality the engine
-    scored); eligibility comes from `eng.bid_score.is_eligible`; the B pick comes from the
-    selected award. All by KEY (D21); all rendered by NAME (D23).
+    Prices come from the FINAL-round `bid.bid_line` rows (the priced reality the engine scored);
+    eligibility + RecScore come from `eng.bid_score`; the B pick comes from the selected award; the
+    incumbent comes from the seed. All by KEY (D21); all rendered by NAME (D23). The result is what
+    the Supplier Comparison + Custom Scenario tabs are built on.
     """
 
     dc_name = {dc.id: dc.name for dc in seeded.dcs}
@@ -1455,22 +1485,29 @@ def _gather_cells(
         if price is not None:
             price_by[(sup_id, dc_id, lot_id, tf_id)] = Decimal(str(price))
 
-    # Eligibility per (supplier, dc, lot, tf) from the sealed scores.
-    elig_rows = session.execute(
+    # Eligibility + RecScore per (supplier, dc, lot, tf) from the sealed scores.
+    score_rows = session.execute(
         text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, is_eligible "
+            "SELECT supplier_id, dc_id, lot_id, tf_id, is_eligible, rec_score "
             "FROM eng.bid_score WHERE analysis_run_id = :run"
         ),
         {"run": analysis_run_id},
     ).all()
-    eligible_by: dict[tuple[str, str, str, str], bool] = {
-        (s, d, lo, t): bool(e) for s, d, lo, t, e in elig_rows
-    }
+    eligible_by: dict[tuple[str, str, str, str], bool] = {}
+    recscore_by: dict[tuple[str, str, str, str], Decimal] = {}
+    for s, d, lo, t, e, rs in score_rows:
+        eligible_by[(s, d, lo, t)] = bool(e)
+        recscore_by[(s, d, lo, t)] = Decimal(str(rs))
 
     # The Scenario B recommended supplier per cell (the pre-filled dropdown pick).
     rec_by_cell = {
         (c.dc_id, c.lot_id, c.tf_id): sup_name.get(c.supplier_id, c.supplier_id[:6])
         for c in award.cells
+    }
+    # Incumbent supplier name per (dc, lot) — a reference point throughout (D26).
+    incumbent_name_by = {
+        (dc_id, lot_id): sup_name.get(sup_id, sup_id[:6])
+        for (dc_id, lot_id), sup_id in seeded.incumbent_by_dc_lot.items()
     }
 
     cells: list[CellInfo] = []
@@ -1478,6 +1515,7 @@ def _gather_cells(
         key_t = (c.dc_id, c.lot_id, c.tf_id)
         # Suppliers that BOTH priced this cell AND scored eligible -> the valid dropdown.
         price_map: dict[str, Decimal] = {}
+        score_map: dict[str, Decimal] = {}
         eligible_names: list[str] = []
         for sup in seeded.suppliers:
             p = price_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
@@ -1485,6 +1523,9 @@ def _gather_cells(
                 continue
             name = sup_name.get(sup.id, sup.id[:6])
             price_map[name] = p
+            sc = recscore_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
+            if sc is not None:
+                score_map[name] = sc
             if eligible_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id), False):
                 eligible_names.append(name)
         # Always include the recommended pick even if the gate marked it ineligible elsewhere.
@@ -1500,6 +1541,7 @@ def _gather_cells(
             f"{dc_code.get(c.dc_id, c.dc_id[:4])}|{lot_code.get(c.lot_id, c.lot_id[:4])}|"
             f"{tf_code.get(c.tf_id, c.tf_id[:4])}"
         )
+        rec_name = rec or (eligible_names[0] if eligible_names else "")
         cells.append(
             CellInfo(
                 dc_id=c.dc_id,
@@ -1513,9 +1555,12 @@ def _gather_cells(
                 tf_name=tf_name.get(c.tf_id, c.tf_id[:6]),
                 volume=c.period_cases,
                 baseline_price=c.routing_baseline,
+                incumbent_name=incumbent_name_by.get((c.dc_id, c.lot_id), ""),
                 eligible_suppliers=eligible_names,
-                rec_supplier=rec or (eligible_names[0] if eligible_names else ""),
+                rec_supplier=rec_name,
+                rec_score=score_map.get(rec_name, Decimal("0")),
                 price_by_supplier=price_map,
+                score_by_supplier=score_map,
             )
         )
     # Stable, readable order.
@@ -1523,65 +1568,471 @@ def _gather_cells(
     return cells
 
 
+# ---------------------------------------------------------------------------
+# Scenario-comparison data — the "which lens" side-by-side, per DC + total (D26).
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ScenarioRollup:
+    """One lens rolled up for the side-by-side: spend, deltas, savings, counts, breaches (D26)."""
+
+    code: str
+    label: str
+    total_spend: Decimal
+    delta_vs_a: Decimal  # Δ vs A (lowest-cost benchmark)
+    savings_vs_baseline_frac: Decimal  # vs incumbent-routing baseline
+    savings_vs_stly_frac: Decimal  # vs synthesized prior-year baseline (STLY proxy)
+    n_suppliers: int
+    n_cap_breaches: int
+    n_cells: int
+    spend_by_dc: dict[str, Decimal]  # dc_name -> lens spend at that DC
+    suppliers_by_dc: dict[str, str]  # dc_name -> recommended supplier names at that DC
+
+
+# Synthesized STLY (Same-Time-Last-Year) uplift: with no STLY feed we model last year's actual-paid
+# as a small uplift over this cycle's incumbent-routing baseline, so "Savings vs STLY" is a clearly-
+# labelled SYNTHETIC reference, not a real feed (D11 actual-paid baseline; D26 reference points).
+_STLY_UPLIFT = Decimal("1.04")  # prior-year actual-paid modeled ~4% above this year's baseline
+
+
+def _gather_scenario_rollups(
+    session: Session,
+    seeded: SeededCycle,
+    scenarios: list[AnalysisScenario],
+    analysis_run_id: str,
+) -> tuple[list[ScenarioRollup], Decimal, Decimal]:
+    """Roll every lens up to the side-by-side comparison + per-DC matrix (D26).
+
+    Returns (rollups A-G ordered, baseline total spend, STLY total spend). Spend, supplier
+    count, cap-breaches and per-DC spend/supplier mix all come from the persisted
+    `eng.analysis_scenario_award` rows; the baseline + STLY totals are derived from the seeded
+    incumbent routing (STLY = a clearly-labelled synthetic prior-year uplift).
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+
+    # Volume per (dc, lot, tf) cell to weight award spend (price * cases * share).
+    vol_by_cell = dict(seeded.period_cases_by_cell)
+
+    # Baseline (incumbent routing) total spend across all cells, and the STLY proxy total.
+    baseline_total = Decimal("0")
+    for (dc_id, lot_id, _tf_id), cases in vol_by_cell.items():
+        baseline_total += seeded.incumbent_routing.get((dc_id, lot_id), Decimal("0")) * cases
+    stly_total = (baseline_total * _STLY_UPLIFT).quantize(Decimal("0.01"))
+
+    rows = session.execute(
+        text(
+            "SELECT s.scenario_code, a.dc_id, a.lot_id, a.tf_id, a.supplier_id, "
+            "a.volume_share, a.awarded_price, a.cap_breach_flag "
+            "FROM eng.analysis_scenario_award a "
+            "JOIN eng.analysis_scenario s ON s.analysis_scenario_id = a.analysis_scenario_id "
+            "WHERE s.analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+
+    # Accumulate per scenario: spend, per-DC spend, per-DC supplier set, suppliers, breaches, cells.
+    spend_by: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    dc_spend_by: dict[str, dict[str, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0"))
+    )
+    dc_sups_by: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    sups_by: dict[str, set[str]] = defaultdict(set)
+    breaches_by: dict[str, int] = defaultdict(int)
+    cells_by: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+    for code, dc_id, lot_id, tf_id, supplier_id, share, price, breach in rows:
+        cases = vol_by_cell.get((dc_id, lot_id, tf_id), Decimal("1"))
+        line = Decimal(str(price)) * cases * Decimal(str(share))
+        dcn = dc_name.get(dc_id, dc_id[:6])
+        name = sup_name.get(supplier_id, supplier_id[:6])
+        spend_by[code] += line
+        dc_spend_by[code][dcn] += line
+        dc_sups_by[code][dcn].add(name)
+        sups_by[code].add(name)
+        cells_by[code].add((dc_id, lot_id, tf_id))
+        if breach:
+            breaches_by[code] += 1
+
+    a_spend = spend_by.get("A", Decimal("0"))
+    rollups: list[ScenarioRollup] = []
+    for s in sorted(scenarios, key=lambda x: x.scenario_code):
+        code = s.scenario_code
+        spend = spend_by.get(code, Decimal("0"))
+        sv_base = (
+            (baseline_total - spend) / baseline_total if baseline_total > 0 else Decimal("0")
+        )
+        sv_stly = (stly_total - spend) / stly_total if stly_total > 0 else Decimal("0")
+        rollups.append(
+            ScenarioRollup(
+                code=code,
+                label=s.label,
+                total_spend=spend,
+                delta_vs_a=spend - a_spend,
+                savings_vs_baseline_frac=sv_base,
+                savings_vs_stly_frac=sv_stly,
+                n_suppliers=len(sups_by.get(code, set())),
+                n_cap_breaches=breaches_by.get(code, 0),
+                n_cells=len(cells_by.get(code, set())),
+                spend_by_dc=dict(dc_spend_by.get(code, {})),
+                suppliers_by_dc={
+                    dcn: ", ".join(sorted(s for s in names if s))
+                    for dcn, names in dc_sups_by.get(code, {}).items()
+                },
+            )
+        )
+    return rollups, baseline_total, stly_total
+
+
 def _write_summary_tab(
     wb: Workbook,
     seeded: SeededCycle,
     config: EngineConfig,
-    scenarios: list[AnalysisScenario],
+    rollups: list[ScenarioRollup],
 ) -> None:
-    """Summary tab — cycle/strategy header + the A-G scenario spend comparison."""
+    """Summary tab — the headline: cycle/strategy + the A-vs-B alignment call (D26)."""
 
     ws = wb.active
     assert ws is not None  # noqa: S101
     ws.title = "Summary"
 
-    spend_by_code = {s.scenario_code: s.objective_total_spend for s in scenarios}
-    baseline = spend_by_code.get("A")  # lowest-cost reference benchmark
+    by_code = {r.code: r for r in rollups}
+    rec = by_code.get("B")
+    bench = by_code.get("A")
+    headline = "—"
+    if rec is not None and bench is not None and bench.total_spend > 0:
+        delta_pct = (rec.total_spend - bench.total_spend) / bench.total_spend * Decimal("100")
+        direction = "above" if delta_pct >= 0 else "below"
+        headline = (
+            f"Recommendation = Scenario B ({rec.label}): "
+            f"${rec.total_spend:,.0f} spend, {rec.savings_vs_baseline_frac * 100:.1f}% vs "
+            f"baseline, {abs(delta_pct):.1f}% {direction} the Scenario A lowest-cost benchmark "
+            f"(${bench.total_spend:,.0f}) — the risk-adjusted premium for coverage/continuity."
+        )
 
     columns = [
-        Col("Lens", 8),
-        Col("Scenario", 34),
-        Col("Objective Spend (synthetic)", 26, NUMFMT_MONEY),
-        Col("Δ vs A (lowest-cost)", 20, NUMFMT_MONEY),
-        Col("Δ vs A %", 14, NUMFMT_PCT),
+        Col("Item", 34),
+        Col("Value", 60),
     ]
-    header_row = 6  # banner rows 1-5 (extra strategy lines)
+    header_row = 6  # banner rows 1-5
+    rows_data: list[tuple[str, str]] = [
+        ("Cycle", f"{seeded.cycle_code} — {seeded.cycle_name}"),
+        (
+            "Scope",
+            f"{len(seeded.dcs)} DCs × {len(seeded.lots)} lots × {len(seeded.tfs)} timeframes; "
+            f"{len(seeded.suppliers)} invited suppliers",
+        ),
+        (
+            "Strategy",
+            f"{config.preset.value} preset · weights P{config.weight_price}/"
+            f"Cov{config.weight_coverage}/Hist{config.weight_historical}/Z{config.weight_zrisk}/"
+            f"Cont{config.weight_continuity} · max {config.max_sup_dc} suppliers/DC",
+        ),
+        ("Headline (A vs B)", headline),
+        (
+            "How to use this workbook",
+            "Supplier Comparison = every supplier per cell side by side (the price debate). "
+            "Scenario Comparison = the lenses side by side (which lens). "
+            "Custom Scenario = override per cell, watch spend/savings recompute live.",
+        ),
+    ]
     row = header_row + 1
-    n_rows = 0
-    for s in sorted(scenarios, key=lambda x: x.scenario_code):
-        spend = s.objective_total_spend
-        delta = (spend - baseline) if (spend is not None and baseline is not None) else None
-        delta_pct = (
-            (spend - baseline) / baseline
-            if (spend is not None and baseline is not None and baseline > 0)
-            else None
-        )
-        ws.cell(row=row, column=1, value=s.scenario_code)
-        ws.cell(row=row, column=2, value=s.label)
-        ws.cell(row=row, column=3, value=float(spend) if spend is not None else None)
-        ws.cell(row=row, column=4, value=float(delta) if delta is not None else None)
-        ws.cell(row=row, column=5, value=float(delta_pct) if delta_pct is not None else None)
+    for label, value in rows_data:
+        c1 = ws.cell(row=row, column=1, value=label)
+        c1.font = _TOTAL_FONT
+        c1.alignment = _LEFT
+        c1.border = _BORDER
+        c2 = ws.cell(row=row, column=2, value=value)
+        c2.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        c2.border = _BORDER
+        ws.row_dimensions[row].height = 30
         row += 1
-        n_rows += 1
 
     format_table(
         ws,
         title=f"SCENARIO WORKBOOK — {seeded.cycle_name}",
         subtitle_lines=[
-            f"Strategy: {config.preset.value} · weights "
-            f"P{config.weight_price}/Cov{config.weight_coverage}/Hist{config.weight_historical}"
-            f"/Z{config.weight_zrisk}/Cont{config.weight_continuity} · "
-            f"max {config.max_sup_dc} suppliers/DC",
+            "ALIGNMENT / COMPARISON tool (D26) — what the team works through to DECIDE, "
+            "not a final summary.",
             f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
             f"{DECISION_SUPPORT_STRAP}",
-            "Scenario A = lowest-cost benchmark (never auto-applied). "
-            "Scenario B = risk-adjusted recommendation. Play on the Custom Scenario tab.",
         ],
         columns=columns,
-        n_body_rows=n_rows,
+        n_body_rows=len(rows_data),
+        header_row=header_row,
+        add_total=False,
+        add_autofilter=False,
+    )
+
+
+def _write_scenario_comparison_tab(
+    wb: Workbook,
+    rollups: list[ScenarioRollup],
+    baseline_total: Decimal,
+    stly_total: Decimal,
+    dc_names: list[str],
+) -> None:
+    """Scenario Comparison tab — the lenses SIDE BY SIDE + a per-DC matrix (D26 "which lens").
+
+    Top block: rows = scenarios A-G (+ a Custom row pointing at the Custom Scenario tab); columns =
+    Label, Total spend, Δ vs A (lowest-cost), Savings vs baseline %, Savings vs STLY %, # suppliers,
+    # cap-breaches, # cells. A (benchmark) and B (recommendation) rows are highlighted. Below it: a
+    per-DC matrix (DCs down, scenarios across → spend) so the team sees WHERE lenses differ.
+    """
+
+    ws = wb.create_sheet("Scenario Comparison")
+
+    columns = [
+        Col("Lens", 7),
+        Col("Scenario (label)", 30),
+        Col("Total Spend", 16, NUMFMT_MONEY),
+        Col("Δ vs A (lowest-cost)", 18, NUMFMT_MONEY),
+        Col("Savings vs Baseline", 16, NUMFMT_PCT),
+        Col("Savings vs STLY*", 16, NUMFMT_PCT),
+        Col("# Suppliers", 11, NUMFMT_INT),
+        Col("# Cap-Breaches", 13, NUMFMT_INT),
+        Col("# Cells", 9, NUMFMT_INT),
+    ]
+    header_row = 6
+    body_start = header_row + 1
+    row = body_start
+    for r in rollups:
+        ws.cell(row=row, column=1, value=r.code)
+        ws.cell(row=row, column=2, value=r.label)
+        ws.cell(row=row, column=3, value=float(r.total_spend))
+        ws.cell(row=row, column=4, value=float(r.delta_vs_a))
+        ws.cell(row=row, column=5, value=float(r.savings_vs_baseline_frac))
+        ws.cell(row=row, column=6, value=float(r.savings_vs_stly_frac))
+        ws.cell(row=row, column=7, value=r.n_suppliers)
+        ws.cell(row=row, column=8, value=r.n_cap_breaches)
+        ws.cell(row=row, column=9, value=r.n_cells)
+        row += 1
+    # A "Custom" row — its live values live on the Custom Scenario tab (pointer, not a number).
+    custom_row = row
+    ws.cell(row=custom_row, column=1, value="Cust")
+    ws.cell(row=custom_row, column=2, value="Custom build (see Custom Scenario tab — live)")
+    for col in range(3, 10):
+        ws.cell(row=custom_row, column=col, value="→ Custom Scenario")
+    n_body = (custom_row - body_start) + 1
+
+    format_table(
+        ws,
+        title="SCENARIO COMPARISON — the lenses side by side (which lens do we align on?)",
+        subtitle_lines=[
+            "Each row is a lens A-G. Compare spend, the Δ between lenses, savings vs baseline / "
+            "vs STLY, supplier count + cap-breaches. A = benchmark (peach), B = recommendation "
+            "(blue).",
+            "*Savings vs STLY uses a SYNTHESIZED prior-year baseline (no STLY feed in the demo: "
+            f"prior-year actual-paid modeled ~{(_STLY_UPLIFT - 1) * 100:.0f}% over this year's "
+            "incumbent routing). Clearly labelled synthetic.",
+            f"SYNTHETIC · baseline ${baseline_total:,.0f} · STLY* ${stly_total:,.0f} · "
+            f"{DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=n_body,
         header_row=header_row,
         add_total=False,
     )
+
+    # Highlight the benchmark (A) and recommendation (B) rows across the table.
+    span = len(columns)
+    for off, r in enumerate(rollups):
+        if r.code in ("A", "B"):
+            fill = _BENCH_FILL if r.code == "A" else _REC_FILL
+            for col in range(1, span + 1):
+                ws.cell(row=body_start + off, column=col).fill = fill
+
+    # --- Per-DC matrix below the top block: DCs down, scenarios across → spend (D26). ---
+    matrix_title_row = custom_row + 2
+    tcell = ws.cell(
+        row=matrix_title_row,
+        column=1,
+        value="PER-DC MATRIX — where the lenses differ (spend per DC × scenario)",
+    )
+    tcell.font = _TITLE_FONT
+    tcell.fill = _TITLE_FILL
+    tcell.alignment = _LEFT
+    ws.merge_cells(
+        start_row=matrix_title_row, start_column=1, end_row=matrix_title_row, end_column=span
+    )
+    for col in range(1, span + 1):
+        ws.cell(row=matrix_title_row, column=col).fill = _TITLE_FILL
+
+    # Matrix header: DC | A | B | ... | G | + supplier mix note row beneath each DC.
+    mh_row = matrix_title_row + 1
+    ws.cell(row=mh_row, column=1, value="DC").font = _HEADER_FONT
+    ws.cell(row=mh_row, column=1).fill = _HEADER_FILL
+    ws.cell(row=mh_row, column=1).alignment = _WRAP_CENTER
+    ws.cell(row=mh_row, column=1).border = _BORDER
+    for ci, r in enumerate(rollups, start=2):
+        hc = ws.cell(row=mh_row, column=ci, value=f"{r.code} spend")
+        hc.font = _HEADER_FONT
+        hc.fill = _HEADER_FILL
+        hc.alignment = _WRAP_CENTER
+        hc.border = _BORDER
+    ws.row_dimensions[mh_row].height = 26
+
+    mrow = mh_row + 1
+    for dcn in dc_names:
+        dcell = ws.cell(row=mrow, column=1, value=dcn)
+        dcell.alignment = _LEFT
+        dcell.border = _BORDER
+        dcell.font = _TOTAL_FONT
+        for ci, r in enumerate(rollups, start=2):
+            spend = r.spend_by_dc.get(dcn, Decimal("0"))
+            sc = ws.cell(row=mrow, column=ci, value=float(spend))
+            sc.number_format = NUMFMT_MONEY
+            sc.alignment = _CENTER
+            sc.border = _BORDER
+            if r.code == "A":
+                sc.fill = _BENCH_FILL
+            elif r.code == "B":
+                sc.fill = _REC_FILL
+        mrow += 1
+        # Supplier-mix sub-row (which suppliers each lens uses at this DC).
+        mixcell = ws.cell(row=mrow, column=1, value=f"   ↳ {dcn} supplier mix")
+        mixcell.alignment = _LEFT
+        mixcell.font = _SUBTITLE_FONT
+        for ci, r in enumerate(rollups, start=2):
+            mix = r.suppliers_by_dc.get(dcn, "")
+            mc = ws.cell(row=mrow, column=ci, value=mix)
+            mc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            mc.font = _SUBTITLE_FONT
+            mc.border = _BORDER
+        ws.row_dimensions[mrow].height = 24
+        mrow += 1
+
+
+def _write_supplier_comparison_tab(
+    wb: Workbook,
+    config: EngineConfig,
+    cells: list[CellInfo],
+    seeded: SeededCycle,
+) -> None:
+    """Supplier Comparison tab — THE CENTERPIECE: every supplier per cell side by side (D26).
+
+    Rows = each (DC × lot × item × TF) cell with demand, Baseline $/case, Incumbent $/case. Then one
+    $/case column PER SUPPLIER (blank if no bid). Conditional formatting highlights the MIN per row
+    (best price). Then Min $/case, Recommended supplier, RecScore, and a SECOND block = cost-impact-
+    vs-baseline % per supplier (the premium each supplier carries). Incumbent + recommended flagged.
+    This is the v3 FOB comparison the team scans to compare suppliers per cell.
+    """
+
+    ws = wb.create_sheet("Supplier Comparison")
+
+    # Supplier order = the seeded order (stable, readable). One $/case column per supplier.
+    sup_order = [sup.name for sup in seeded.suppliers]
+    n_sup = len(sup_order)
+
+    # Fixed lead columns, then n_sup price columns, then Min / Rec / RecScore,
+    # then n_sup cost-impact columns.
+    lead = [
+        Col("DC", 16),
+        Col("Lot", 20),
+        Col("Item", 22),
+        Col("Timeframe", 16),
+        Col("Demand (cases)", 13, NUMFMT_INT, total="sum"),
+        Col("Baseline $/case", 14, NUMFMT_MONEY),
+        Col("Incumbent", 22),
+        Col("Incumbent $/case", 14, NUMFMT_MONEY),
+    ]
+    price_cols = [Col(name, 14, NUMFMT_MONEY) for name in sup_order]
+    mid = [
+        Col("Min $/case", 13, NUMFMT_MONEY),
+        Col("Recommended", 22),
+        Col("RecScore", 10, NUMFMT_INT),
+    ]
+    impact_cols = [Col(f"{name} (impact)", 13, NUMFMT_PCT) for name in sup_order]
+    columns = lead + price_cols + mid + impact_cols
+
+    n_lead = len(lead)
+    price_start_col = n_lead + 1  # 1-based col of the first supplier price column
+    price_end_col = price_start_col + n_sup - 1
+    min_col = price_end_col + 1
+    rec_col = min_col + 1
+    recscore_col = rec_col + 1
+    impact_start_col = recscore_col + 1
+
+    header_row = 7
+    body_start = header_row + 1
+    row = body_start
+    for c in cells:
+        prices = [c.price_by_supplier.get(name) for name in sup_order]
+        present = [p for p in prices if p is not None]
+        min_price = min(present) if present else None
+        inc_price = c.price_by_supplier.get(c.incumbent_name)
+
+        ws.cell(row=row, column=1, value=c.dc_name)
+        ws.cell(row=row, column=2, value=c.lot_name)
+        ws.cell(row=row, column=3, value=c.item_name)
+        ws.cell(row=row, column=4, value=c.tf_name)
+        ws.cell(row=row, column=5, value=float(c.volume))
+        ws.cell(row=row, column=6, value=float(c.baseline_price))
+        ws.cell(row=row, column=7, value=c.incumbent_name)
+        ws.cell(row=row, column=8, value=float(inc_price) if inc_price is not None else None)
+        for i, p in enumerate(prices):
+            cell = ws.cell(row=row, column=price_start_col + i)
+            cell.value = float(p) if p is not None else None
+            # Mark the recommended pick's price cell + the incumbent's price cell.
+            if sup_order[i] == c.rec_supplier and p is not None:
+                cell.fill = _REC_PICK_FILL
+                cell.font = Font(bold=True, color="1F3864")
+            elif sup_order[i] == c.incumbent_name and p is not None:
+                cell.fill = _INCUMBENT_FILL
+        ws.cell(row=row, column=min_col, value=float(min_price) if min_price is not None else None)
+        ws.cell(row=row, column=rec_col, value=c.rec_supplier)
+        ws.cell(row=row, column=recscore_col, value=float(c.rec_score))
+        # Cost-impact vs baseline % per supplier (positive = premium over baseline).
+        for i, p in enumerate(prices):
+            cell = ws.cell(row=row, column=impact_start_col + i)
+            if p is not None and c.baseline_price > 0:
+                cell.value = float((p - c.baseline_price) / c.baseline_price)
+        row += 1
+
+    format_table(
+        ws,
+        title="SUPPLIER COMPARISON — every supplier per cell, side by side (the FOB comparison)",
+        subtitle_lines=[
+            "Each row = one DC × lot × item × TF cell. Left block = each supplier's all-in "
+            "$/case (blank = no bid). GREEN = lowest (best) price per row. Recommended pick = "
+            "bold blue; incumbent = amber.",
+            "Right block = cost impact vs baseline % per supplier (the premium each carries). "
+            "Min $/case, Recommended supplier + RecScore in the middle.",
+            f"SYNTHETIC · {n_sup} suppliers · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(cells),
+        header_row=header_row,
+    )
+
+    body_end = body_start + len(cells) - 1
+    # Conditional formatting: highlight the MIN price per row across the supplier price columns.
+    if cells:
+        first_letter = get_column_letter(price_start_col)
+        last_letter = get_column_letter(price_end_col)
+        price_range = f"{first_letter}{body_start}:{last_letter}{body_end}"
+        # Per-row MIN: the cell equals the row's min over the supplier price block (ignores blanks
+        # via MIN). Anchored so the formula slides per row but the row's range is absolute-column.
+        min_formula = (
+            f"AND({first_letter}{body_start}<>\"\","
+            f"{first_letter}{body_start}=MIN(${first_letter}{body_start}:${last_letter}{body_start}))"
+        )
+        ws.conditional_formatting.add(
+            price_range,
+            FormulaRule(formula=[min_formula], fill=_MIN_FILL, font=_MIN_FONT, stopIfTrue=False),
+        )
+        # Conditional formatting on the impact block: premiums >12% (the eligibility ceiling) red.
+        imp_first = get_column_letter(impact_start_col)
+        imp_last = get_column_letter(impact_start_col + n_sup - 1)
+        impact_range = f"{imp_first}{body_start}:{imp_last}{body_end}"
+        ws.conditional_formatting.add(
+            impact_range,
+            CellIsRule(
+                operator="greaterThan",
+                formula=[str(float(config.global_premium_threshold))],
+                fill=_BREACH_FILL,
+                font=_BREACH_FONT,
+            ),
+        )
 
 
 def _write_scored_bids_tab(
@@ -1666,67 +2117,17 @@ def _write_scored_bids_tab(
     )
 
 
-def _write_allocation_tab(
-    wb: Workbook,
-    cells: list[CellInfo],
-) -> None:
-    """Allocation (Rec B) tab — per cell: recommended supplier, $/case, volume, savings, flags."""
-
-    ws = wb.create_sheet("Allocation (Rec B)")
-    columns = [
-        Col("DC", 18),
-        Col("Lot", 22),
-        Col("Item", 24),
-        Col("Timeframe", 20),
-        Col("Recommended Supplier", 26),
-        Col("Awarded $/case", 15, NUMFMT_MONEY),
-        Col("Period Cases", 14, NUMFMT_INT, total="sum"),
-        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
-        Col("Baseline $/case", 15, NUMFMT_MONEY),
-        Col("Savings vs Baseline", 16, NUMFMT_PCT),
-    ]
-    header_row = 5
-    row = header_row + 1
-    for c in cells:
-        price = c.price_by_supplier.get(c.rec_supplier, Decimal("0"))
-        savings = (
-            (c.baseline_price - price) / c.baseline_price if c.baseline_price > 0 else Decimal("0")
-        )
-        ws.cell(row=row, column=1, value=c.dc_name)
-        ws.cell(row=row, column=2, value=c.lot_name)
-        ws.cell(row=row, column=3, value=c.item_name)
-        ws.cell(row=row, column=4, value=c.tf_name)
-        ws.cell(row=row, column=5, value=c.rec_supplier)
-        ws.cell(row=row, column=6, value=float(price))
-        ws.cell(row=row, column=7, value=float(c.volume))
-        ws.cell(row=row, column=8, value=float(price * c.volume))
-        ws.cell(row=row, column=9, value=float(c.baseline_price))
-        ws.cell(row=row, column=10, value=float(savings))
-        row += 1
-
-    format_table(
-        ws,
-        title="ALLOCATION — Scenario B (risk-adjusted recommendation)",
-        subtitle_lines=[
-            "One row per DC × lot × item × timeframe cell, with the recommended supplier "
-            "and its awarded economics.",
-            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
-        ],
-        columns=columns,
-        n_body_rows=len(cells),
-        header_row=header_row,
-    )
-
-
 def _write_prices_helper(
     wb: Workbook,
     cells: list[CellInfo],
 ) -> str:
-    """Hidden `_Prices` sheet: a long supplier × cell price grid the formulas SUMIFS over.
+    """Hidden `_Prices` sheet: the supplier × cell price grid + a per-cell reference grid.
 
-    Columns: Match Key | Cell Key | Supplier | $/case, where Match Key = cell_key & "@" &
-    supplier (so a single SUMIFS on Match Key resolves the chosen supplier's price for a
-    cell). Returns the sheet name.
+    Left grid (cols A-D): Match Key | Cell Key | Supplier | $/case, where Match Key = cell_key &
+    "@" & supplier (one SUMIFS on Match Key resolves the chosen supplier's price for a cell). Right
+    grid (cols F-I): Cell Key | Min $/case | Incumbent $/case | Baseline $/case — so the Custom
+    Scenario tab can show the picked price vs Min / vs Incumbent / vs Baseline LIVE. Returns the
+    sheet name.
     """
 
     sheet_name = "_Prices"
@@ -1744,7 +2145,33 @@ def _write_prices_helper(
             ws.cell(row=r, column=4, value=float(price))
             ws.cell(row=r, column=4).number_format = NUMFMT_MONEY
             r += 1
-    for col, width in (("A", 36), ("B", 18), ("C", 26), ("D", 12)):
+
+    # Right reference grid: per-cell Min / Incumbent / Baseline (the comparison anchors).
+    ws["F1"] = "Cell Key"
+    ws["G1"] = "Min $/case"
+    ws["H1"] = "Incumbent $/case"
+    ws["I1"] = "Baseline $/case"
+    rr = 2
+    for c in cells:
+        present = list(c.price_by_supplier.values())
+        min_price = min(present) if present else Decimal("0")
+        inc_price = c.price_by_supplier.get(c.incumbent_name, Decimal("0"))
+        ws.cell(row=rr, column=6, value=c.cell_key)
+        ws.cell(row=rr, column=7, value=float(min_price)).number_format = NUMFMT_MONEY
+        ws.cell(row=rr, column=8, value=float(inc_price)).number_format = NUMFMT_MONEY
+        ws.cell(row=rr, column=9, value=float(c.baseline_price)).number_format = NUMFMT_MONEY
+        rr += 1
+
+    for col, width in (
+        ("A", 36),
+        ("B", 18),
+        ("C", 26),
+        ("D", 12),
+        ("F", 18),
+        ("G", 12),
+        ("H", 16),
+        ("I", 14),
+    ):
         ws.column_dimensions[col].width = width
     ws.sheet_state = "hidden"
     return sheet_name
@@ -1771,29 +2198,37 @@ def _write_custom_scenario_tab(
     ws = wb.create_sheet("Custom Scenario")
 
     columns = [
-        Col("DC", 18),
-        Col("Lot", 22),
-        Col("Item", 24),
-        Col("Timeframe", 18),
-        Col("Supplier (change me ▼)", 26),
-        Col("$/case (live)", 14, NUMFMT_MONEY),
-        Col("Volume (cases)", 14, NUMFMT_INT, total="sum"),
-        Col("Line Spend (live)", 18, NUMFMT_MONEY, total="sum"),
-        Col("Baseline $/case", 15, NUMFMT_MONEY),
+        Col("DC", 16),
+        Col("Lot", 20),
+        Col("Item", 22),
+        Col("Timeframe", 16),
+        Col("Supplier (change me ▼)", 24),
+        Col("$/case (live)", 13, NUMFMT_MONEY),
+        Col("vs Min (live)", 12, NUMFMT_PCT),
+        Col("vs Incumbent (live)", 14, NUMFMT_PCT),
+        Col("vs Baseline (live)", 14, NUMFMT_PCT),
+        Col("Volume (cases)", 13, NUMFMT_INT, total="sum"),
+        Col("Line Spend (live)", 16, NUMFMT_MONEY, total="sum"),
+        Col("Baseline $/case", 14, NUMFMT_MONEY),
         Col("Cell Key", 16),  # the SUMIFS key (kept visible-but-narrow for traceability)
     ]
     header_row = 6  # banner rows 1-5 (instruction is prominent)
     body_start = header_row + 1
     body_end = body_start + len(cells) - 1
 
-    # Column letters used inside the live formulas.
+    # Column letters used inside the live formulas (recompute as the dropdown changes).
     col_supplier = get_column_letter(5)
     col_price = get_column_letter(6)
-    col_vol = get_column_letter(7)
-    col_spend = get_column_letter(8)
-    col_cellkey = get_column_letter(10)
+    col_vol = get_column_letter(10)
+    col_spend = get_column_letter(11)
+    col_baseline = get_column_letter(12)
+    col_cellkey = get_column_letter(13)
     p_key = f"'{prices_sheet}'!$A:$A"
     p_val = f"'{prices_sheet}'!$D:$D"
+    # The per-cell reference grid (Cell Key | Min | Incumbent | Baseline) in _Prices F:I.
+    ref_key = f"'{prices_sheet}'!$F:$F"
+    ref_min = f"'{prices_sheet}'!$G:$G"
+    ref_inc = f"'{prices_sheet}'!$H:$H"
 
     row = body_start
     for c in cells:
@@ -1811,22 +2246,49 @@ def _write_custom_scenario_tab(
                 f'=SUMIFS({p_val},{p_key},{col_cellkey}{row}&"@"&{col_supplier}{row})'
             ),
         )
+        # LIVE: picked price vs the cell's Min / Incumbent / Baseline (grounded comparisons, D26).
+        ws.cell(
+            row=row,
+            column=7,
+            value=(
+                f"=IF(SUMIFS({ref_min},{ref_key},{col_cellkey}{row})=0,0,"
+                f"({col_price}{row}-SUMIFS({ref_min},{ref_key},{col_cellkey}{row}))"
+                f"/SUMIFS({ref_min},{ref_key},{col_cellkey}{row}))"
+            ),
+        )
+        ws.cell(
+            row=row,
+            column=8,
+            value=(
+                f"=IF(SUMIFS({ref_inc},{ref_key},{col_cellkey}{row})=0,0,"
+                f"({col_price}{row}-SUMIFS({ref_inc},{ref_key},{col_cellkey}{row}))"
+                f"/SUMIFS({ref_inc},{ref_key},{col_cellkey}{row}))"
+            ),
+        )
+        ws.cell(
+            row=row,
+            column=9,
+            value=(
+                f"=IF({col_baseline}{row}=0,0,"
+                f"({col_price}{row}-{col_baseline}{row})/{col_baseline}{row})"
+            ),
+        )
         # Volume is a literal projected demand for the cell.
-        ws.cell(row=row, column=7, value=float(c.volume))
+        ws.cell(row=row, column=10, value=float(c.volume))
         # LIVE: line spend = price × volume.
-        ws.cell(row=row, column=8, value=f"={col_price}{row}*{col_vol}{row}")
-        ws.cell(row=row, column=9, value=float(c.baseline_price))
-        ws.cell(row=row, column=10, value=c.cell_key)
+        ws.cell(row=row, column=11, value=f"={col_price}{row}*{col_vol}{row}")
+        ws.cell(row=row, column=12, value=float(c.baseline_price))
+        ws.cell(row=row, column=13, value=c.cell_key)
         row += 1
 
     fmt = format_table(
         ws,
         title="CUSTOM SCENARIO — override the supplier per cell, watch it recompute LIVE",
         subtitle_lines=[
-            "▶ Change the Supplier dropdown on any row — Total Spend / Savings / "
-            "Cap-Breach update live.",
+            "▶ Change the Supplier dropdown on any row — $/case, vs Min/Incumbent/Baseline, "
+            "Total Spend, Savings + Cap-Breach all update live.",
             "Opens on Scenario B's recommendation. Dropdown lists only the eligible "
-            "suppliers for that cell (by name).",
+            "suppliers for that cell (by name). Grounded in the Supplier Comparison.",
             f"SYNTHETIC · max {config.max_sup_dc} suppliers/DC · {DECISION_SUPPORT_STRAP}",
         ],
         columns=columns,
@@ -1952,10 +2414,12 @@ def write_scenario_workbook_xlsx(
     final_round_id: str,
     award: SelectedAward,
 ) -> Path:
-    """Generate the interactive Scenario Workbook (D25) from the sealed records.
+    """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26) from the sealed records.
 
-    Tabs: Summary · Scored Bids · Allocation (Rec B) · Custom Scenario (interactive,
-    per-cell dropdowns + live formulas) · _Prices (hidden helper grid).
+    Tabs (D26): Summary (headline) · Scenario Comparison (lenses side by side + per-DC matrix) ·
+    Supplier Comparison (THE CENTERPIECE — every supplier per cell + min/impact) · Custom Scenario
+    (interactive, per-cell dropdowns + live spend/savings/cap-breach, D25) · Scored Bids ·
+    _Prices (hidden helper grid the live formulas reference).
     """
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1967,13 +2431,20 @@ def write_scenario_workbook_xlsx(
         .all()
     )
     cells = _gather_cells(session, seeded, analysis_run_id, final_round_id, award)
+    rollups, baseline_total, stly_total = _gather_scenario_rollups(
+        session, seeded, scenarios, analysis_run_id
+    )
+    dc_names = [dc.name for dc in seeded.dcs]
 
     wb = Workbook()
-    _write_summary_tab(wb, seeded, config, scenarios)
-    _write_scored_bids_tab(wb, seeded, session, analysis_run_id)
-    _write_allocation_tab(wb, cells)
+    _write_summary_tab(wb, seeded, config, rollups)
+    _write_scenario_comparison_tab(
+        wb, rollups, baseline_total, stly_total, dc_names
+    )
+    _write_supplier_comparison_tab(wb, config, cells, seeded)
     prices_sheet = _write_prices_helper(wb, cells)
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
+    _write_scored_bids_tab(wb, seeded, session, analysis_run_id)
 
     path = OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx"
     wb.save(path)
@@ -2069,8 +2540,9 @@ def main() -> None:
         print("[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
               "(one sheet per awarded supplier; presentation-formatted — D24)…")
         supplier_path = write_supplier_award_guides_xlsx(seeded, award)
-        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — interactive Custom Scenario tab "
-              "(per-cell supplier dropdowns + live spend/savings/cap-breach — D25)…")
+        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26): "
+              "Supplier Comparison (every supplier per cell + min/impact) + Scenario Comparison "
+              "(lenses side by side + per-DC matrix) + interactive Custom Scenario (D25)…")
         workbook_path = write_scenario_workbook_xlsx(
             session, seeded, config, run_result.analysis_run_id, final_round.id, award
         )
