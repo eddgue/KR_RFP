@@ -142,6 +142,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Two homes.** (1) **Production = the web UI scenario-review screen** — live, on the governed store; the right home, and it avoids the Excel live-formula fragility D12/ADR-0013 warns about. (2) **Demo/interim = a generated interactive Scenario Workbook (xlsx)** — data tables (scored bids / scenario comparison / per-cell allocation) + a Custom Scenario tab with **per-cell supplier dropdowns and live formulas** (spend/savings/cap-breach), generated from our records so the buyer can play with it now.
 **Linked:** E-23, web UI scenario-review (Phase F), v3 CUSTOM_SCENARIO, ADR-0013 (live-formula caveat), D22/D24.
 
+### D26 — The scenario workbook is an ALIGNMENT / COMPARISON tool, not a summary · **RATIFIED 2026-06-19**
+**Requirement (sponsor).** The scenario deliverable's purpose is the **team alignment tool** — what buyers/category/sourcing work through in the alignment call to *decide* — NOT a final summary. (Treat it as a first-class deliverable in its own right, independent of the eventual web app — "get the right deliverables first.") It must provide the **comparison surfaces** that make it an alignment tool, all the v3 FOB-comparison + scenario-tool capability:
+- **Across suppliers, per cell:** for each DC×lot×item×TF, **every eligible supplier side by side** — all-in/FOB $/case, the 5 factor scores + RecScore, premium vs market-low, **cost impact vs baseline / vs incumbent**, min/best highlighted, incumbent + recommended flagged. The competitive picture the team debates.
+- **Across scenarios (the lenses A–G + custom):** **side by side** — per DC and total: recommended supplier(s), spend, **savings vs baseline / vs STLY**, supplier count, cap-breaches, and the **deltas between scenarios**. So the team aligns on which lens.
+- **Interactive custom build (D25):** override per cell with live spend/savings/cap-breach, grounded in the comparisons (show the picked price vs min / incumbent / baseline).
+- **Reference points:** incumbent, baseline, STLY/Latest throughout.
+**Homes.** Deliverable now = the standalone Excel **alignment workbook** (the engine's primary analytical output). Production interactive home = the web UI scenario-review (Phase F).
+**Linked:** D25, v3 FOB-comparison/scenario-tools, intake Session 1 (alignment calls) + Session 3, E-23, ADR-0016 (strategy-agnostic).
+
 ---
 
 ## Dependencies (logistics blockers)
