@@ -704,7 +704,21 @@ class PilotService:
             ),
             {"cyc": cycle_id},
         ).scalar_one_or_none()
-        final_round_id = cycle.rounds[-1].id
+        # Signals reflect the round actually SCORED (the latest analysis run's round), not the
+        # cycle's last round — a Round-1 review must read Round 1's bids, not an empty final round.
+        scored_round_id = None
+        scored_round_no = None
+        if latest_run is not None:
+            row = session.execute(
+                text(
+                    "SELECT a.round_id, r.round_number FROM eng.analysis_run a "
+                    "JOIN cyc.cycle_round r ON r.round_id = a.round_id "
+                    "WHERE a.analysis_run_id = :run"
+                ),
+                {"run": latest_run},
+            ).one()
+            scored_round_id = row[0]
+            scored_round_no = int(row[1])
 
         lines: list[str] = [f"# Development feedback — {runpaths.slug}", ""]
         lines.append(f"_Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC from the sealed records._")
@@ -715,9 +729,10 @@ class PilotService:
 
         # --- Data quality & competition (the signals that improve the engine/invite list) ---
         lines.append("## Data quality & competition")
-        if latest_run is None:
+        if latest_run is None or scored_round_id is None:
             lines.append("- No alignment has run yet — no scoring signals.")
         else:
+            lines.append(f"_Signals from the latest scored round: **Round {scored_round_no}**._")
             flag_tally: dict[str, int] = {}
             for (gf,) in session.execute(
                 text(
@@ -730,7 +745,7 @@ class PilotService:
                     reason = reason.strip()
                     if reason:
                         flag_tally[reason] = flag_tally.get(reason, 0) + 1
-            # scope cells vs cells with a scoreable bid in the final round
+            # scope cells vs cells with a scoreable bid in the SCORED round (not the cycle's last).
             scope_cells = {(dc, lot) for (dc, lot, _tf) in cycle.period_cases_by_cell}
             covered = {
                 (r[0], r[1])
@@ -740,7 +755,7 @@ class PilotService:
                         "WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
                         "GROUP BY dc_id, lot_id"
                     ),
-                    {"cyc": cycle_id, "rnd": final_round_id},
+                    {"cyc": cycle_id, "rnd": scored_round_id},
                 ).all()
             }
             thin = {
@@ -751,16 +766,16 @@ class PilotService:
                         "WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
                         "GROUP BY dc_id, lot_id HAVING count(DISTINCT supplier_id) < 3"
                     ),
-                    {"cyc": cycle_id, "rnd": final_round_id},
+                    {"cyc": cycle_id, "rnd": scored_round_id},
                 ).all()
             }
             no_bid = scope_cells - covered
             lines.append(f"- **No-bid lots:** {len(no_bid)} of {len(scope_cells)} (DC × lot) had "
-                         "no priced final-round bid — supply-coverage gaps to chase.")
+                         f"no priced bid in Round {scored_round_no} — coverage gaps to chase.")
             lines.append(f"- **Thin competition (<3 bidders):** {len(thin)} (DC × lot) — consider "
                          "widening the invite list there; Z-scores are less reliable.")
             if flag_tally:
-                lines.append("- **Eligibility/gate flags raised (final round):**")
+                lines.append(f"- **Eligibility/gate flags raised (Round {scored_round_no}):**")
                 for reason, n in sorted(flag_tally.items(), key=lambda kv: -kv[1]):
                     lines.append(f"    - {reason}: {n}")
             else:
