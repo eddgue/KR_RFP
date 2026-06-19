@@ -101,6 +101,10 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Guardrails (binding when built).** Read-only; **RBAC/tenant-scoped** reads (only what the requesting user may see); **decision-support-only** (never auto-asserts an award; drafts pass the human + draft→sent gate G9); auditable (reads/answers logged); built on the **latest Claude models**. The governed store + event log make it a clean, trustworthy retrieval source. Implemented as E-32.
 **Linked:** E-32, Security plan (RBAC/tenancy), gap G9 (draft→sent), ADR-0006 (decision-support-only).
 
+### D17 — Reference cycle files are AS-IS evidence, not the target design · **RATIFIED 2026-06-18**
+**Clarification (sponsor).** The uploaded Field Tomatoes corpus (engine input, ingestion sheets, booking guide, raw supplier bids, etc.) is **AS-IS reference** — for understanding the logic/data and for **testing** — **not a layout to replicate.** Rule: **KEEP the technical substance** (the engine I/O contract, the bid grain + cost components, scoring config/constraints, data semantics — "the technical mumbo jumbo") and **BUILD our own** presentation: clean store, web app, generated outputs, and our **own** RFP/bid template. The supplier-facing RFP/bid template stays **multi-sheet**, but it is our design, not a copy. Generalizes ADR-0006 ("lift the logic, drop the Excel") to the whole reference corpus. The structural-findings docs map the reference → our model to *extract the contract*, never to mirror the spreadsheets.
+**Linked:** ADR-0006, ADR-0013, CYCLE_FIELDTOMATO_STRUCTURE.md, FEEDS_ITRADE.md.
+
 ---
 
 ## Dependencies (logistics blockers)
