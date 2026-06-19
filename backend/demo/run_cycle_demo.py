@@ -48,7 +48,7 @@ from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.formatting.rule import CellIsRule, FormulaRule
+from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -152,6 +152,20 @@ def _dc_region(dc_index: int) -> str:
 
     region_code = DC_NAMES[dc_index % len(DC_NAMES)][1]
     return DC_REGION_GROUP.get(region_code, "East")
+
+
+def _transit_days(sup_index: int, dc_index: int) -> int:
+    """Lane transit time (days) supplier→DC — a HIDDEN COST (freshness/lead-time risk for produce).
+
+    DEMO-illustrative: deterministic by (supplier origin, DC) so it varies per lane (2–6 days).
+    Longer transit = more shrink/freshness risk on perishable produce — a non-price consideration
+    the team weighs alongside landed cost. No schema column yet; derived here, clearly labelled.
+    """
+
+    return 2 + (sup_index * 2 + dc_index * 3) % 5
+
+
+FRESHNESS_WATCH_DAYS = 4  # transit beyond this flags a freshness/lead-time watch (hidden cost)
 
 
 def _id() -> str:
@@ -715,7 +729,14 @@ def _synthetic_price(round_idx: int, dc_idx: int, lot_idx: int, sup_idx: int) ->
     specialist = _lot_specialist(lot_idx)
     distance = abs(sup_idx - specialist)
     spread = Decimal(distance) * Decimal("0.30")  # keenest at the specialist, fanning upward
-    round_drift = Decimal(round_idx) * Decimal("0.15")  # later rounds a bit keener
+    # Round-over-round CONCESSION varies by supplier (the negotiation/fairness lens, pillar 4):
+    # the incumbent (idx 0) HOLDS the installed base (barely moves); challengers concede more,
+    # the hungriest most. This asymmetry is what "are you being treated fairly?" reads.
+    if sup_idx == 0:
+        drift_rate = Decimal("0.04")  # incumbent leans on tenure — small concession
+    else:
+        drift_rate = Decimal("0.16") + Decimal(sup_idx) * Decimal("0.02")  # challengers move more
+    round_drift = Decimal(round_idx) * drift_rate
     price = base + spread - round_drift
     return price.quantize(Decimal("0.01"))
 
@@ -1500,6 +1521,7 @@ class CellInfo:
     rec_score: Decimal  # the recommended pick's RecScore (0-100)
     price_by_supplier: dict[str, Decimal]  # supplier NAME -> $/case for this cell
     score_by_supplier: dict[str, Decimal]  # supplier NAME -> RecScore for this cell
+    transit_by_supplier: dict[str, int]  # supplier NAME -> lane transit days (hidden cost)
 
 
 def _gather_cells(
@@ -1524,6 +1546,8 @@ def _gather_cells(
     dc_code = {dc.id: dc.code for dc in seeded.dcs}
     lot_code = {lot.id: lot.code for lot in seeded.lots}
     tf_code = {tf.id: tf.code for tf in seeded.tfs}
+    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
+    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
 
     # Final-round prices per (supplier, dc, lot, tf) from the persisted bid lines.
@@ -1570,6 +1594,7 @@ def _gather_cells(
         # Suppliers that BOTH priced this cell AND scored eligible -> the valid dropdown.
         price_map: dict[str, Decimal] = {}
         score_map: dict[str, Decimal] = {}
+        transit_map: dict[str, int] = {}
         eligible_names: list[str] = []
         for sup in seeded.suppliers:
             p = price_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
@@ -1577,6 +1602,7 @@ def _gather_cells(
                 continue
             name = sup_name.get(sup.id, sup.id[:6])
             price_map[name] = p
+            transit_map[name] = _transit_days(sup_index[sup.id], dc_index[c.dc_id])
             sc = recscore_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
             if sc is not None:
                 score_map[name] = sc
@@ -1615,6 +1641,7 @@ def _gather_cells(
                 rec_score=score_map.get(rec_name, Decimal("0")),
                 price_by_supplier=price_map,
                 score_by_supplier=score_map,
+                transit_by_supplier=transit_map,
             )
         )
     # Stable, readable order.
@@ -1774,6 +1801,8 @@ class AwardDetail:
     rec_score: Decimal
     cap_breach: bool
     is_fallback: bool
+    transit_days: int  # lane transit supplier→DC (hidden cost: freshness/lead-time)
+    relationship: str  # "Preserve" (incumbent kept) | "Create" (new supplier won)
 
 
 def _gather_award_details(
@@ -1795,6 +1824,8 @@ def _gather_award_details(
     lot_name = {lot.id: lot.name for lot in seeded.lots}
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
+    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
     incumbent_name_by = {
         (dc_id, lot_id): sup_name.get(sup_id, sup_id[:6])
@@ -1842,6 +1873,8 @@ def _gather_award_details(
         item = item_for_lot.get(lot_id)
         sup_disp = sup_name.get(sup_id, sup_id[:6])
         inc_disp = incumbent_name_by.get((dc_id, lot_id), "")
+        is_inc = sup_disp == inc_disp
+        transit = _transit_days(sup_index.get(sup_id, 0), dc_index.get(dc_id, 0))
         details.append(
             AwardDetail(
                 scenario_code=code,
@@ -1869,6 +1902,8 @@ def _gather_award_details(
                 rec_score=scores[5],
                 cap_breach=bool(breach),
                 is_fallback=bool(fallback),
+                transit_days=transit,
+                relationship="Preserve" if is_inc else "Create",
             )
         )
     details.sort(
@@ -2596,6 +2631,7 @@ def _write_prices_helper(
     ws["B1"] = "Cell Key"
     ws["C1"] = "Supplier"
     ws["D1"] = "$/case"
+    ws["E1"] = "Transit (days)"
     r = 2
     for c in cells:
         for supplier, price in c.price_by_supplier.items():
@@ -2604,6 +2640,7 @@ def _write_prices_helper(
             ws.cell(row=r, column=3, value=supplier)
             ws.cell(row=r, column=4, value=float(price))
             ws.cell(row=r, column=4).number_format = NUMFMT_MONEY
+            ws.cell(row=r, column=5, value=c.transit_by_supplier.get(supplier, 0))
             r += 1
 
     # Right reference grid: per-cell Min / Incumbent / Baseline (the comparison anchors).
@@ -2671,6 +2708,7 @@ def _write_custom_scenario_tab(
         Col("Line Spend (live)", 16, NUMFMT_MONEY, total="sum"),
         Col("Baseline $/case", 14, NUMFMT_MONEY),
         Col("Cell Key", 16),  # the SUMIFS key (kept visible-but-narrow for traceability)
+        Col("Transit days (live)", 14, NUMFMT_INT),  # hidden-cost data point in the builder
     ]
     header_row = 6  # banner rows 1-5 (instruction is prominent)
     body_start = header_row + 1
@@ -2685,6 +2723,7 @@ def _write_custom_scenario_tab(
     col_cellkey = get_column_letter(13)
     p_key = f"'{prices_sheet}'!$A:$A"
     p_val = f"'{prices_sheet}'!$D:$D"
+    p_transit = f"'{prices_sheet}'!$E:$E"
     # The per-cell reference grid (Cell Key | Min | Incumbent | Baseline) in _Prices F:I.
     ref_key = f"'{prices_sheet}'!$F:$F"
     ref_min = f"'{prices_sheet}'!$G:$G"
@@ -2739,6 +2778,12 @@ def _write_custom_scenario_tab(
         ws.cell(row=row, column=11, value=f"={col_price}{row}*{col_vol}{row}")
         ws.cell(row=row, column=12, value=float(c.baseline_price))
         ws.cell(row=row, column=13, value=c.cell_key)
+        # LIVE: chosen supplier's lane transit (hidden cost) — updates with the dropdown.
+        ws.cell(
+            row=row,
+            column=14,
+            value=f'=SUMIFS({p_transit},{p_key},{col_cellkey}{row}&"@"&{col_supplier}{row})',
+        )
         row += 1
 
     fmt = format_table(
@@ -2899,6 +2944,8 @@ _DATA_COLUMNS: tuple[tuple[str, str | None], ...] = (
     ("RecScore", NUMFMT_INT),
     ("Cap-Breach", None),
     ("Fallback", None),
+    ("Transit (days)", NUMFMT_INT),
+    ("Relationship", None),
 )
 
 
@@ -2941,7 +2988,7 @@ def _write_data_pivot_tab(wb: Workbook, details: list[AwardDetail]) -> None:
             float(d.premium_vs_baseline_frac), float(d.price_score), float(d.coverage_score),
             float(d.hist_score), float(d.zrisk_score), float(d.continuity_score),
             float(d.rec_score), "Yes" if d.cap_breach else "No",
-            "Yes" if d.is_fallback else "No",
+            "Yes" if d.is_fallback else "No", d.transit_days, d.relationship,
         ]
         for ci, (val, (_h, fmt)) in enumerate(zip(vals, _DATA_COLUMNS, strict=True), start=1):
             cell = ws.cell(row=row, column=ci, value=val)
@@ -3933,6 +3980,18 @@ def _write_award_summary_tab(
     ws.cell(row=total_row, column=8).border = _BORDER
     ws.cell(row=total_row, column=8).alignment = _CENTER
 
+    # Visual cue: savings $ green when positive, red when the deal costs more (columns G, I, J).
+    body_last = body_start + len(ordered) - 1
+    for col in ("G", "I", "J"):
+        rng = f"{col}{body_start}:{col}{body_last}"
+        ws.conditional_formatting.add(
+            rng, CellIsRule(operator="greaterThan", formula=["0"], fill=_MIN_FILL, font=_MIN_FONT)
+        )
+        ws.conditional_formatting.add(
+            rng,
+            CellIsRule(operator="lessThan", formula=["0"], fill=_BREACH_FILL, font=_BREACH_FONT),
+        )
+
     # Product-type split (Conventional vs Organic) — the segmentation the real models carry.
     pt_spend: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     pt_base: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -3989,6 +4048,7 @@ class FobRow:
     delivery: Decimal
     vegcool: Decimal
     all_in: Decimal
+    transit_days: int  # lane transit (hidden cost: freshness/lead-time)
 
 
 def _gather_fob(
@@ -4006,6 +4066,8 @@ def _gather_fob(
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     dc_name = {dc.id: dc.name for dc in seeded.dcs}
     dc_region = {dc.id: _dc_region(i) for i, dc in enumerate(seeded.dcs)}
+    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
+    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
 
     rows = session.execute(
         text(
@@ -4033,6 +4095,7 @@ def _gather_fob(
                 delivery=Decimal(str(deliv)) if deliv is not None else Decimal("0"),
                 vegcool=Decimal(str(veg)) if veg is not None else Decimal("0"),
                 all_in=Decimal(str(allin)),
+                transit_days=_transit_days(sup_index.get(sup_id, 0), dc_index.get(dc_id, 0)),
             )
         )
     out.sort(key=lambda x: (x.lot_name, x.dc_name, x.all_in, x.supplier_name))
@@ -4040,16 +4103,17 @@ def _gather_fob(
 
 
 def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
-    """FOB vs All-In — freight transparency: farm-gate FOB + Delivery + VegCool = landed All-In.
+    """Landed & Hidden Costs — FOB + freight = landed, PLUS transit time (freshness/lead-time).
 
     The real models devote a whole `FOB analysis` tab (+ a separate Delivery Charge tab) to
-    stripping freight off the landed price and reading a regional min. We surface the same: each
-    bid decomposed FOB → +Delivery (lane freight, by region) → +VegCool → = All-In, with the
-    cheapest landed bid per (lot, DC) highlighted, and a regional freight summary so the buyer
-    sees WHY landed cost differs by lane. All from real `bid.bid_line` component columns.
+    stripping freight off the landed price. We surface the same AND the non-price hidden costs:
+    each bid decomposed FOB → +Delivery (lane freight, by region) → +VegCool → = All-In, the
+    cheapest landed bid per (lot, DC) highlighted, the lane **transit days** + a **freshness
+    watch** (perishable produce — a hidden cost the headline price hides), and a regional freight
+    summary. Freight from real `bid.bid_line` component columns; transit is a labelled lane proxy.
     """
 
-    ws = wb.create_sheet("FOB vs All-In")
+    ws = wb.create_sheet("Landed & Hidden Costs")
     columns: list[Col] = [
         Col("Lot", 20),
         Col("DC", 16),
@@ -4059,7 +4123,9 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
         Col("+ Delivery", 12, NUMFMT_MONEY),
         Col("+ VegCool", 12, NUMFMT_MONEY),
         Col("= All-In $/case", 14, NUMFMT_MONEY),
-        Col("Freight % of All-In", 16, NUMFMT_PCT),
+        Col("Freight % of All-In", 14, NUMFMT_PCT),
+        Col("Transit (days)", 12, NUMFMT_INT),
+        Col("Freshness", 14),
     ]
     header_row = 5
     body_start = header_row + 1
@@ -4083,6 +4149,15 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
         ws.cell(row=r, column=7, value=float(x.vegcool))
         ws.cell(row=r, column=8, value=float(x.all_in))
         ws.cell(row=r, column=9, value=float(freight_pct))
+        ws.cell(row=r, column=10, value=x.transit_days)
+        fresh = ws.cell(
+            row=r,
+            column=11,
+            value="⚠ watch" if x.transit_days > FRESHNESS_WATCH_DAYS else "ok",
+        )
+        if x.transit_days > FRESHNESS_WATCH_DAYS:
+            fresh.fill = _INCUMBENT_FILL
+            fresh.font = Font(bold=True, color="7F6000")
         if x.all_in == min_by_group[(x.lot_name, x.dc_name)]:
             for c in (4, 8):
                 ws.cell(row=r, column=c).fill = _MIN_FILL
@@ -4090,9 +4165,10 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
 
     format_table(
         ws,
-        title="FOB vs All-In — farm-gate price + freight = landed cost",
+        title="Landed & Hidden Costs — farm-gate + freight = landed, plus transit/freshness",
         subtitle_lines=[
-            "Cheapest LANDED bid per (lot, DC) highlighted green · freight = Delivery + VegCool",
+            "Cheapest LANDED bid per (lot, DC) green · freight = Delivery + VegCool · "
+            f"transit > {FRESHNESS_WATCH_DAYS}d = freshness watch (hidden cost)",
             DECISION_SUPPORT_STRAP,
         ],
         columns=columns,
@@ -4134,6 +4210,381 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
         cn.alignment = _CENTER
         cn.border = _BORDER
     ws.sheet_view.showGridLines = False
+
+
+def _write_share_relationships_tab(
+    wb: Workbook,
+    details: list[AwardDetail],
+    scenarios: list[AnalysisScenario],
+    seeded: SeededCycle,
+    config: EngineConfig,
+    rec_code: str,
+) -> None:
+    """Share & Relationships — RELATIONSHIP CAPITAL in the repeated game (pillar 3).
+
+    Each supplier's % share of total spend in EVERY scenario (a heatmap), their relationship
+    type — **Preserve** (incumbent kept) vs **Create** (new supplier earned in) — and a
+    **dependency** flag where share ≥ the concentration threshold (over-giving weakens your
+    next-round bargaining position). Below: a relationship ledger for the recommendation —
+    incumbents retained, new suppliers introduced, incumbents dropped. The structural rule —
+    reward competitiveness with business, don't build a dependency you can be pressured by.
+    """
+
+    ws = wb.create_sheet("Share & Relationships")
+    incumbent_names = {
+        seeded_sup_name(seeded, sup_id)
+        for sup_id in set(seeded.incumbent_by_dc_lot.values())
+    }
+    codes = [s.scenario_code for s in sorted(scenarios, key=lambda x: x.scenario_code)]
+    # spend per (scenario, supplier) and per scenario total.
+    spend: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))
+    scen_total: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for d in details:
+        spend[(d.scenario_code, d.supplier_name)] += d.spend
+        scen_total[d.scenario_code] += d.spend
+    suppliers = [s.name for s in seeded.suppliers]
+
+    columns: list[Col] = [Col("Supplier", 24), Col("Relationship", 13)]
+    for code in codes:
+        columns.append(Col(f"{code} share", 10, NUMFMT_PCT))
+    columns.append(Col("Max share", 11, NUMFMT_PCT))
+    columns.append(Col("Dependency?", 13))
+    header_row = 6
+    body_start = header_row + 1
+    first_scen_col = 3
+    for i, sup in enumerate(suppliers):
+        r = body_start + i
+        ws.cell(row=r, column=1, value=sup)
+        ws.cell(row=r, column=2, value="Preserve" if sup in incumbent_names else "Create")
+        shares: list[float] = []
+        for j, code in enumerate(codes):
+            tot = scen_total.get(code, Decimal("0"))
+            sh = float(spend[(code, sup)] / tot) if tot > 0 else 0.0
+            shares.append(sh)
+            ws.cell(row=r, column=first_scen_col + j, value=sh)
+        mx = max(shares) if shares else 0.0
+        ws.cell(row=r, column=first_scen_col + len(codes), value=mx)
+        dep = ws.cell(
+            row=r,
+            column=first_scen_col + len(codes) + 1,
+            value="DEPENDENCY" if mx >= float(config.conc_thresh) else "",
+        )
+        if mx >= float(config.conc_thresh):
+            dep.font = _BREACH_FONT
+            dep.fill = _BREACH_FILL
+
+    format_table(
+        ws,
+        title="Share & Relationships — who carries the business, and the relationship behind it",
+        subtitle_lines=[
+            "Preserve = incumbent kept · Create = new supplier earned in · "
+            f"Dependency = share ≥ {config.conc_thresh:.0%} (concentration risk)",
+            DECISION_SUPPORT_STRAP,
+        ],
+        columns=columns,
+        n_body_rows=len(suppliers),
+        header_row=header_row,
+        add_total=False,
+    )
+    # Heatmap across the per-scenario share columns (low=green → high=red concentration).
+    last_scen_col = get_column_letter(first_scen_col + len(codes) - 1)
+    share_end = body_start + len(suppliers) - 1
+    ws.conditional_formatting.add(
+        f"{get_column_letter(first_scen_col)}{body_start}:{last_scen_col}{share_end}",
+        ColorScaleRule(
+            start_type="num", start_value=0, start_color="FFFFFF",
+            mid_type="num", mid_value=float(config.conc_thresh), mid_color="FFEB9C",
+            end_type="num", end_value=0.6, end_color="F8696B",
+        ),
+    )
+
+    # Relationship ledger for the recommendation (Scenario B).
+    rec = [d for d in details if d.scenario_code == rec_code]
+    won = {d.supplier_name for d in rec}
+    preserved = sorted(won & incumbent_names)
+    created = sorted(won - incumbent_names)
+    dropped = sorted(incumbent_names - won)
+    sec = body_start + len(suppliers) + 2
+    title = ws.cell(
+        row=sec, column=1, value=f"Relationship ledger — Scenario {rec_code} (recommended)"
+    )
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    for c in range(1, 5):
+        ws.cell(row=sec, column=c).fill = _TITLE_FILL
+    ws.merge_cells(start_row=sec, start_column=1, end_row=sec, end_column=4)
+    ledger = [
+        ("Relationships PRESERVED (incumbent retained)", ", ".join(preserved) or "—"),
+        ("Relationships CREATED (new supplier earned in)", ", ".join(created) or "—"),
+        ("Incumbents NOT awarded (relationship at risk)", ", ".join(dropped) or "—"),
+    ]
+    for i, (label, val) in enumerate(ledger):
+        r = sec + 1 + i
+        lc = ws.cell(row=r, column=1, value=label)
+        lc.font = _TOTAL_FONT
+        lc.alignment = _LEFT
+        lc.border = _BORDER
+        vc = ws.cell(row=r, column=2, value=val)
+        vc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        vc.border = _BORDER
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
+        ws.row_dimensions[r].height = 22
+    ws.sheet_view.showGridLines = False
+
+
+@dataclass
+class _SupplierPlay:
+    """One supplier's negotiation behaviour across the rounds (reading their incentives)."""
+
+    name: str
+    role: str  # Incumbent | Challenger
+    cells: int
+    avg_move_frac: Decimal  # mean R1→final price move (negative = conceded)
+    avg_prem_frac: Decimal  # mean premium vs market-low (final round)
+    sustainability_flags: int  # below-market outliers (Z < −2) — real risk to validate
+    read: str  # the game-theoretic behavioural label
+
+
+def _gather_negotiation(
+    evo_rows: list[RoundEvoRow],
+    score_detail: list[ScoreDetail],
+    incumbent_names: set[str],
+) -> tuple[list[_SupplierPlay], Decimal, Decimal]:
+    """Read each supplier's negotiation behaviour from observable moves (asymmetric-info frame).
+
+    Concession = the R1→final price move (from `RoundEvoRow`); market position = premium-vs-low +
+    Z-score (from `ScoreDetail`, final round). Returns (per-supplier plays, incumbent avg move,
+    challenger avg move) — the asymmetry that says whether the incumbent is competing or leaning
+    on the installed base. Distinguishes a below-market **real risk** (Z<−2, validate) from a
+    priced-high-and-firm **leverage/theater** play.
+    """
+
+    moves: dict[str, list[Decimal]] = defaultdict(list)
+    for e in evo_rows:
+        moves[e.supplier_name].append(e.pct)
+    prem: dict[str, list[Decimal]] = defaultdict(list)
+    zlow: dict[str, int] = defaultdict(int)
+    for s in score_detail:
+        prem[s.supplier_name].append(s.prem_vs_low_frac)
+        if s.z_score < Decimal("-2"):
+            zlow[s.supplier_name] += 1
+
+    def _avg(xs: list[Decimal]) -> Decimal:
+        return sum(xs, Decimal("0")) / Decimal(len(xs)) if xs else Decimal("0")
+
+    names = sorted(set(moves) | set(prem))
+    plays: list[_SupplierPlay] = []
+    inc_moves: list[Decimal] = []
+    chal_moves: list[Decimal] = []
+    for name in names:
+        role = "Incumbent" if name in incumbent_names else "Challenger"
+        amove = _avg(moves[name])
+        aprem = _avg(prem[name])
+        flags = zlow[name]
+        if role == "Incumbent":
+            inc_moves.append(amove)
+        else:
+            chal_moves.append(amove)
+        # Game-theoretic read from concession + market position.
+        if flags > 0 and amove <= Decimal("-0.04"):
+            read = "Below-market & conceding — validate sustainability (real risk)"
+        elif role == "Incumbent" and amove > Decimal("-0.01"):
+            read = "Holding the installed base — test the leverage"
+        elif aprem > Decimal("0.07") and amove > Decimal("-0.01"):
+            read = "Priced high & firm — likely negotiation theater"
+        elif amove <= Decimal("-0.04"):
+            read = "Conceding hard — hungry for the volume"
+        else:
+            read = "Competing in line with the field"
+        plays.append(
+            _SupplierPlay(
+                name=name, role=role, cells=len(moves[name]), avg_move_frac=amove,
+                avg_prem_frac=aprem, sustainability_flags=flags, read=read,
+            )
+        )
+    return plays, _avg(inc_moves), _avg(chal_moves)
+
+
+def _write_negotiation_dynamics_tab(
+    wb: Workbook,
+    plays: list[_SupplierPlay],
+    inc_move: Decimal,
+    chal_move: Decimal,
+) -> None:
+    """Negotiation Dynamics — fairness & leverage in a repeated game (pillar 4).
+
+    Are you being treated fairly? Reads each supplier's concession behaviour (how far they moved
+    R1→final), the incumbent's move vs the field's (do they lean on tenure?), and separates a
+    below-market **real risk** from a priced-high-and-firm **leverage/theater** play. The
+    structural rule: be predictable in process, flexible only where the economics justify it.
+    """
+
+    ws = wb.create_sheet("Negotiation Dynamics")
+    columns: list[Col] = [
+        Col("Supplier", 24),
+        Col("Role", 12),
+        Col("Cells moved", 11, NUMFMT_INT),
+        Col("Avg move R1→Final", 16, NUMFMT_PCT),
+        Col("Avg premium vs low", 16, NUMFMT_PCT),
+        Col("Sustainability flags", 16, NUMFMT_INT),
+        Col("Negotiation read", 46),
+    ]
+    header_row = 6
+    body_start = header_row + 1
+    ordered = sorted(plays, key=lambda p: (p.role != "Incumbent", p.avg_move_frac))
+    for i, p in enumerate(ordered):
+        r = body_start + i
+        ws.cell(row=r, column=1, value=p.name)
+        ws.cell(row=r, column=2, value=p.role)
+        ws.cell(row=r, column=3, value=p.cells)
+        ws.cell(row=r, column=4, value=float(p.avg_move_frac))
+        ws.cell(row=r, column=5, value=float(p.avg_prem_frac))
+        ws.cell(row=r, column=6, value=p.sustainability_flags)
+        ws.cell(row=r, column=7, value=p.read)
+        if p.role == "Incumbent":
+            ws.cell(row=r, column=2).fill = _INCUMBENT_FILL
+
+    format_table(
+        ws,
+        title="Negotiation Dynamics — are you being treated fairly? (repeated game, asym. info)",
+        subtitle_lines=[
+            "Concession = R1→Final move (more negative = conceded more) · "
+            "predictable in process, flexible only where economics justify",
+            DECISION_SUPPORT_STRAP,
+        ],
+        columns=columns,
+        n_body_rows=len(ordered),
+        header_row=header_row,
+        add_total=False,
+    )
+    # Data bars on the concession column make "who moved" scannable (negative axis).
+    ws.conditional_formatting.add(
+        f"D{body_start}:D{body_start + len(ordered) - 1}",
+        DataBarRule(start_type="min", end_type="max", color="5B9BD5", showValue=True),
+    )
+
+    # The fairness headline — incumbent move vs the field.
+    gap = inc_move - chal_move  # >0 means incumbent conceded LESS than the field
+    if gap > Decimal("0.005"):
+        verdict = (
+            f"The incumbent conceded {inc_move:.1%} vs the field's {chal_move:.1%} — "
+            "LESS than challengers. You are paying partly for tenure, not competitiveness: "
+            "press the installed-base lots or signal credible switching."
+        )
+    elif gap < Decimal("-0.005"):
+        verdict = (
+            f"The incumbent conceded {inc_move:.1%} vs the field's {chal_move:.1%} — "
+            "MORE than challengers. They are defending the relationship competitively (fair)."
+        )
+    else:
+        verdict = (
+            f"The incumbent ({inc_move:.1%}) moved in line with the field ({chal_move:.1%}) — "
+            "competitive, no obvious leverage play."
+        )
+    sec = body_start + len(ordered) + 2
+    title = ws.cell(row=sec, column=1, value="Fairness read — incumbent concession vs the field")
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    for c in range(1, 8):
+        ws.cell(row=sec, column=c).fill = _TITLE_FILL
+    ws.merge_cells(start_row=sec, start_column=1, end_row=sec, end_column=7)
+    vc = ws.cell(row=sec + 1, column=1, value=verdict)
+    vc.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    vc.border = _BORDER
+    ws.merge_cells(start_row=sec + 1, start_column=1, end_row=sec + 1, end_column=7)
+    ws.row_dimensions[sec + 1].height = 46
+    ws.sheet_view.showGridLines = False
+
+
+def seeded_sup_name(seeded: SeededCycle, sup_id: str) -> str:
+    """Readable supplier name for an id (D23)."""
+
+    for s in seeded.suppliers:
+        if s.id == sup_id:
+            return s.name
+    return sup_id[:6]
+
+
+@dataclass(frozen=True)
+class _Kpi:
+    """One headline KPI card, tagged to one of the four decision lenses (with a lens colour)."""
+
+    lens: str
+    label: str
+    value: str  # pre-formatted
+    color: str  # hex fill for the lens
+
+
+def _compute_kpis(
+    rec_details: list[AwardDetail],
+    baseline_total: Decimal,
+    rec_spend: Decimal,
+    incumbent_names: set[str],
+    inc_move: Decimal,
+    chal_move: Decimal,
+) -> list[_Kpi]:
+    """The four-lens headline: cost & savings · hidden costs · relationships · negotiation."""
+
+    savings = baseline_total - rec_spend
+    savings_pct = savings / baseline_total if baseline_total > 0 else Decimal("0")
+    transit_vals = [d.transit_days for d in rec_details]
+    avg_transit = (sum(transit_vals) / len(transit_vals)) if transit_vals else 0.0
+    fresh = sum(1 for d in rec_details if d.transit_days > FRESHNESS_WATCH_DAYS)
+    preserved = len({d.supplier_name for d in rec_details if d.relationship == "Preserve"})
+    created = len({d.supplier_name for d in rec_details if d.relationship == "Create"})
+    gap = inc_move - chal_move
+    fair = (
+        "leaning on tenure" if gap > Decimal("0.005")
+        else ("competing" if gap < Decimal("-0.005") else "in line")
+    )
+    cost, hidden, rel, neg = "548235", "BF8F00", "2E5496", "1F3864"
+    return [
+        _Kpi("Cost & savings", "Savings vs incumbent", f"${savings:,.0f}", cost),
+        _Kpi("Cost & savings", "Savings %", f"{savings_pct:.1%}", cost),
+        _Kpi("Hidden costs", "Avg transit (days)", f"{avg_transit:.1f}", hidden),
+        _Kpi("Hidden costs", "Freshness watches", f"{fresh}", hidden),
+        _Kpi("Relationships", "Preserved / Created", f"{preserved} / {created}", rel),
+        _Kpi(
+            "Negotiation", "Incumbent vs field move",
+            f"{inc_move:.1%} / {chal_move:.1%} ({fair})", neg,
+        ),
+    ]
+
+
+def _write_kpi_band(wb: Workbook, kpis: list[_Kpi]) -> None:
+    """A KPI scorecard band on the Overview — the four lenses, big values, lens-colour coded.
+
+    Visual readability only (not final brand): a colour-coded Lens | Metric | Value scorecard so
+    the headline reads at a glance. The downstream design review owns the final visual language.
+    """
+
+    ws = wb["Summary"]
+    start = (ws.max_row or 1) + 2
+    title = ws.cell(
+        row=start,
+        column=1,
+        value="Headline KPIs — the four lenses (cost · hidden cost · relationships · negotiation)",
+    )
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    ws.merge_cells(start_row=start, start_column=1, end_row=start, end_column=2)
+    ws.cell(row=start, column=2).fill = _TITLE_FILL
+    r = start + 1
+    for k in kpis:
+        lens = ws.cell(row=r, column=1, value=f"{k.lens} — {k.label}")
+        lens.fill = PatternFill("solid", fgColor=k.color)
+        lens.font = Font(bold=True, color="FFFFFF", size=10)
+        lens.alignment = _LEFT
+        lens.border = _BORDER
+        val = ws.cell(row=r, column=2, value=k.value)
+        val.font = Font(bold=True, color=k.color, size=14)
+        val.alignment = _LEFT
+        val.border = _BORDER
+        ws.row_dimensions[r].height = 24
+        r += 1
 
 
 def write_scenario_workbook_xlsx(
@@ -4213,17 +4664,33 @@ def write_scenario_workbook_xlsx(
             negotiation_by_dc[d.dc_name] += (-e.delta) * d.volume
     negotiation_total = sum(negotiation_by_dc.values(), Decimal("0"))
 
-    # The tab index for the Overview front door — banded into the decision flow the real
-    # allocation models use (Decide → Compare → Diligence → Build & slice). Empty question = band.
+    # Negotiation behaviour (fairness/leverage, pillar 4) — concession vs the field, real-risk vs
+    # theater. Reads observable moves (round evo) + market position (scores).
+    incumbent_names = {
+        seeded_sup_name(seeded, sup_id) for sup_id in set(seeded.incumbent_by_dc_lot.values())
+    }
+    plays, inc_move, chal_move = _gather_negotiation(evo_rows, score_detail, incumbent_names)
+
+    # The four-pillar KPI band on the Overview (cost · hidden cost · relationships · fairness).
+    rec_details = [d for d in details if d.scenario_code == rec_code]
+    kpis = _compute_kpis(
+        rec_details, baseline_total, rec_spend, incumbent_names, inc_move, chal_move
+    )
+
+    # The tab index for the Overview front door — banded into the FOUR decision lenses the
+    # repeated-game frame needs (Decide/cost · Relationships · Negotiation · Diligence · Build).
     tab_index: list[tuple[str, str]] = [
         ("Controls", "How was this run? Horizon, scope, baselines, engine weights & rules."),
-        ("§ DECIDE", ""),
+        ("§ DECIDE — cost & savings", ""),
         ("Award Summary", "The recommendation: per-DC incumbent→recommended + savings $ to sign."),
         ("Scenario Comparison", "Which lens? A-G + LIVE Custom side by side, drill to DC."),
-        ("Lowest-Cost Check", "Is the rec the cheapest? If not, why (the premium it trades)."),
+        ("Lowest-Cost Check", "Is the rec the cheapest? If not, the premium it trades."),
         ("§ COMPARE SUPPLIERS", ""),
         ("Supplier Comparison", "Which supplier per cell? Every eligible supplier's $/case."),
-        ("FOB vs All-In", "Freight transparency: farm-gate FOB + delivery = landed, by lane."),
+        ("Landed & Hidden Costs", "Beyond price: freight + transit/freshness — the true cost."),
+        ("§ RELATIONSHIPS & NEGOTIATION", ""),
+        ("Share & Relationships", "Who carries the business — preserve vs create + dependency."),
+        ("Negotiation Dynamics", "Treated fairly? Concession vs the field, real risk vs theater."),
         ("§ DILIGENCE", ""),
         ("Coverage", "Can they supply it? Offered vs required volume + cover band."),
         ("Detailed Scoring", "Why these scores? The 5 factors + the market stats behind them."),
@@ -4234,6 +4701,7 @@ def write_scenario_workbook_xlsx(
     # so the workbook opens with the live cross-tab values already resolved (D27).
     wb.calculation.fullCalcOnLoad = True
     _write_summary_tab(wb, seeded, config, rollups)
+    _write_kpi_band(wb, kpis)
     # --- Cockpit + headline sign-off (practitioner layer from the real allocation models). ---
     _write_controls_tab(
         wb, seeded, config, baseline_total, stly_total, rec_spend, negotiation_total
@@ -4248,6 +4716,9 @@ def write_scenario_workbook_xlsx(
     _write_lowest_cost_check_tab(wb, cells, score_detail)
     _write_supplier_comparison_tab(wb, config, cells, seeded)
     _write_fob_analysis_tab(wb, _gather_fob(session, seeded, final_round_id))
+    # --- RELATIONSHIPS & NEGOTIATION (the repeated-game pillars 3 & 4). ---
+    _write_share_relationships_tab(wb, details, scenarios, seeded, config, rec_code)
+    _write_negotiation_dynamics_tab(wb, plays, inc_move, chal_move)
     # --- DILIGENCE (the receipts behind the recommendation). ---
     _write_coverage_tab(wb, coverage_rows, config)
     _write_detailed_scoring_tab(wb, score_detail)

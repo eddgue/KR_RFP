@@ -321,3 +321,62 @@ they have. Visual design-language remains **deferred to the downstream design re
   as +4% on the incumbent baseline) and **product type** (Conventional/Organic — no schema column
   yet, derived by lot). Both are flagged where they appear. Closing them is a feeds/schema roadmap
   item (an STLY iTrade slice; a product-type attribute on the lot), not an output-design item.
+
+---
+
+## 8. The negotiation frame — repeated game under asymmetric information (added 2026-06-19)
+
+The sponsor named the governing model: **repeated-game sourcing under asymmetric information**, where
+you manage four things at once — supplier incentives, your process credibility, relationship capital,
+and information advantage — under the structural rule **"predictable in process, flexible only where
+the economics justify it."** The file is therefore not a price report; it is a **negotiation decision
+instrument**. We added the surfaces that make that frame legible, organised as **four lenses** with a
+headline **KPI band** on the Overview.
+
+| Lens | What it answers | Surfaces (added/extended) |
+|---|---|---|
+| **1 · Cost & savings** | What do we save, vs what baseline? | Award Summary, Controls, Scenario Comparison, Lowest-Cost Check |
+| **2 · Hidden costs** | What does the headline price hide? | **Landed & Hidden Costs** (FOB+freight **+ transit days + freshness watch**); transit also live in the **builder** and in **Data (pivot me)** |
+| **3 · Relationships** | Who carries the business, and is it healthy? | **Share & Relationships** — supplier×scenario share heatmap, **Preserve** (incumbent kept) vs **Create** (new earned in), **dependency** flag at the concentration threshold, + a relationship ledger (preserved / created / at-risk) |
+| **4 · Negotiation / fairness** | Are we being treated fairly? | **Negotiation Dynamics** — each supplier's **concession** R1→Final, the **incumbent's move vs the field** (do they lean on tenure?), and a **real-risk-vs-theater** read (below-market Z<−2 = validate sustainability; priced-high-and-firm = leverage/theater) |
+
+### 8.1 What the lens surfaces (the game-theoretic reads)
+
+- **Reading supplier incentives from observable moves.** Concession behaviour separates the hungry
+  (conceding hard for volume) from the margin-protectors and the leverage-players. In the demo the
+  incumbent holds at **−0.7%** while the field concedes **−3.8%** → *"holding the installed base —
+  test the leverage,"* and the fairness verdict reads *"you are paying partly for tenure, not
+  competitiveness."* That is the asymmetry the buyer negotiates against.
+- **Real risk vs negotiation theater.** A below-market bid with Z<−2 is a *real* sustainability risk
+  to validate; a bid priced above market that refuses to move is a *leverage play* to test. The file
+  uses the market structure it already computes (Z, premium-vs-low, bidder count) to tell them apart.
+- **Relationship capital & dependency.** Preserve/Create framing + a dependency flag where any
+  supplier's share crosses the concentration threshold — over-giving weakens your next-round position.
+- **Process credibility = predictable rules + justified flexibility.** The engine applies one governed
+  rule set (Controls shows the weights/thresholds); every deviation from lowest-cost is shown with its
+  economic justification (Lowest-Cost Check), and every exception (cap-breach, fallback) is flagged —
+  flexible only where the economics justify it.
+
+### 8.2 Visual readability pass (NOT final design language)
+
+Semantic, meaning-carrying visuals only — the downstream design review still owns brand/typography:
+a four-lens **KPI band** on the Overview, **heatmap** on the share matrix (white→amber→red at the
+concentration line), **data bars** on concession, **green/red** cues on savings, an **amber freshness
+watch**, and incumbent shading. These encode *meaning* (magnitude, risk, direction), not a look.
+
+### 8.3 Synthetic calibration for the demo (honesty)
+
+To make the negotiation lens demonstrate something, the synthetic round-over-round movement now
+varies by supplier — the incumbent concedes little (leans on tenure), challengers concede more (the
+hungriest most). This is DEMO calibration of *behaviour*, clearly a synthetic illustration; on real
+data the concessions come straight from the persisted per-round `bid.bid_line` prices. Transit time
+is a labelled lane proxy (no schema column yet) — like STLY and product type, a feeds/schema roadmap
+item, not an output-design one.
+
+### 8.4 The result — 17 tabs across the four lenses + diligence + build
+
+`Overview` (4-lens KPI band) · `Controls` · **`Award Summary`** · `Scenario Comparison` ·
+`Lowest-Cost Check` · `Supplier Comparison` · **`Landed & Hidden Costs`** · **`Share & Relationships`** ·
+**`Negotiation Dynamics`** · `Coverage` · `Detailed Scoring` · `TF Comparison` · `Round Evolution` ·
+`Data Quality` · `Custom Scenario` (now with live transit) · `Data (pivot me)` (+ transit, relationship)
+· `_Prices`. Still clean, still playable; now it reads as a negotiation instrument, not a price report.
