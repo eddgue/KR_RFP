@@ -151,6 +151,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Homes.** Deliverable now = the standalone Excel **alignment workbook** (the engine's primary analytical output). Production interactive home = the web UI scenario-review (Phase F).
 **Linked:** D25, v3 FOB-comparison/scenario-tools, intake Session 1 (alignment calls) + Session 3, E-23, ADR-0016 (strategy-agnostic).
 
+### D27 — Data is manipulable; analytical surfaces are flexible, not fixed reports · **RATIFIED 2026-06-19**
+**Principle (sponsor).** "Make the data manipulable, and the system should do the same." The analytical deliverables (scenario workbook now; the web scenario-review later) must let the user **manipulate the data** — pivot, **expand/drill (scenario → DC → supplier)**, filter, slice, rearrange — not read fixed tables. Current tools are "great but messy" (rich/flexible); ours must reach that richness while staying clean: **depth on demand** (drill to detail) rather than everything-at-once (messy) or too-little (light). The system must also present the data in multiple cuts from the same records.
+**Concrete asks (this iteration).**
+- **Live custom-vs-scenarios:** as the buyer builds the Custom scenario, its totals appear **live alongside A–G** in the comparison (a live Custom column that recomputes off the Custom-tab picks).
+- **Expandable pivot in Scenario Comparison:** collapse/expand from scenario totals → per-DC → per-supplier (outline grouping; + a flat data table the buyer can natively pivot).
+- **More detail + flexibility:** per-DC and per-supplier breakdowns, volumes, premiums — reachable by drilling, not dumped.
+**Homes.** Excel deliverable now (outline grouping / Excel Tables / live formulas); web UI later (real pivot/filter/drill on the store).
+**Linked:** D25, D26, web UI scenario-review (Phase F), ADR-0016, intake (Ed's allocation models = the "great but messy" reference).
+
 ---
 
 ## Dependencies (logistics blockers)
