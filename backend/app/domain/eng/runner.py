@@ -217,12 +217,22 @@ class EngineRunner:
         return {item_id: lot_id for item_id, lot_id in rows}  # noqa: C416
 
     def _read_bid_lines(self, cycle_id: str, round_id: str) -> list[BidLine]:
-        """The round's scoreable bid lines, BY KEY (cycle_id, round_id)."""
+        """The round's scoreable bid lines, BY KEY (cycle_id, round_id).
+
+        Only `is_scoreable` lines are returned: a superseded submission (a supplier re-sent a
+        corrected file, or sent both an owned template and their own sheet for the same round) has
+        its prior lines marked non-scoreable at ingest, so the engine scores ONE submission per
+        supplier per round — no double-counting (supersede, never hard-delete; ADR-0006).
+        """
 
         return list(
             self._session.execute(
                 select(BidLine)
-                .where(BidLine.cycle_id == cycle_id, BidLine.round_id == round_id)
+                .where(
+                    BidLine.cycle_id == cycle_id,
+                    BidLine.round_id == round_id,
+                    BidLine.is_scoreable.is_(True),
+                )
                 .order_by(BidLine.bid_line_id)
             )
             .scalars()

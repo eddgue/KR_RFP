@@ -663,8 +663,9 @@ def _write_summary_tab(
         ws,
         title=f"MID-CYCLE ALIGNMENT ANALYSIS — {seeded.cycle_name}",
         subtitle_lines=[
-            f"Cycle {seeded.cycle_code} · Round {version.round_number} · "
-            f"Analysis v{version.seq} · sealed {version.run_finished_at:%Y-%m-%d %H:%M}",
+            f"Cycle {seeded.cycle_code} · Round {version.round_number} "
+            f"(run {version.round_seq}) · Analysis v{version.seq} · "
+            f"sealed {version.run_finished_at:%Y-%m-%d %H:%M}",
             "ALIGNMENT / COMPARISON tool (D26) — what the team works through to DECIDE, "
             "not a final summary.",
             f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
@@ -3477,6 +3478,7 @@ class _RunVersion:
     """The mid-cycle alignment version surfaced on the Summary banner (from sealed records)."""
 
     seq: int  # 1-based ordinal of THIS run among the cycle's sealed runs (by start time)
+    round_seq: int  # 1-based ordinal of THIS run among the cycle's runs OF THIS ROUND
     round_number: int  # cyc.cycle_round.round_number for the final round
     run_finished_at: datetime  # eng.analysis_run.run_finished_at for THIS run
 
@@ -3506,12 +3508,24 @@ def _run_version(
         )
         .count()
     )
+    # Per-round ordinal too: a buyer re-running Round 2 sees "round run 1, 2…" instead of being
+    # confused by the cycle-global v3/v4 (which counts every round's runs).
+    round_seq = (
+        session.query(AnalysisRun)
+        .filter(
+            AnalysisRun.cycle_id == cycle_id,
+            AnalysisRun.round_id == final_round_id,
+            AnalysisRun.run_started_at <= this_run.run_started_at,
+        )
+        .count()
+    )
     round_number = session.execute(
         text("SELECT round_number FROM cyc.cycle_round WHERE round_id = :rid"),
         {"rid": final_round_id},
     ).scalar_one()
     return _RunVersion(
         seq=seq,
+        round_seq=round_seq,
         round_number=int(round_number),
         run_finished_at=this_run.run_finished_at,
     )

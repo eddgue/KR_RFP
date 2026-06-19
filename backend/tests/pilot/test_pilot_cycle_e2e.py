@@ -25,9 +25,9 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+from sqlalchemy import text
 
 from app.cycle.loader import load_cycle
-from app.cycle.scope import build_scope_from_cycle
 from app.domain.bid.template_schema import BODY_START_ROW, HEADER_ROW, SHEET_BIDS, BidColumn
 from app.output.types import CycleView, Entity
 from app.pilot.flex_ingest import (
@@ -41,7 +41,6 @@ from app.pilot.flex_ingest import (
 from app.pilot.service import PilotService
 from app.pilot.setup_template import (
     EXAMPLE_START_ROW,
-    HEADER_ROW as SETUP_HEADER_ROW,
     TAB_CYCLE,
     TAB_DCS,
     TAB_INCUMBENTS,
@@ -50,6 +49,9 @@ from app.pilot.setup_template import (
     TAB_TIMEFRAMES,
     TAB_VOLUMES,
     build_setup_workbook,
+)
+from app.pilot.setup_template import (
+    HEADER_ROW as SETUP_HEADER_ROW,
 )
 from app.pilot.vault import stage_filename
 
@@ -235,7 +237,10 @@ def _fake_cycle_view() -> CycleView:
         client_id="",
         commodity_id="comm-1",
         dcs=[Entity("dc-a", "DC01", "Atlanta DC"), Entity("dc-b", "DC02", "Dallas DC")],
-        lots=[Entity("lot-1", "LOT-01", "Lot 1 - Grape"), Entity("lot-2", "LOT-02", "Lot 2 - Roma")],
+        lots=[
+            Entity("lot-1", "LOT-01", "Lot 1 - Grape"),
+            Entity("lot-2", "LOT-02", "Lot 2 - Roma"),
+        ],
         items=[Entity("i-1", "ITEM-01", "Grape Tomato"), Entity("i-2", "ITEM-02", "Roma Tomato")],
         tfs=[Entity("tf-1", "TF01", "Spring 2026")],
         rounds=[Entity("r-1", "R1", "Round 1")],
@@ -282,6 +287,61 @@ def test_infer_bid_mapping_on_messy_sheet() -> None:
 # INTEGRATION — the WHOLE loop, end to end
 # ---------------------------------------------------------------------------
 @pytest.mark.integration
+def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """A second submission for the same supplier+round supersedes the first — no double-count.
+
+    Edge case found in the dress rehearsal: a supplier re-sending a corrected file (or sending both
+    an owned template and their own sheet) must NOT double-count into the engine. We supersede the
+    prior lines (is_scoreable=false) and the engine reads only scoreable lines.
+    """
+
+    service = PilotService(tmp_path)
+    paths = service.start_run(commodity="Field Tomatoes", label="Supersede")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup())
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+
+    template_path = service.generate_bid_template(db_session, paths, 1)
+    template_path.write_bytes(_fill_bid_template(template_path.read_bytes()))
+
+    # First submission: 8 priced cells.
+    n1 = service.ingest_bids(db_session, paths, 1, template_path)
+    assert n1 == 8
+
+    # Re-send the SAME file (a corrected re-submission) for the round.
+    n2 = service.ingest_bids(db_session, paths, 1, template_path)
+    assert n2 == 8
+
+    # The engine must see only ONE submission's worth of scoreable lines for the round.
+    scoreable = db_session.execute(
+        text(
+            "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = true"
+        ),
+        {"c": cycle_id},
+    ).scalar_one()
+    superseded = db_session.execute(
+        text(
+            "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = false"
+        ),
+        {"c": cycle_id},
+    ).scalar_one()
+    assert scoreable == 8, "only the latest submission's lines stay scoreable"
+    assert superseded == 8, "the prior submission's lines are superseded, not deleted"
+    # The supersession is surfaced in the run's notes (never silent).
+    assert "superseded" in paths.notes_md.read_text().lower()
+
+    # The engine run scores exactly the 8 surviving cells (no doubling).
+    service.run_round(db_session, paths, 1)
+    n_scores = db_session.execute(
+        text(
+            "SELECT count(*) FROM eng.bid_score s JOIN eng.analysis_run r "
+            "ON r.analysis_run_id = s.analysis_run_id WHERE r.cycle_id = :c"
+        ),
+        {"c": cycle_id},
+    ).scalar_one()
+    assert n_scores == 8
+
+
 def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     service = PilotService(tmp_path)
 

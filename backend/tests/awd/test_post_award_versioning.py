@@ -121,7 +121,8 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
             "INSERT INTO eng.analysis_run (analysis_run_id, cycle_id, round_id, engine_version, "
             "config_preset, status, is_sealed, input_hash_manifest, output_hash_manifest, "
             "run_started_at, run_finished_at, run_by) VALUES "
-            "(:rid, :cid, :rnd, 'v3-test', 'balanced', 'SEALED', true, :ih, :oh, :ts, :ts, 'tester')"
+            "(:rid, :cid, :rnd, 'v3-test', 'balanced', 'SEALED', true, :ih, :oh, :ts, :ts, "
+            "'tester')"
         ),
         {
             "rid": run_id, "cid": cycle_id, "rnd": round_id,
@@ -172,7 +173,7 @@ def test_freeze_then_versioned_adjustments(db_session: Session, tmp_path: Path) 
     )
     assert isinstance(award_id, str)
 
-    # Idempotent: re-freezing the same (cycle, run, scenario) returns the SAME award_id, no new rows.
+    # Idempotent: re-freezing the same (cycle, run, scenario) returns the SAME award_id.
     award_id_again = freeze_award(
         db_session,
         cycle_id=seed["cycle_id"],
@@ -259,7 +260,7 @@ def test_freeze_then_versioned_adjustments(db_session: Session, tmp_path: Path) 
     )
     wb = load_workbook(out_v2)
 
-    # The Version heading: banner title + the bold "Version N · as of <date>" subtitle (latest = v2).
+    # The Version heading: banner title + the bold "Version N · as of <date>" subtitle (v2).
     versions_ws = wb["Versions"]
     title_cell = versions_ws.cell(row=1, column=1).value
     subtitle_cell = versions_ws.cell(row=2, column=1).value

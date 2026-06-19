@@ -2,8 +2,8 @@
 
 Imports the server module and asserts the `FastMCP` app exists and registers every tool the design's
 tool surface calls for (PILOT_SYSTEM_DESIGN §7). It does NOT run the stdio loop — it only inspects
-the registered tools, so it stays a PURE test (no DB, no transport). This guards against a tool being
-renamed/dropped or the module failing to import.
+the registered tools, so it stays a PURE test (no DB, no transport). This guards against a tool
+being renamed/dropped or the module failing to import.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 
 from mcp.server.fastmcp import FastMCP
-
 from rfp_mcp.rfp_pilot_server import app
 
 # The tool surface the skill orchestrates (PILOT_SYSTEM_DESIGN §7 / the brief's Part 2 list).
@@ -48,4 +47,4 @@ def test_all_expected_tools_registered() -> None:
     registered = {tool.name for tool in asyncio.run(app.list_tools())}
     missing = EXPECTED_TOOLS - registered
     assert not missing, f"missing MCP tools: {sorted(missing)}"
-    assert EXPECTED_TOOLS <= registered
+    assert registered >= EXPECTED_TOOLS

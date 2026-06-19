@@ -8,7 +8,7 @@ ADDITIVE, on top of 0009. Owned by the Post-Award squad.
 
 WHY (ADR-0014 freeze-and-layer, ADR-0006 no-hard-deletes, PILOT step 5):
   After a human selects an engine scenario, the recommendation in `eng.analysis_scenario_award`
-  is PROMOTED to a real award here. The award is FROZEN: `awd.award` + one immutable `awd.award_line`
+  is PROMOTED to a real award here. The award is FROZEN: `awd.award` + an immutable `award_line`
   per cell capture the baseline (`frozen_price`) and are NEVER updated. Post-award negotiation /
   safety-driven price moves are recorded as APPEND-ONLY, date-stamped, VERSIONED LAYERS:
   `awd.award_adjustment` (version_no 1..N, who/when/why) + `awd.award_adjustment_line` (per-cell
@@ -18,7 +18,7 @@ WHY (ADR-0014 freeze-and-layer, ADR-0006 no-hard-deletes, PILOT step 5):
   renders an explicit "which version" heading off these rows (PILOT step 5).
 
 WHAT (all additive, idempotent):
-  * awd.award                 — one frozen award per selected (cycle, run, scenario). FK -> cyc.cycle
+  * awd.award — one frozen award per selected (cycle, run, scenario). FK -> cyc.cycle
                                 / eng.analysis_run. UNIQUE(cycle, run, scenario).
   * awd.award_line            — the immutable baseline: one row per awarded cell (frozen_price).
                                 Never updated (ADR-0014 raw-never-overwritten).
@@ -63,10 +63,10 @@ CREATE TABLE IF NOT EXISTS awd.award (
         REFERENCES eng.analysis_run (analysis_run_id)
 );
 COMMENT ON TABLE awd.award IS
-    'A FROZEN award promoted from a selected engine scenario (ADR-0006: a human selects; the engine '
-    'never asserts). Freeze-and-layer (ADR-0014): this header + awd.award_line are the immutable '
-    'baseline; post-award price moves are append-only VERSIONED layers in awd.award_adjustment — the '
-    'raw award is NEVER overwritten.';
+    'A FROZEN award promoted from a selected engine scenario (ADR-0006: a human selects; '
+    'the engine never asserts). Freeze-and-layer (ADR-0014): this header + awd.award_line are the '
+    'immutable baseline; post-award price moves are append-only VERSIONED layers in '
+    'awd.award_adjustment — the raw award is NEVER overwritten.';
 
 -- awd.award_line — the immutable baseline: one row per awarded cell at the frozen price.
 CREATE TABLE IF NOT EXISTS awd.award_line (
@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS awd.award_line (
 );
 COMMENT ON COLUMN awd.award_line.frozen_price IS
     'The immutable baseline price for this cell at freeze time (= the selected scenario''s '
-    'awarded_price). NEVER updated — post-award moves layer on top (ADR-0014 raw-never-overwritten).';
+    'awarded_price). NEVER updated — post-award moves layer on top (ADR-0014 '
+    'raw-never-overwritten).';
 
 -- awd.award_adjustment — an APPEND-ONLY, date-stamped, VERSIONED post-award layer.
 CREATE TABLE IF NOT EXISTS awd.award_adjustment (

@@ -261,13 +261,20 @@ class PilotService:
 
         data = Path(uploaded).read_bytes()
         result = ingest_template(data, scope)
-        count = self._persist_bid_lines(session, cycle, round_id, result.lines)
+        count, superseded = self._persist_bid_lines(session, cycle, round_id, result.lines)
 
         if result.quarantined:
             self._append_note(
                 runpaths,
                 f"Round {round_no} bids: {len(result.quarantined)} row(s) quarantined and not "
                 "loaded (key mismatch / bad number) — review before re-uploading.",
+                related_file=None,
+            )
+        if superseded:
+            self._append_note(
+                runpaths,
+                f"Round {round_no} bids: superseded {superseded} prior bid line(s) — a newer "
+                "submission replaced an earlier one for the same supplier(s) (no double-counting).",
                 related_file=None,
             )
         self._render_kanban(session, runpaths)
@@ -784,21 +791,54 @@ class PilotService:
         cycle: CycleView,
         round_id: str,
         lines: list[ParsedBidLine],
-    ) -> int:
+    ) -> tuple[int, int]:
         """Persist priced ingest lines as bid.bid_line rows (one submission per supplier).
 
         Mirrors the demo's `ingest_and_persist`: one `norm.source_artifact` + `bid.bid_submission`
         per supplier for the round (the FK chain), then one `bid.bid_line` per priced line. Only
-        `Completeness.BID` lines persist (no-bid / incomplete are not scoreable). Returns the count.
+        `Completeness.BID` lines persist (no-bid / incomplete are not scoreable). A prior submission
+        for the same (cycle, round, supplier) is SUPERSEDED (its lines marked non-scoreable) so a
+        re-send never double-counts. Returns (persisted_count, superseded_line_count).
         """
 
         now = datetime.now(UTC).replace(tzinfo=None)
         submission_by_sup: dict[str, str] = {}
+        superseded_total = 0
 
         def _submission_for(supplier_id: str) -> str:
+            nonlocal superseded_total
             existing = submission_by_sup.get(supplier_id)
             if existing is not None:
                 return existing
+            # Supersede any PRIOR submission for this (cycle, round, supplier): a re-send or a
+            # second file for the same supplier in the round REPLACES the earlier one, so the
+            # engine never double-counts. Supersede, never hard-delete (ADR-0006): mark the prior
+            # lines non-scoreable and the prior submission SUPERSEDED.
+            keys = {"cyc": cycle.cycle_id, "rnd": round_id, "sup": supplier_id}
+            superseded_total += int(
+                session.execute(
+                    text(
+                        "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :cyc "
+                        "AND round_id = :rnd AND supplier_id = :sup AND is_scoreable = true"
+                    ),
+                    keys,
+                ).scalar_one()
+            )
+            session.execute(
+                text(
+                    "UPDATE bid.bid_line SET is_scoreable = false WHERE cycle_id = :cyc "
+                    "AND round_id = :rnd AND supplier_id = :sup AND is_scoreable = true"
+                ),
+                keys,
+            )
+            session.execute(
+                text(
+                    "UPDATE bid.bid_submission SET overall_status = 'SUPERSEDED' "
+                    "WHERE cycle_id = :cyc AND round_id = :rnd AND supplier_id = :sup "
+                    "AND overall_status <> 'SUPERSEDED'"
+                ),
+                {"cyc": cycle.cycle_id, "rnd": round_id, "sup": supplier_id},
+            )
             artifact_id = _new_id()
             session.execute(
                 text(
@@ -872,7 +912,7 @@ class PilotService:
             )
             count += 1
         session.flush()
-        return count
+        return count, superseded_total
 
     def _scenario_award_view(
         self,
