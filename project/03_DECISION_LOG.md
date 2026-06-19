@@ -108,7 +108,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | ID | Dependency | Blocks | Owner | Status |
 |---|---|---|---|---|
 | **DEP-1** | **Isolated, read-only** access to the existing repo (`models.py`, Alembic chain, tests, ECLS) — in the sponsor's GitHub; read via an isolated worktree agent per ADR-0001, never imported | ECLS/test verification, R6 | Sponsor | **OPEN — non-blocking** (we baseline from the as-built schema we already hold) |
-| DEP-2 | One **real iTrade pull** + one **real bid round** (synthetic-only today) | Phase B pilot, S2, R1 | Sponsor | OPEN |
+| DEP-2 | One **complete RFP process** = **all rounds (R1..Rn) of a single category**, end to end — ideally a category we already hold matching data for (the Potato golden-v3 run, or a kickoff category + its iTrade pull) so kickoff→history→bids→engine→award join up. iTrade pull already provided. **Fast-follow:** a *second* category of the **other bid template** (tomato flat sheet ↔ onion 9-tab) to prove multi-template intake. | Phase B pilot (E-13), S2, R1 | Sponsor | OPEN — bid workbooks outstanding |
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
