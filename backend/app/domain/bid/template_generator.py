@@ -113,7 +113,12 @@ def _build_capacity(ws: Worksheet, scope: CycleScope) -> None:
     seen: set[tuple[str, str, str, str]] = set()
     offset = BODY_START_ROW
     for scope_row in scope.rows:
-        key = (scope_row.supplier_label, scope_row.dc_label, scope_row.item_label, scope_row.tf_code)
+        key = (
+            scope_row.supplier_label,
+            scope_row.dc_label,
+            scope_row.item_label,
+            scope_row.tf_code,
+        )
         if key in seen:
             continue
         seen.add(key)

@@ -27,7 +27,7 @@ NO real data here — pure structure (sheet names, headers, the version token). 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 # The version token stamped into every generated template and asserted on ingest. Bump on any
 # header/grain change so an old file ingested against a new reader is caught, not silently mapped.
@@ -45,7 +45,7 @@ HEADER_ROW = 2
 BODY_START_ROW = 3
 
 
-class BidColumn(str, Enum):
+class BidColumn(StrEnum):
     """Canonical header strings for the `Bids` sheet — the IN_Bids contract, our wording.
 
     The string VALUE is the literal cell text the generator writes and the ingester matches on.
@@ -101,7 +101,7 @@ PRICE_COLUMNS: tuple[BidColumn, ...] = (
 BID_HEADERS: tuple[str, ...] = tuple(c.value for c in (*SCOPE_COLUMNS, *PRICE_COLUMNS))
 
 
-class CapacityColumn(str, Enum):
+class CapacityColumn(StrEnum):
     """Canonical header strings for the `Capacity` sheet (supplier volume capability)."""
 
     SUPPLIER = "Supplier"
