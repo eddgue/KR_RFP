@@ -1,9 +1,11 @@
 ---
-doc: Scenario Tool Design Study — three-way side-by-side + synthesized target
+doc: Scenario Tool Design Study — four-way side-by-side + synthesized target + practitioner layer
 id: EXP-SCEN-STUDY
 squad: Experience / Output (Squad — Experience)
-status: Verified (v3 golden output reproduced + analysed 2026-06-19)
+status: Verified (v3 golden reproduced + real allocation models analysed + redesign built 2026-06-19)
 created: 2026-06-19
+updated: 2026-06-19 (added §7 — the real Kroger allocation models + the practitioner layer built on
+         top: Controls cockpit, savings-first Award Summary sign-off, FOB-vs-All-In, banded nav)
 relates: D24 (formatted), D25 (interactive), D26 (alignment/comparison), D27 (manipulable),
          D23 (names not keys), ADR-0006 (decision-support), ADR-0016 (strategy-agnostic),
          project/squads/engine-domain/V3_ENGINE_LOGIC.md, backend/demo/run_cycle_demo.py
@@ -239,3 +241,83 @@ round deltas are lot-level until prior bids carry DC pricing — our Round Evolu
 - This study records **structure only** — tab names, layout patterns, column-field labels, density,
   interaction. **No real supplier names, prices, or commercial values.** The v3 output and the real
   Excel remain gitignored reference (ADR-0001); nothing from them is committed.
+
+---
+
+## 7. The real Kroger allocation models — the practitioner layer (added 2026-06-19)
+
+After §1–6 were written, the sponsor uploaded the **actual allocation models the team runs today** —
+the "most complex current Excel" the brief asked for. These are the human *decision* workbooks (not
+the engine's output, not a supplier bid), and they reset the bar: the best file is the **union** of
+the v3 engine's analytical depth **and** the practitioners' decision/sign-off ergonomics.
+
+**Files studied (structure only; gitignored under `reference/samples/_allocation_models/`):**
+
+| File | Tabs | Notable scale |
+|---|---|---|
+| `Sweet Potatoes Allocation model RD2` | 19 | `Scenario tool` 199×**504 cols**; `Data cube` 177×**702 cols**; `CBS freight data` **150,987 rows** |
+| `Sweet Potatoes Allocation model RD4` | 20 | adds **`Booking Guide`** + **`Signoff tables`** into the model; `Scenario tool` 186×**540 cols** |
+| `Hybrid Onions Allocation model RD4` | 19 | `Scenario tool` 308×**514 cols**; `Data cube` 271×**648 cols**; `Sign-off tables` w/ Conv/Org + vs-STLY |
+
+### 7.1 The practitioner architecture (what the real models do that neither ours nor v3 did)
+
+1. **Layered narrative via `>` divider tabs:** `Outputs >` → `Calcs >` → `Raw data >`. The workbook
+   reads answer → math → source; depth is on-demand by *band*, not by hunting 20 flat tabs.
+2. **A `Controls` cockpit** drives the model: commodity, **Horizon (Short vs Long)**, commitment
+   window, weeks/periods, total cases. One place sets the run; everything traces to it.
+3. **Savings-first `Sign-off tables`** — the money shot buyers sign: per DC **Incumbent → Recommended**,
+   **Savings $** (not %), **+/- vs Incumbent**, **vs STLY (same-time-last-year)**, **round-over-round
+   savings**, split **Conventional vs Organic**. Two baselines (Incumbent + STLY), two timeframes
+   (Weekly + full Storage period), dollars first.
+4. **`FOB analysis` + `RFP - Delivery Charge`** — freight stripped off the landed price; FOB-only
+   compared with **regional min (West/East)**. The landed price is FOB + lane freight + cold-chain.
+5. **The `Scenario tool` is a 500+-col Lot×DC surface** — rows = every item at every DC, suppliers
+   fanned across columns. They build **composite keys** (`ATLANTAONIONS ORGANIC` = DC+Lot) *next to*
+   readable names + UPC — exactly our key-ID (D21) + names-not-keys (D23) design. The real files
+   **validate our architecture.**
+6. **A `Data cube`** (648–702 cols) — the pivot backbone; and a **`Supplier mapping`** name↔ID
+   crosswalk. RD4 even folds the **Booking Guide** into the model (our separate output, confirmed).
+7. **"Great but messy" confirmed:** `delete` scratch tabs, `FOB Analysis - old`, instruction/data
+   mixing — the richness is real, the legibility is not. Our job is the richness *without* the mess.
+
+### 7.2 What we built on top of the §4 foundation (the practitioner layer)
+
+The §4 redesign closed the gap to the v3 *engine* output (Lowest-Cost Check, Coverage, Detailed
+Scoring, TF Comparison, Round Evolution, Data Quality, a front door). On top of it we added the
+**practitioner decision layer** from the real allocation models — all grounded in the sealed records:
+
+| Added | What it is | Backing records |
+|---|---|---|
+| **Controls** (cockpit) | How the cycle was run: horizon/scope/volume, the **two baselines**, recommended spend, **negotiation savings R1→Final**, and the frozen engine weights + rules. Banded key/value. | `EngineConfig` + seeded scope + `cyc.cycle_projected_volume` + the baselines |
+| **Award Summary** (sign-off) | THE headline: per DC **Incumbent → Recommended**, recommended period spend, **Savings $ vs incumbent** (+ blended %), **Savings $ vs STLY**, **Negotiation R1→Final $**, a **TOTAL** row, and a **Conventional/Organic** split. | `eng.analysis_scenario_award` (rec scenario) + incumbent routing baseline + round-evolution prices |
+| **FOB vs All-In** | Freight transparency: each bid decomposed **FOB → +Delivery → +VegCool → = All-In**, cheapest *landed* bid per (lot,DC) highlighted, + a **regional freight** summary (avg Delivery by lane). | `bid.bid_line` component columns `fob_case`/`delivery_surcharge_case`/`vegcool_surcharge_case` (migration 0007) + DC region |
+| **Banded navigation** | The Overview tab index is grouped into the decision flow **Decide → Compare suppliers → Diligence → Build & slice** (the real models' `Outputs >/Calcs >/Raw data >` idea, applied to single-purpose tabs). | — |
+
+Two supporting changes made the above real rather than illustrative:
+- **Bid components now populated end-to-end.** `fill_template` decomposes the synthetic All-In into
+  **FOB (farm-gate) + Delivery (lane freight, by region) + VegCool (cold-chain)**, persisted via the
+  ingester to `bid.bid_line` (exercising the 0007 schema + the `ck_bid_line_no_double_discount`
+  guard — no Lot Discount, so All-In stays the value the engine scores; every prior tab's numbers
+  are unchanged).
+- **Incumbent baseline recalibrated** to a realistic prior-period actual-paid (the incumbent's own
+  final-round bid + the ~7% an RFP captures), so the headline shows genuine **savings** (~5.7% vs
+  incumbent in the demo) instead of a synthetic-calibration loss.
+
+### 7.3 The result — 15 single-purpose tabs, banded as a decision flow
+
+`Overview` · `Controls` · **`Award Summary`** · `Scenario Comparison` · `Lowest-Cost Check` ·
+`Supplier Comparison` · **`FOB vs All-In`** · `Coverage` · `Detailed Scoring` · `TF Comparison` ·
+`Round Evolution` · `Data Quality` · `Custom Scenario` · `Data (pivot me)` · `_Prices` (hidden).
+
+This is the union: **v3's analytical depth + the practitioners' savings-first sign-off ergonomics +
+our interactivity edge** (live Custom, drill, pivot) — rich like the real models, clean like nothing
+they have. Visual design-language remains **deferred to the downstream design review** (§4, §0).
+
+### 7.4 Schema-backed vs DEMO-illustrative (honesty line)
+
+- **Schema-backed (real records):** incumbent baseline + savings $, FOB/Delivery/VegCool components
+  + regional freight, round-over-round negotiation capture, the 5 factor scores, coverage, the split.
+- **DEMO-illustrative (clearly labelled in-file):** the **STLY** uplift (no STLY feed yet — modelled
+  as +4% on the incumbent baseline) and **product type** (Conventional/Organic — no schema column
+  yet, derived by lot). Both are flagged where they appear. Closing them is a feeds/schema roadmap
+  item (an STLY iTrade slice; a product-type attribute on the lot), not an output-design item.

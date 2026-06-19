@@ -129,6 +129,30 @@ ROUND_NAMES: tuple[str, ...] = (
     "Round 3 — Final",
 )
 
+# Product type per lot (Conventional / Organic). The real allocation models segment the sign-off by
+# product type (a Conventional | Organic split per DC); we mirror that as a DEMO-illustrative lot
+# attribute (no schema column yet — derived here for the segmentation surface, clearly labelled).
+LOT_PRODUCT_TYPE: tuple[str, ...] = ("Conventional", "Conventional", "Organic", "Organic")
+
+# Broad shipping region per DC region-code, and a per-region freight (delivery) rate. The real FOB
+# analysis tab strips freight off the landed price and shows a regional min; we decompose the
+# synthetic All-In into FOB (farm-gate) + Delivery (lane freight, by region) + VegCool (cold-chain)
+# so the landed price (All-In) the engine scores is UNCHANGED, but the freight is now transparent.
+DC_REGION_GROUP: dict[str, str] = {"ATL": "East", "DAL": "South", "DEN": "West"}
+REGION_FREIGHT: dict[str, Decimal] = {
+    "East": Decimal("1.40"),
+    "South": Decimal("1.85"),
+    "West": Decimal("2.40"),
+}
+VEGCOOL_SURCHARGE_CASE = Decimal("0.35")  # cold-chain surcharge (constant in the demo)
+
+
+def _dc_region(dc_index: int) -> str:
+    """Broad shipping region (East/South/West) for a DC by its seed index."""
+
+    region_code = DC_NAMES[dc_index % len(DC_NAMES)][1]
+    return DC_REGION_GROUP.get(region_code, "East")
+
 
 def _id() -> str:
     return str(uuid.uuid4())
@@ -584,10 +608,15 @@ def seed_cycle(session: Session) -> SeededCycle:
         {"id": inc_run_id, "cyc": cycle_id},
     )
     incumbent = suppliers[0]
-    for dc in dcs:
+    for di, dc in enumerate(dcs):
         for li, item in enumerate(items):
             lot = lots[li]
-            routing = Decimal("10.00") + Decimal(li) * Decimal("0.50")
+            # Incumbent routing = prior-period actual-paid (the iTrade baseline, D11). Modelled as
+            # the incumbent's own final-round bid + a margin the RFP captures (~7%), so the cycle
+            # shows realistic SAVINGS vs what we paid last period (the headline buyers sign).
+            routing = (
+                _synthetic_price(N_ROUNDS - 1, di, li, 0) * Decimal("1.07")
+            ).quantize(Decimal("0.01"))
             session.execute(
                 text(
                     "INSERT INTO perf.historical_award_assignment (assignment_id, cycle_id, "
@@ -712,6 +741,9 @@ def fill_template(template_bytes: bytes, scope: SeededCycle, round_idx: int) -> 
     sup_idx = {sup.id: i for i, sup in enumerate(scope.suppliers)}
 
     all_in_col = headers[BidColumn.ALL_IN.value]
+    fob_col = headers[BidColumn.FOB.value]
+    deliv_col = headers[BidColumn.DELIVERY_SURCHARGE.value]
+    vegcool_col = headers[BidColumn.VEGCOOL_SURCHARGE.value]
     weekly_col = headers[BidColumn.WEEKLY_VOL_OFFERED.value]
     total_col = headers[BidColumn.TOTAL_VOL_OFFERED.value]
     dc_id_col = headers[BidColumn.DC_ID.value]
@@ -728,11 +760,22 @@ def fill_template(template_bytes: bytes, scope: SeededCycle, round_idx: int) -> 
         si = sup_idx.get(sup_id, 0)
         if si >= 5 and lot_idx.get(lot_id, 0) == (N_LOTS - 1):
             continue  # SUP-06 declines the last lot -> a genuine No-Bid row
-        price = _synthetic_price(round_idx, dc_idx.get(dc_id, 0), lot_idx.get(lot_id, 0), si)
+        di = dc_idx.get(dc_id, 0)
+        price = _synthetic_price(round_idx, di, lot_idx.get(lot_id, 0), si)
+        # Decompose the landed All-In into FOB (farm-gate) + Delivery (lane freight, by region) +
+        # VegCool (cold-chain). All-In stays the value the engine scores (§7 primary path); the
+        # components ride along for the FOB-vs-All-In freight view. NO Lot Discount -> the
+        # `ck_bid_line_no_double_discount` guard is satisfied (All-In present, discount 0).
+        delivery = REGION_FREIGHT[_dc_region(di)]
+        vegcool = VEGCOOL_SURCHARGE_CASE
+        fob = (price - delivery - vegcool).quantize(Decimal("0.01"))
         # Offer full coverage (weekly ~ the demand band) so coverage gates pass.
         weekly = Decimal(600)
         total = weekly * Decimal(WEEKS_PER_TF)
         ws.cell(row=row, column=all_in_col, value=float(price))
+        ws.cell(row=row, column=fob_col, value=float(fob))
+        ws.cell(row=row, column=deliv_col, value=float(delivery))
+        ws.cell(row=row, column=vegcool_col, value=float(vegcool))
         ws.cell(row=row, column=weekly_col, value=float(weekly))
         ws.cell(row=row, column=total_col, value=float(total))
 
@@ -3651,6 +3694,20 @@ def _augment_summary_index(wb: Workbook, tab_index: list[tuple[str, str]]) -> No
         hc.alignment = _CENTER
     r += 1
     for tab, question in tab_index:
+        # A band separator (empty question) groups the tabs into the decision flow
+        # (Decide -> Compare -> Diligence -> Build & slice) the real allocation models use.
+        if question == "":
+            band = ws.cell(row=r, column=1, value=tab)
+            band.font = Font(bold=True, italic=True, color="1F3864", size=10)
+            band.fill = _TOTAL_FILL
+            band.alignment = _LEFT
+            band.border = _BORDER
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+            ws.cell(row=r, column=2).fill = _TOTAL_FILL
+            ws.cell(row=r, column=2).border = _BORDER
+            ws.row_dimensions[r].height = 18
+            r += 1
+            continue
         c1 = ws.cell(row=r, column=1, value=tab)
         c1.font = _TOTAL_FONT
         c1.alignment = _LEFT
@@ -3660,6 +3717,423 @@ def _augment_summary_index(wb: Workbook, tab_index: list[tuple[str, str]]) -> No
         c2.border = _BORDER
         ws.row_dimensions[r].height = 22
         r += 1
+
+
+def _write_controls_tab(
+    wb: Workbook,
+    seeded: SeededCycle,
+    config: EngineConfig,
+    baseline_total: Decimal,
+    stly_total: Decimal,
+    rec_spend: Decimal,
+    negotiation_savings: Decimal,
+) -> None:
+    """Controls / Assumptions — the cockpit (how this cycle was run + the frozen engine config).
+
+    The real allocation models open with a `Controls` tab (commodity, horizon, weeks/periods,
+    volume) that drives the whole model. We surface the run's assumptions, the savings baselines,
+    and the frozen `EngineConfig` weights/thresholds in ONE place so every downstream number is
+    traceable to how the engine was parameterised. Key/value, banded by section.
+    """
+
+    ws = wb.create_sheet("Controls")
+    next_row = _title_block(
+        ws,
+        title="Controls & Assumptions — how this cycle was run",
+        subtitle_lines=[
+            seeded.cycle_name,
+            DECISION_SUPPORT_STRAP,
+        ],
+        span=2,
+    )
+
+    total_cases = sum(seeded.period_cases_by_cell.values(), Decimal("0"))
+    total_weeks = len(seeded.tfs) * WEEKS_PER_TF
+    rec_savings = baseline_total - rec_spend
+
+    # (section | label | value | numfmt)  — numfmt None => text.
+    rows: list[tuple[str, str, object, str | None]] = [
+        ("Cycle", "Commodity", "Field Tomatoes (DEMO)", None),
+        ("Cycle", "Cycle code", seeded.cycle_code, None),
+        ("Cycle", "Horizon (weeks)", total_weeks, NUMFMT_INT),
+        ("Cycle", "Timeframes (seasons)", len(seeded.tfs), NUMFMT_INT),
+        ("Cycle", "Rounds run", len(seeded.rounds), NUMFMT_INT),
+        ("Scope", "DCs", len(seeded.dcs), NUMFMT_INT),
+        ("Scope", "Lots (items)", len(seeded.lots), NUMFMT_INT),
+        ("Scope", "Suppliers invited", len(seeded.suppliers), NUMFMT_INT),
+        ("Scope", "Total projected cases (period)", total_cases, NUMFMT_INT),
+        ("Baselines", "Incumbent baseline spend (iTrade routing)", baseline_total, NUMFMT_MONEY),
+        ("Baselines", "STLY baseline spend (synthetic — DEMO)", stly_total, NUMFMT_MONEY),
+        ("Baselines", "Recommended (Scenario B) spend", rec_spend, NUMFMT_MONEY),
+        ("Baselines", "Savings vs incumbent (period $)", rec_savings, NUMFMT_MONEY),
+        ("Baselines", "Negotiation savings R1→Final (period $)", negotiation_savings, NUMFMT_MONEY),
+        ("Engine weights", "Price weight", config.weight_price, NUMFMT_PCT),
+        ("Engine weights", "Coverage weight", config.weight_coverage, NUMFMT_PCT),
+        ("Engine weights", "Historical weight", config.weight_historical, NUMFMT_PCT),
+        ("Engine weights", "Z-Risk weight", config.weight_zrisk, NUMFMT_PCT),
+        ("Engine weights", "Continuity weight", config.weight_continuity, NUMFMT_PCT),
+        ("Engine rules", "Max suppliers per DC (split cap)", config.max_sup_dc, NUMFMT_INT),
+        ("Engine rules", "Concentration flag threshold", config.conc_thresh, NUMFMT_PCT),
+        ("Engine rules", "Global premium ceiling", config.global_premium_threshold, NUMFMT_PCT),
+        ("Engine rules", "Coverage eligibility floor", config.coverage_floor, NUMFMT_PCT),
+    ]
+
+    ws.column_dimensions["A"].width = 42
+    ws.column_dimensions["B"].width = 30
+    r = next_row
+    current_section = ""
+    for section, label, value, numfmt in rows:
+        if section != current_section:
+            band = ws.cell(row=r, column=1, value=section)
+            band.font = _HEADER_FONT
+            band.fill = _HEADER_FILL
+            band.alignment = _LEFT
+            band.border = _BORDER
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+            ws.cell(row=r, column=2).fill = _HEADER_FILL
+            ws.cell(row=r, column=2).border = _BORDER
+            current_section = section
+            r += 1
+        lc = ws.cell(row=r, column=1, value=label)
+        lc.font = _TOTAL_FONT
+        lc.alignment = _LEFT
+        lc.border = _BORDER
+        vc = ws.cell(row=r, column=2, value=value)
+        vc.alignment = _CENTER if numfmt else _LEFT
+        vc.border = _BORDER
+        if numfmt:
+            vc.number_format = numfmt
+        r += 1
+
+    note = ws.cell(
+        row=r + 1,
+        column=1,
+        value="Schema-backed: incumbent baseline, savings, weights, rules, rounds. "
+        "DEMO-illustrative: STLY uplift, product type — clearly labelled where shown.",
+    )
+    note.font = Font(italic=True, color="808080", size=9)
+    note.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.merge_cells(start_row=r + 1, start_column=1, end_row=r + 1, end_column=2)
+    ws.row_dimensions[r + 1].height = 30
+    ws.sheet_view.showGridLines = False
+
+
+@dataclass
+class _DcSignoff:
+    """One DC rolled up for the savings-first sign-off table (the headline output)."""
+
+    dc_name: str
+    incumbent: str
+    recommended: str
+    n_cells: int
+    rec_spend: Decimal
+    baseline_spend: Decimal
+    stly_spend: Decimal
+    negotiation: Decimal
+
+
+def _write_award_summary_tab(
+    wb: Workbook,
+    details: list[AwardDetail],
+    award_scenario_code: str,
+    award_scenario_label: str,
+    negotiation_by_dc: dict[str, Decimal],
+    lot_product_type: dict[str, str],
+) -> None:
+    """Award Summary (Sign-off) — THE headline: per DC, Incumbent → Recommended + savings.
+
+    The savings-first table the real allocation models put up front and buyers sign off on:
+    per DC the incumbent vs the recommended supplier(s), the recommended period spend, savings
+    in DOLLARS against TWO baselines (incumbent + STLY), and the round-over-round negotiation
+    capture. Plus a Conventional/Organic split (the product-type segmentation the real models
+    carry). Decision-support — recommends, does not assert (ADR-0006).
+    """
+
+    ws = wb.create_sheet("Award Summary")
+    rec = [d for d in details if d.scenario_code == award_scenario_code]
+
+    by_dc: dict[str, _DcSignoff] = {}
+    for d in sorted(rec, key=lambda x: x.dc_name):
+        s = by_dc.get(d.dc_name)
+        if s is None:
+            s = _DcSignoff(
+                dc_name=d.dc_name,
+                incumbent=d.incumbent_name,
+                recommended="",
+                n_cells=0,
+                rec_spend=Decimal("0"),
+                baseline_spend=Decimal("0"),
+                stly_spend=Decimal("0"),
+                negotiation=negotiation_by_dc.get(d.dc_name, Decimal("0")),
+            )
+            by_dc[d.dc_name] = s
+        s.n_cells += 1
+        s.rec_spend += d.spend
+        s.baseline_spend += d.baseline_spend
+        s.stly_spend += d.baseline_spend * _STLY_UPLIFT
+    # recommended supplier list per DC (distinct, readable)
+    sups_by_dc: dict[str, set[str]] = defaultdict(set)
+    for d in rec:
+        sups_by_dc[d.dc_name].add(d.supplier_name)
+    for dcn, s in by_dc.items():
+        s.recommended = ", ".join(sorted(sups_by_dc[dcn]))
+
+    columns: list[Col] = [
+        Col("DC", 16),
+        Col("Incumbent", 22),
+        Col("Recommended", 26),
+        Col("Cells", 8, NUMFMT_INT, total="sum"),
+        Col("Rec spend (period)", 18, NUMFMT_MONEY, total="sum"),
+        Col("Incumbent baseline", 18, NUMFMT_MONEY, total="sum"),
+        Col("Savings vs incumbent $", 18, NUMFMT_MONEY, total="sum"),
+        Col("Savings vs incumbent %", 16, NUMFMT_PCT),
+        Col("Savings vs STLY $", 16, NUMFMT_MONEY, total="sum"),
+        Col("Negotiation R1→Final $", 18, NUMFMT_MONEY, total="sum"),
+    ]
+    header_row = 5
+    body_start = header_row + 1
+    ordered = sorted(by_dc.values(), key=lambda x: x.dc_name)
+    for i, s in enumerate(ordered):
+        r = body_start + i
+        sav_inc = s.baseline_spend - s.rec_spend
+        sav_inc_pct = sav_inc / s.baseline_spend if s.baseline_spend > 0 else Decimal("0")
+        sav_stly = s.stly_spend - s.rec_spend
+        ws.cell(row=r, column=1, value=s.dc_name)
+        ws.cell(row=r, column=2, value=s.incumbent)
+        ws.cell(row=r, column=3, value=s.recommended)
+        ws.cell(row=r, column=4, value=s.n_cells)
+        ws.cell(row=r, column=5, value=float(s.rec_spend))
+        ws.cell(row=r, column=6, value=float(s.baseline_spend))
+        ws.cell(row=r, column=7, value=float(sav_inc))
+        ws.cell(row=r, column=8, value=float(sav_inc_pct))
+        ws.cell(row=r, column=9, value=float(sav_stly))
+        ws.cell(row=r, column=10, value=float(s.negotiation))
+
+    rows_meta = format_table(
+        ws,
+        title=f"Award Summary (Sign-off) — Recommended: Scenario {award_scenario_code} "
+        f"({award_scenario_label})",
+        subtitle_lines=[
+            "Per DC: incumbent → recommended, savings in $ vs TWO baselines + negotiation capture",
+            DECISION_SUPPORT_STRAP,
+        ],
+        columns=columns,
+        n_body_rows=len(ordered),
+        header_row=header_row,
+    )
+    # Blended savings-% in the TOTAL row = total savings / total baseline (a sum is meaningless).
+    total_row = rows_meta["total_row"]
+    ws.cell(
+        row=total_row,
+        column=8,
+        value=f"=G{total_row}/F{total_row}",
+    ).number_format = NUMFMT_PCT
+    ws.cell(row=total_row, column=8).font = _TOTAL_FONT
+    ws.cell(row=total_row, column=8).fill = _TOTAL_FILL
+    ws.cell(row=total_row, column=8).border = _BORDER
+    ws.cell(row=total_row, column=8).alignment = _CENTER
+
+    # Product-type split (Conventional vs Organic) — the segmentation the real models carry.
+    pt_spend: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    pt_base: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for d in rec:
+        pt = lot_product_type.get(d.lot_name, "Conventional")
+        pt_spend[pt] += d.spend
+        pt_base[pt] += d.baseline_spend
+    sec = total_row + 3
+    title = ws.cell(row=sec, column=1, value="By product type (Conventional / Organic)")
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    for c in range(1, 6):
+        ws.cell(row=sec, column=c).fill = _TITLE_FILL
+    ws.merge_cells(start_row=sec, start_column=1, end_row=sec, end_column=5)
+    hdr = sec + 1
+    for ci, h in enumerate(
+        ["Product type", "Rec spend", "Baseline", "Savings $", "Savings %"], start=1
+    ):
+        c = ws.cell(row=hdr, column=ci, value=h)
+        c.font = _HEADER_FONT
+        c.fill = _HEADER_FILL
+        c.alignment = _CENTER
+        c.border = _BORDER
+    for i, pt in enumerate(sorted(pt_spend)):
+        r = hdr + 1 + i
+        sav = pt_base[pt] - pt_spend[pt]
+        pct = sav / pt_base[pt] if pt_base[pt] > 0 else Decimal("0")
+        vals: list[tuple[object, str | None]] = [
+            (pt, None),
+            (float(pt_spend[pt]), NUMFMT_MONEY),
+            (float(pt_base[pt]), NUMFMT_MONEY),
+            (float(sav), NUMFMT_MONEY),
+            (float(pct), NUMFMT_PCT),
+        ]
+        for ci, (v, nf) in enumerate(vals, start=1):
+            c = ws.cell(row=r, column=ci, value=v)
+            c.border = _BORDER
+            c.alignment = _CENTER if nf else _LEFT
+            if nf:
+                c.number_format = nf
+    ws.sheet_view.showGridLines = False
+
+
+@dataclass(frozen=True)
+class FobRow:
+    """One (lot × DC × supplier) FOB decomposition line for the freight-transparency view."""
+
+    lot_name: str
+    dc_name: str
+    region: str
+    supplier_name: str
+    fob: Decimal
+    delivery: Decimal
+    vegcool: Decimal
+    all_in: Decimal
+
+
+def _gather_fob(
+    session: Session, seeded: SeededCycle, final_round_id: str
+) -> list[FobRow]:
+    """Per (lot × DC × supplier): the FOB / Delivery / VegCool / All-In decomposition (final round).
+
+    Reads the persisted `bid.bid_line` components (`fob_case`, `delivery_surcharge_case`,
+    `vegcool_surcharge_case`, `submitted_all_in_case`) — real schema columns (migration 0007).
+    One row per (lot, DC, supplier); the freight does not vary by TF in the demo, so we take the
+    first priced line per group. Names by D23.
+    """
+
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    dc_region = {dc.id: _dc_region(i) for i, dc in enumerate(seeded.dcs)}
+
+    rows = session.execute(
+        text(
+            "SELECT dc_id, lot_id, supplier_id, fob_case, delivery_surcharge_case, "
+            "vegcool_surcharge_case, submitted_all_in_case FROM bid.bid_line "
+            "WHERE cycle_id = :cyc AND round_id = :rnd AND submitted_all_in_case IS NOT NULL"
+        ),
+        {"cyc": seeded.cycle_id, "rnd": final_round_id},
+    ).all()
+
+    seen: set[tuple[str, str, str]] = set()
+    out: list[FobRow] = []
+    for dc_id, lot_id, sup_id, fob, deliv, veg, allin in rows:
+        key = (dc_id, lot_id, sup_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            FobRow(
+                lot_name=lot_name.get(lot_id, lot_id[:6]),
+                dc_name=dc_name.get(dc_id, dc_id[:6]),
+                region=dc_region.get(dc_id, ""),
+                supplier_name=sup_name.get(sup_id, sup_id[:6]),
+                fob=Decimal(str(fob)) if fob is not None else Decimal("0"),
+                delivery=Decimal(str(deliv)) if deliv is not None else Decimal("0"),
+                vegcool=Decimal(str(veg)) if veg is not None else Decimal("0"),
+                all_in=Decimal(str(allin)),
+            )
+        )
+    out.sort(key=lambda x: (x.lot_name, x.dc_name, x.all_in, x.supplier_name))
+    return out
+
+
+def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
+    """FOB vs All-In — freight transparency: farm-gate FOB + Delivery + VegCool = landed All-In.
+
+    The real models devote a whole `FOB analysis` tab (+ a separate Delivery Charge tab) to
+    stripping freight off the landed price and reading a regional min. We surface the same: each
+    bid decomposed FOB → +Delivery (lane freight, by region) → +VegCool → = All-In, with the
+    cheapest landed bid per (lot, DC) highlighted, and a regional freight summary so the buyer
+    sees WHY landed cost differs by lane. All from real `bid.bid_line` component columns.
+    """
+
+    ws = wb.create_sheet("FOB vs All-In")
+    columns: list[Col] = [
+        Col("Lot", 20),
+        Col("DC", 16),
+        Col("Region", 10),
+        Col("Supplier", 22),
+        Col("FOB $/case", 14, NUMFMT_MONEY),
+        Col("+ Delivery", 12, NUMFMT_MONEY),
+        Col("+ VegCool", 12, NUMFMT_MONEY),
+        Col("= All-In $/case", 14, NUMFMT_MONEY),
+        Col("Freight % of All-In", 16, NUMFMT_PCT),
+    ]
+    header_row = 5
+    body_start = header_row + 1
+    # cheapest landed All-In per (lot, DC) for the min-highlight.
+    min_by_group: dict[tuple[str, str], Decimal] = {}
+    for x in rows:
+        k = (x.lot_name, x.dc_name)
+        if k not in min_by_group or x.all_in < min_by_group[k]:
+            min_by_group[k] = x.all_in
+
+    for i, x in enumerate(rows):
+        r = body_start + i
+        freight = x.delivery + x.vegcool
+        freight_pct = (freight / x.all_in) if x.all_in > 0 else Decimal("0")
+        ws.cell(row=r, column=1, value=x.lot_name)
+        ws.cell(row=r, column=2, value=x.dc_name)
+        ws.cell(row=r, column=3, value=x.region)
+        ws.cell(row=r, column=4, value=x.supplier_name)
+        ws.cell(row=r, column=5, value=float(x.fob))
+        ws.cell(row=r, column=6, value=float(x.delivery))
+        ws.cell(row=r, column=7, value=float(x.vegcool))
+        ws.cell(row=r, column=8, value=float(x.all_in))
+        ws.cell(row=r, column=9, value=float(freight_pct))
+        if x.all_in == min_by_group[(x.lot_name, x.dc_name)]:
+            for c in (4, 8):
+                ws.cell(row=r, column=c).fill = _MIN_FILL
+                ws.cell(row=r, column=c).font = _MIN_FONT
+
+    format_table(
+        ws,
+        title="FOB vs All-In — farm-gate price + freight = landed cost",
+        subtitle_lines=[
+            "Cheapest LANDED bid per (lot, DC) highlighted green · freight = Delivery + VegCool",
+            DECISION_SUPPORT_STRAP,
+        ],
+        columns=columns,
+        n_body_rows=len(rows),
+        header_row=header_row,
+        add_total=False,
+    )
+
+    # Regional freight summary — avg delivery per region (why landed cost differs by lane).
+    by_region: dict[str, list[Decimal]] = defaultdict(list)
+    for x in rows:
+        by_region[x.region].append(x.delivery)
+    sec = body_start + len(rows) + 2
+    title = ws.cell(row=sec, column=1, value="Regional freight (avg Delivery $/case by lane)")
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    for c in range(1, 4):
+        ws.cell(row=sec, column=c).fill = _TITLE_FILL
+    ws.merge_cells(start_row=sec, start_column=1, end_row=sec, end_column=3)
+    hdr = sec + 1
+    for ci, h in enumerate(["Region", "Avg Delivery $/case", "Lanes"], start=1):
+        c = ws.cell(row=hdr, column=ci, value=h)
+        c.font = _HEADER_FONT
+        c.fill = _HEADER_FILL
+        c.alignment = _CENTER
+        c.border = _BORDER
+    for i, region in enumerate(sorted(by_region)):
+        vals = by_region[region]
+        avg = sum(vals, Decimal("0")) / Decimal(len(vals)) if vals else Decimal("0")
+        r = hdr + 1 + i
+        ws.cell(row=r, column=1, value=region).border = _BORDER
+        cc = ws.cell(row=r, column=2, value=float(avg))
+        cc.number_format = NUMFMT_MONEY
+        cc.alignment = _CENTER
+        cc.border = _BORDER
+        cn = ws.cell(row=r, column=3, value=len(vals))
+        cn.number_format = NUMFMT_INT
+        cn.alignment = _CENTER
+        cn.border = _BORDER
+    ws.sheet_view.showGridLines = False
 
 
 def write_scenario_workbook_xlsx(
@@ -3708,11 +4182,49 @@ def write_scenario_workbook_xlsx(
     )
     dc_names = [dc.name for dc in seeded.dcs]
 
-    # The tab index for the Overview front door (study §3.7) — built as tabs are added.
+    # Product type per lot (DEMO-illustrative segmentation, by lot order).
+    lot_product_type = {
+        seeded.lots[i].name: LOT_PRODUCT_TYPE[i % len(LOT_PRODUCT_TYPE)]
+        for i in range(len(seeded.lots))
+    }
+
+    # Round-evolution rows (negotiation story) — computed once, reused by the sign-off negotiation
+    # column AND the Round Evolution tab. Empty when single-round.
+    evo_rows: list[RoundEvoRow] = []
+    round_labels: list[str] = []
+    if len(seeded.rounds) > 1:
+        round_ids = [r.id for r in seeded.rounds]
+        round_labels = [r.name for r in seeded.rounds]
+        evo_rows = _gather_round_evolution(session, seeded, round_ids)
+
+    # Per-DC negotiation capture (R1→Final) on the RECOMMENDED award cells, + recommended spend.
+    rec_code = award.scenario_code
+    evo_by_key = {
+        (e.dc_name, e.lot_name, e.tf_name, e.supplier_name): e for e in evo_rows
+    }
+    negotiation_by_dc: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    rec_spend = Decimal("0")
+    for d in details:
+        if d.scenario_code != rec_code:
+            continue
+        rec_spend += d.spend
+        e = evo_by_key.get((d.dc_name, d.lot_name, d.tf_name, d.supplier_name))
+        if e is not None:
+            negotiation_by_dc[d.dc_name] += (-e.delta) * d.volume
+    negotiation_total = sum(negotiation_by_dc.values(), Decimal("0"))
+
+    # The tab index for the Overview front door — banded into the decision flow the real
+    # allocation models use (Decide → Compare → Diligence → Build & slice). Empty question = band.
     tab_index: list[tuple[str, str]] = [
+        ("Controls", "How was this run? Horizon, scope, baselines, engine weights & rules."),
+        ("§ DECIDE", ""),
+        ("Award Summary", "The recommendation: per-DC incumbent→recommended + savings $ to sign."),
         ("Scenario Comparison", "Which lens? A-G + LIVE Custom side by side, drill to DC."),
-        ("Supplier Comparison", "Which supplier per cell? Every eligible supplier's $/case."),
         ("Lowest-Cost Check", "Is the rec the cheapest? If not, why (the premium it trades)."),
+        ("§ COMPARE SUPPLIERS", ""),
+        ("Supplier Comparison", "Which supplier per cell? Every eligible supplier's $/case."),
+        ("FOB vs All-In", "Freight transparency: farm-gate FOB + delivery = landed, by lane."),
+        ("§ DILIGENCE", ""),
         ("Coverage", "Can they supply it? Offered vs required volume + cover band."),
         ("Detailed Scoring", "Why these scores? The 5 factors + the market stats behind them."),
     ]
@@ -3722,12 +4234,21 @@ def write_scenario_workbook_xlsx(
     # so the workbook opens with the live cross-tab values already resolved (D27).
     wb.calculation.fullCalcOnLoad = True
     _write_summary_tab(wb, seeded, config, rollups)
+    # --- Cockpit + headline sign-off (practitioner layer from the real allocation models). ---
+    _write_controls_tab(
+        wb, seeded, config, baseline_total, stly_total, rec_spend, negotiation_total
+    )
+    _write_award_summary_tab(
+        wb, details, rec_code, award.scenario_label, negotiation_by_dc, lot_product_type
+    )
+    # --- DECIDE / COMPARE (alignment surfaces, D26). ---
     _write_scenario_comparison_tab(
         wb, rollups, baseline_total, stly_total, dc_names, details, cells
     )
-    _write_supplier_comparison_tab(wb, config, cells, seeded)
-    # --- ADDED high-value v3 views (study §4), clean + single-purpose. ---
     _write_lowest_cost_check_tab(wb, cells, score_detail)
+    _write_supplier_comparison_tab(wb, config, cells, seeded)
+    _write_fob_analysis_tab(wb, _gather_fob(session, seeded, final_round_id))
+    # --- DILIGENCE (the receipts behind the recommendation). ---
     _write_coverage_tab(wb, coverage_rows, config)
     _write_detailed_scoring_tab(wb, score_detail)
     # TF Comparison only when the cycle has >1 timeframe (else the view is degenerate).
@@ -3737,10 +4258,7 @@ def write_scenario_workbook_xlsx(
             ("TF Comparison", "Same supplier across timeframes? Seasonal split to align on.")
         )
     # Round Evolution only when the cycle has >1 round (the negotiation story needs movement).
-    if len(seeded.rounds) > 1:
-        round_ids = [r.id for r in seeded.rounds]
-        round_labels = [r.name for r in seeded.rounds]
-        evo_rows = _gather_round_evolution(session, seeded, round_ids)
+    if evo_rows:
         _write_round_evolution_tab(wb, evo_rows, round_labels)
         tab_index.append(
             ("Round Evolution", "How did bids move across rounds? First→last price + direction.")
@@ -3749,7 +4267,8 @@ def write_scenario_workbook_xlsx(
     tab_index.append(
         ("Data Quality", "What's missing/thin? No-bids, thin competition, gate flags.")
     )
-    # --- Interactive + self-serve (KEEP). ---
+    # --- BUILD & SLICE — interactive + self-serve (KEEP, D25/D27). ---
+    tab_index.append(("§ BUILD & SLICE", ""))
     prices_sheet = _write_prices_helper(wb, cells)
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
     _write_data_pivot_tab(wb, details)
@@ -3760,7 +4279,7 @@ def write_scenario_workbook_xlsx(
         ("Data (pivot me)", "Slice it yourself: a flat Excel Table to drop a native PivotTable on.")
     )
 
-    # Front door: the tab index on the Overview/Summary tab (study §3.7).
+    # Front door: the banded tab index on the Overview/Summary tab.
     _augment_summary_index(wb, tab_index)
 
     path = OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx"
