@@ -2534,88 +2534,6 @@ def _write_supplier_comparison_tab(
         )
 
 
-def _write_scored_bids_tab(
-    wb: Workbook,
-    seeded: SeededCycle,
-    session: Session,
-    analysis_run_id: str,
-) -> None:
-    """Scored Bids tab — per bid: names, DC/lot/item/TF, the 5 factors + RecScore, eligible?."""
-
-    ws = wb.create_sheet("Scored Bids")
-    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
-    dc_name = {dc.id: dc.name for dc in seeded.dcs}
-    lot_name = {lot.id: lot.name for lot in seeded.lots}
-    tf_name = {tf.id: tf.name for tf in seeded.tfs}
-    item_for_lot = {seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))}
-
-    rows = session.execute(
-        text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, price_score, coverage_score, "
-            "hist_score, zrisk_score, continuity_score, rec_score, is_eligible, gate_flags "
-            "FROM eng.bid_score WHERE analysis_run_id = :run"
-        ),
-        {"run": analysis_run_id},
-    ).all()
-
-    columns = [
-        Col("Supplier", 26),
-        Col("DC", 18),
-        Col("Lot", 22),
-        Col("Item", 24),
-        Col("Timeframe", 20),
-        Col("Price", 9, NUMFMT_INT),
-        Col("Coverage", 10, NUMFMT_INT),
-        Col("Historical", 11, NUMFMT_INT),
-        Col("Z-Risk", 9, NUMFMT_INT),
-        Col("Continuity", 11, NUMFMT_INT),
-        Col("RecScore", 11, NUMFMT_INT),
-        Col("Eligible?", 11),
-        Col("Gate flags", 24),
-    ]
-    header_row = 5
-    body = sorted(
-        rows,
-        key=lambda r: (
-            dc_name.get(r[1], ""),
-            lot_name.get(r[2], ""),
-            tf_name.get(r[3], ""),
-            -float(r[9]),
-        ),
-    )
-    row = header_row + 1
-    for r in body:
-        (sup_id, dc_id, lot_id, tf_id, ps, cov, hist, z, cont, rec, elig, flags) = r
-        ws.cell(row=row, column=1, value=sup_name.get(sup_id, sup_id[:6]))
-        ws.cell(row=row, column=2, value=dc_name.get(dc_id, dc_id[:6]))
-        ws.cell(row=row, column=3, value=lot_name.get(lot_id, lot_id[:6]))
-        ws.cell(row=row, column=4, value=item_for_lot.get(lot_id, ""))
-        ws.cell(row=row, column=5, value=tf_name.get(tf_id, tf_id[:6]))
-        ws.cell(row=row, column=6, value=float(ps))
-        ws.cell(row=row, column=7, value=float(cov))
-        ws.cell(row=row, column=8, value=float(hist))
-        ws.cell(row=row, column=9, value=float(z))
-        ws.cell(row=row, column=10, value=float(cont))
-        ws.cell(row=row, column=11, value=float(rec))
-        ws.cell(row=row, column=12, value="Yes" if elig else "No")
-        ws.cell(row=row, column=13, value=flags or "—")
-        row += 1
-
-    format_table(
-        ws,
-        title="SCORED BIDS — five-factor banded scoring → RecScore",
-        subtitle_lines=[
-            "Per priced bid line on the final round. Scores 0-100; RecScore is the "
-            "weighted blend. Eligible? = passed the gates.",
-            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
-        ],
-        columns=columns,
-        n_body_rows=len(body),
-        header_row=header_row,
-        add_total=False,
-    )
-
-
 def _write_prices_helper(
     wb: Workbook,
     cells: list[CellInfo],
@@ -3010,6 +2928,740 @@ def _write_data_pivot_tab(wb: Workbook, details: list[AwardDetail]) -> None:
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
 
 
+# ---------------------------------------------------------------------------
+# DESIGN-STUDY ADDITIONS (SCENARIO_TOOL_DESIGN_STUDY.md §4) — the high-value v3
+# views we were light on, added clean (depth-on-demand, D27; single-purpose
+# tabs, named for the question), grounded in our sealed records (§5):
+#   * Lowest-Cost Check  — why the B recommendation ≠ the cheapest (governance).
+#   * Coverage           — offered vs required volume + cover ratio + band.
+#   * Detailed Scoring   — the 5 factors PLUS the market stats that explain them.
+#   * TF Comparison      — TF1 vs TF2 per DC×lot (only when >1 TF).
+#   * Round Evolution    — R1→…→Rn price movement per cell×supplier (only >1 round).
+#   * Data Quality       — no-bids / missing coverage / advisory gate flags (never fatal).
+# Visual design-language (color/type) is DEFERRED to the downstream design
+# review; these add STRUCTURE / VIEWS / interaction only.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ScoreDetail:
+    """One scored (supplier × cell) line + the per-group market stats that explain its scores."""
+
+    dc_name: str
+    lot_name: str
+    item_name: str
+    tf_name: str
+    supplier_name: str
+    price: Decimal
+    mkt_min: Decimal
+    mkt_avg: Decimal
+    prem_vs_low_frac: Decimal  # (price − mkt_min) / mkt_min
+    z_score: Decimal  # (price − mkt_avg) / mkt_std
+    bidder_count: int
+    price_score: Decimal
+    coverage_score: Decimal
+    hist_score: Decimal
+    zrisk_score: Decimal
+    continuity_score: Decimal
+    rec_score: Decimal
+    is_eligible: bool
+    gate_flags: str
+    is_recommended: bool  # the Scenario B pick for this cell
+    is_incumbent: bool
+
+
+def _gather_score_detail(
+    session: Session,
+    seeded: SeededCycle,
+    analysis_run_id: str,
+    final_round_id: str,
+    award: SelectedAward,
+) -> list[ScoreDetail]:
+    """Resolve every scored bid to a detail line + the market stats (MktMin/Avg, Z, PremVsLow).
+
+    The 5 factor scores + RecScore + eligibility come from `eng.bid_score`; the market stats are
+    recomputed per group key [dc, lot, tf] from the persisted FINAL-round `bid.bid_line` prices (the
+    same prices the engine scored). This is the auditability the proven v3 `Detailed Scoring` tab
+    gives — the recommendation explained, not asserted (ADR-0006). All by KEY (D21), by NAME (D23).
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    item_for_lot = {seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))}
+    rec_keys = {(c.dc_id, c.lot_id, c.tf_id, c.supplier_id) for c in award.cells}
+    inc_by = dict(seeded.incumbent_by_dc_lot)
+
+    # Final-round prices per (supplier, dc, lot, tf) → per-group market stats (min/avg/std/count).
+    price_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+        ),
+        {"cyc": seeded.cycle_id, "rnd": final_round_id},
+    ).all()
+    prices_by_group: dict[tuple[str, str, str], list[Decimal]] = defaultdict(list)
+    price_by: dict[tuple[str, str, str, str], Decimal] = {}
+    for sup_id, dc_id, lot_id, tf_id, price in price_rows:
+        if price is not None:
+            p = Decimal(str(price))
+            prices_by_group[(dc_id, lot_id, tf_id)].append(p)
+            price_by[(sup_id, dc_id, lot_id, tf_id)] = p
+
+    def _stats(group: tuple[str, str, str]) -> tuple[Decimal, Decimal, Decimal, int]:
+        vals = prices_by_group.get(group, [])
+        n = len(vals)
+        if n == 0:
+            return Decimal("0"), Decimal("0"), Decimal("0"), 0
+        mn = min(vals)
+        avg = sum(vals, Decimal("0")) / Decimal(n)
+        var = sum(((v - avg) ** 2 for v in vals), Decimal("0")) / Decimal(n)
+        std = var.sqrt() if var > 0 else Decimal("0")
+        return mn, avg, std, n
+
+    score_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, price_score, coverage_score, hist_score, "
+            "zrisk_score, continuity_score, rec_score, is_eligible, gate_flags "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+
+    details: list[ScoreDetail] = []
+    for (sup_id, dc_id, lot_id, tf_id, ps, cov, hist, z, cont, rec, elig, flags) in score_rows:
+        mn, avg, std, n = _stats((dc_id, lot_id, tf_id))
+        price = price_by.get((sup_id, dc_id, lot_id, tf_id), Decimal("0"))
+        prem = (price - mn) / mn if mn > 0 else Decimal("0")
+        zsc = (price - avg) / std if std > 0 else Decimal("0")
+        sup_disp = sup_name.get(sup_id, sup_id[:6])
+        details.append(
+            ScoreDetail(
+                dc_name=dc_name.get(dc_id, dc_id[:6]),
+                lot_name=lot_name.get(lot_id, lot_id[:6]),
+                item_name=item_for_lot.get(lot_id, ""),
+                tf_name=tf_name.get(tf_id, tf_id[:6]),
+                supplier_name=sup_disp,
+                price=price,
+                mkt_min=mn,
+                mkt_avg=avg,
+                prem_vs_low_frac=prem,
+                z_score=zsc,
+                bidder_count=n,
+                price_score=Decimal(str(ps)),
+                coverage_score=Decimal(str(cov)),
+                hist_score=Decimal(str(hist)),
+                zrisk_score=Decimal(str(z)),
+                continuity_score=Decimal(str(cont)),
+                rec_score=Decimal(str(rec)),
+                is_eligible=bool(elig),
+                gate_flags=flags or "",
+                is_recommended=(dc_id, lot_id, tf_id, sup_id) in rec_keys,
+                is_incumbent=inc_by.get((dc_id, lot_id)) == sup_id,
+            )
+        )
+    details.sort(key=lambda d: (d.dc_name, d.lot_name, d.tf_name, -float(d.rec_score)))
+    return details
+
+
+def _write_lowest_cost_check_tab(
+    wb: Workbook, cells: list[CellInfo], details: list[ScoreDetail]
+) -> None:
+    """Lowest-Cost Check — why the B recommendation is (or isn't) the cheapest bid (from v3).
+
+    Per cell: the recommended supplier's $/case vs the market-low, the premium it carries, whether
+    the rec IS the lowest, and a plain-language reason. This is the governance reconciliation the
+    proven v3 tool gives and we lacked — recommends-not-asserts made legible (ADR-0006).
+    """
+
+    ws = wb.create_sheet("Lowest-Cost Check")
+    # Per-cell recommended detail line, keyed by (dc,lot,tf) names via the rec flag.
+    rec_by_cell = {
+        (d.dc_name, d.lot_name, d.tf_name): d for d in details if d.is_recommended
+    }
+    columns = [
+        Col("DC", 16),
+        Col("Lot", 20),
+        Col("Item", 22),
+        Col("Timeframe", 16),
+        Col("Recommended", 22),
+        Col("Rec $/case", 12, NUMFMT_MONEY),
+        Col("Market-low $/case", 14, NUMFMT_MONEY),
+        Col("Premium vs Low", 13, NUMFMT_PCT),
+        Col("Is Lowest?", 11),
+        Col("Why not lowest", 42),
+    ]
+    header_row = 6
+    row = header_row + 1
+    n = 0
+    for c in cells:
+        d = rec_by_cell.get((c.dc_name, c.lot_name, c.tf_name))
+        present = [p for p in c.price_by_supplier.values() if p is not None]
+        min_price = min(present) if present else Decimal("0")
+        rec_price = d.price if d else c.price_by_supplier.get(c.rec_supplier, Decimal("0"))
+        prem = (rec_price - min_price) / min_price if min_price > 0 else Decimal("0")
+        is_lowest = abs(rec_price - min_price) < Decimal("0.005")
+        if is_lowest:
+            reason = "Recommended pick IS the market-low bid."
+        else:
+            reason = (
+                f"{prem * 100:.1f}% over the low — risk-adjusted for coverage/continuity "
+                "(RecScore, not price alone). Benchmark = Scenario A."
+            )
+        ws.cell(row=row, column=1, value=c.dc_name)
+        ws.cell(row=row, column=2, value=c.lot_name)
+        ws.cell(row=row, column=3, value=c.item_name)
+        ws.cell(row=row, column=4, value=c.tf_name)
+        ws.cell(row=row, column=5, value=c.rec_supplier)
+        ws.cell(row=row, column=6, value=float(rec_price))
+        ws.cell(row=row, column=7, value=float(min_price))
+        ws.cell(row=row, column=8, value=float(prem))
+        ws.cell(row=row, column=9, value="Yes" if is_lowest else "No")
+        ws.cell(row=row, column=10, value=reason)
+        row += 1
+        n += 1
+
+    fmt = format_table(
+        ws,
+        title="LOWEST-COST CHECK — is the recommendation the cheapest? if not, why?",
+        subtitle_lines=[
+            "Per cell: the Scenario B pick vs the market-low bid. Premium = the risk-adjusted "
+            "cost traded for coverage/continuity. A = the lowest-cost benchmark.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=n,
+        header_row=header_row,
+        add_total=False,
+    )
+    body_start, body_end = fmt["body_start"], fmt["body_end"]
+    if n > 0:
+        # Premium-vs-low > eligibility ceiling → amber-flag the premium cell (advisory).
+        ws.conditional_formatting.add(
+            f"H{body_start}:H{body_end}",
+            CellIsRule(
+                operator="greaterThan",
+                formula=["0.07"],
+                fill=_INCUMBENT_FILL,
+                font=Font(bold=True, color="9C6500"),
+            ),
+        )
+
+
+def _write_detailed_scoring_tab(wb: Workbook, details: list[ScoreDetail]) -> None:
+    """Detailed Scoring — the 5 factors PLUS the market stats that explain them (upgraded, from v3).
+
+    The proven v3 `Detailed Scoring` exposes MktMin/Avg, Z-score, PremVsLow and bidder count next to
+    the factor scores, so the recommendation is auditable. We were showing only the factors; this
+    adds the explaining stats. Real Excel Table (filterable). Recommended + incumbent rows flagged.
+    """
+
+    ws = wb.create_sheet("Detailed Scoring")
+    columns = [
+        Col("DC", 15),
+        Col("Lot", 18),
+        Col("Timeframe", 15),
+        Col("Supplier", 22),
+        Col("$/case", 10, NUMFMT_MONEY),
+        Col("Mkt Min", 10, NUMFMT_MONEY),
+        Col("Mkt Avg", 10, NUMFMT_MONEY),
+        Col("Prem vs Low", 11, NUMFMT_PCT),
+        Col("Z-Score", 9, NUMFMT_MONEY),
+        Col("# Bidders", 9, NUMFMT_INT),
+        Col("Price", 8, NUMFMT_INT),
+        Col("Cov", 7, NUMFMT_INT),
+        Col("Hist", 7, NUMFMT_INT),
+        Col("Z-Risk", 8, NUMFMT_INT),
+        Col("Cont", 7, NUMFMT_INT),
+        Col("RecScore", 10, NUMFMT_INT),
+        Col("Eligible?", 10),
+        Col("Rec/Inc", 12),
+        Col("Gate flags", 26),
+    ]
+    header_row = 5
+    row = header_row + 1
+    for d in details:
+        tag = []
+        if d.is_recommended:
+            tag.append("REC")
+        if d.is_incumbent:
+            tag.append("INC")
+        ws.cell(row=row, column=1, value=d.dc_name)
+        ws.cell(row=row, column=2, value=d.lot_name)
+        ws.cell(row=row, column=3, value=d.tf_name)
+        ws.cell(row=row, column=4, value=d.supplier_name)
+        ws.cell(row=row, column=5, value=float(d.price))
+        ws.cell(row=row, column=6, value=float(d.mkt_min))
+        ws.cell(row=row, column=7, value=float(d.mkt_avg))
+        ws.cell(row=row, column=8, value=float(d.prem_vs_low_frac))
+        ws.cell(row=row, column=9, value=float(d.z_score))
+        ws.cell(row=row, column=10, value=d.bidder_count)
+        ws.cell(row=row, column=11, value=float(d.price_score))
+        ws.cell(row=row, column=12, value=float(d.coverage_score))
+        ws.cell(row=row, column=13, value=float(d.hist_score))
+        ws.cell(row=row, column=14, value=float(d.zrisk_score))
+        ws.cell(row=row, column=15, value=float(d.continuity_score))
+        ws.cell(row=row, column=16, value=float(d.rec_score))
+        ws.cell(row=row, column=17, value="Yes" if d.is_eligible else "No")
+        ws.cell(row=row, column=18, value="·".join(tag) if tag else "—")
+        ws.cell(row=row, column=19, value=d.gate_flags or "—")
+        row += 1
+
+    format_table(
+        ws,
+        title="DETAILED SCORING — the five factors + the market stats that explain them",
+        subtitle_lines=[
+            "Per scored bid (final round). Market stats (Mkt Min/Avg, Prem vs Low, Z-Score, "
+            "# bidders) explain the factor scores → RecScore. Eligible? = passed the gates. "
+            "REC = Scenario B pick; INC = incumbent.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(details),
+        header_row=header_row,
+        add_total=False,
+    )
+
+
+@dataclass(frozen=True)
+class CoverageRow:
+    """One (supplier × cell) coverage line: offered vs required volume + cover ratio + band."""
+
+    dc_name: str
+    lot_name: str
+    tf_name: str
+    supplier_name: str
+    price: Decimal
+    req_cases: Decimal
+    offered_cases: Decimal
+    cover_ratio: Decimal
+    band: str
+    is_eligible: bool
+    is_recommended: bool
+
+
+def _gather_coverage(
+    session: Session,
+    seeded: SeededCycle,
+    analysis_run_id: str,
+    final_round_id: str,
+    award: SelectedAward,
+) -> list[CoverageRow]:
+    """Per (supplier × cell): offered vs required volume + cover ratio + band (from v3 Coverage).
+
+    Required cases come from the seeded projected volume; offered cases from the persisted
+    `bid.bid_line.volume_minimum_cases` (the vol-offered captured at intake); eligibility from
+    `eng.bid_score`. The coverage band mirrors v3's floors (the 0.80 eligibility floor). The view we
+    lacked — capacity reality next to price, not folded into a single score.
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    req_by = dict(seeded.period_cases_by_cell)  # (dc, lot, tf) -> required period cases
+    rec_keys = {(c.dc_id, c.lot_id, c.tf_id, c.supplier_id) for c in award.cells}
+
+    elig_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, is_eligible "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+    elig_by = {(s, d, lo, t): bool(e) for s, d, lo, t, e in elig_rows}
+
+    bid_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, "
+            "volume_minimum_cases FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+        ),
+        {"cyc": seeded.cycle_id, "rnd": final_round_id},
+    ).all()
+
+    rows: list[CoverageRow] = []
+    for sup_id, dc_id, lot_id, tf_id, price, offered in bid_rows:
+        if price is None:
+            continue
+        req = req_by.get((dc_id, lot_id, tf_id), Decimal("0"))
+        off = Decimal(str(offered)) if offered is not None else Decimal("0")
+        ratio = off / req if req > 0 else Decimal("0")
+        if req <= 0:
+            band = "As-Needed"
+        elif ratio < Decimal("0.50"):
+            band = "Critical (<50%)"
+        elif ratio < Decimal("0.80"):
+            band = "Short (<80%)"
+        elif ratio < Decimal("1.00"):
+            band = "Partial (<100%)"
+        elif ratio <= Decimal("1.20"):
+            band = "Full"
+        else:
+            band = "Surplus (>120%)"
+        rows.append(
+            CoverageRow(
+                dc_name=dc_name.get(dc_id, dc_id[:6]),
+                lot_name=lot_name.get(lot_id, lot_id[:6]),
+                tf_name=tf_name.get(tf_id, tf_id[:6]),
+                supplier_name=sup_name.get(sup_id, sup_id[:6]),
+                price=Decimal(str(price)),
+                req_cases=req,
+                offered_cases=off,
+                cover_ratio=ratio,
+                band=band,
+                is_eligible=elig_by.get((sup_id, dc_id, lot_id, tf_id), False),
+                is_recommended=(dc_id, lot_id, tf_id, sup_id) in rec_keys,
+            )
+        )
+    rows.sort(key=lambda r: (r.dc_name, r.lot_name, r.tf_name, -float(r.cover_ratio)))
+    return rows
+
+
+def _write_coverage_tab(wb: Workbook, rows: list[CoverageRow], config: EngineConfig) -> None:
+    """Coverage — offered vs required volume + cover ratio + band per (supplier × cell)."""
+
+    ws = wb.create_sheet("Coverage")
+    columns = [
+        Col("DC", 16),
+        Col("Lot", 20),
+        Col("Timeframe", 16),
+        Col("Supplier", 22),
+        Col("$/case", 11, NUMFMT_MONEY),
+        Col("Req (cases)", 12, NUMFMT_INT),
+        Col("Offered (cases)", 13, NUMFMT_INT),
+        Col("Cover Ratio", 12, NUMFMT_PCT),
+        Col("Band", 16),
+        Col("Eligible?", 10),
+        Col("Rec?", 8),
+    ]
+    header_row = 6
+    row = header_row + 1
+    for r in rows:
+        ws.cell(row=row, column=1, value=r.dc_name)
+        ws.cell(row=row, column=2, value=r.lot_name)
+        ws.cell(row=row, column=3, value=r.tf_name)
+        ws.cell(row=row, column=4, value=r.supplier_name)
+        ws.cell(row=row, column=5, value=float(r.price))
+        ws.cell(row=row, column=6, value=float(r.req_cases))
+        ws.cell(row=row, column=7, value=float(r.offered_cases))
+        ws.cell(row=row, column=8, value=float(r.cover_ratio))
+        ws.cell(row=row, column=9, value=r.band)
+        ws.cell(row=row, column=10, value="Yes" if r.is_eligible else "No")
+        ws.cell(row=row, column=11, value="Yes" if r.is_recommended else "—")
+        row += 1
+
+    fmt = format_table(
+        ws,
+        title="COVERAGE — offered vs required volume (capacity reality next to price)",
+        subtitle_lines=[
+            f"Offered vs required cases → cover ratio + band. The "
+            f"{config.coverage_floor * 100:.0f}% floor is the eligibility gate; "
+            "Short/Critical bands flag capacity risk (advisory).",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(rows),
+        header_row=header_row,
+        add_total=False,
+    )
+    body_start, body_end = fmt["body_start"], fmt["body_end"]
+    if rows:
+        # Cover ratio below the floor → red (the capacity risk the team must see).
+        ws.conditional_formatting.add(
+            f"H{body_start}:H{body_end}",
+            CellIsRule(
+                operator="lessThan",
+                formula=[str(float(config.coverage_floor))],
+                fill=_BREACH_FILL,
+                font=_BREACH_FONT,
+            ),
+        )
+
+
+def _write_tf_comparison_tab(wb: Workbook, cells: list[CellInfo]) -> None:
+    """TF Comparison — TF1 vs TF2 rec supplier/price per DC×lot, with a split flag (from v3).
+
+    Only written when the cycle has >1 timeframe. Per DC×lot: the recommended supplier + price in
+    each TF side by side, whether it's the SAME supplier across TFs, and a SplitFlag when the TFs
+    award differently — the seasonal-split story the proven v3 tool surfaces.
+    """
+
+    ws = wb.create_sheet("TF Comparison")
+    tf_names = sorted({c.tf_name for c in cells})
+    # Group cells by (dc, lot, item) → row; one column pair per TF (rec supplier + rec $/case).
+    by_dclot: dict[tuple[str, str, str], dict[str, tuple[str, Decimal]]] = defaultdict(dict)
+    for c in cells:
+        by_dclot[(c.dc_name, c.lot_name, c.item_name)][c.tf_name] = (
+            c.rec_supplier,
+            c.price_by_supplier.get(c.rec_supplier, Decimal("0")),
+        )
+
+    columns: list[Col] = [Col("DC", 16), Col("Lot", 20), Col("Item", 22)]
+    for tfn in tf_names:
+        columns.append(Col(f"{tfn} — Supplier", 22))
+        columns.append(Col(f"{tfn} — $/case", 12, NUMFMT_MONEY))
+    columns.append(Col("Same supplier?", 13))
+    columns.append(Col("Split flag", 12))
+
+    header_row = 6
+    row = header_row + 1
+    for (dcn, lotn, itemn) in sorted(by_dclot):
+        per_tf = by_dclot[(dcn, lotn, itemn)]
+        ws.cell(row=row, column=1, value=dcn)
+        ws.cell(row=row, column=2, value=lotn)
+        ws.cell(row=row, column=3, value=itemn)
+        col = 4
+        sups_seen: set[str] = set()
+        for tfn in tf_names:
+            sup, price = per_tf.get(tfn, ("—", Decimal("0")))
+            ws.cell(row=row, column=col, value=sup)
+            ws.cell(row=row, column=col + 1, value=float(price) if price else None)
+            if sup and sup != "—":
+                sups_seen.add(sup)
+            col += 2
+        same = len(sups_seen) <= 1
+        ws.cell(row=row, column=col, value="Yes" if same else "No")
+        ws.cell(row=row, column=col + 1, value="—" if same else "⚠ SPLIT")
+        row += 1
+
+    format_table(
+        ws,
+        title="TF COMPARISON — the recommendation across timeframes (seasonal split?)",
+        subtitle_lines=[
+            "Per DC × lot: the recommended supplier + $/case in each timeframe, side by side. "
+            "SPLIT = the timeframes award different suppliers (a seasonal split to align on).",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=row - (header_row + 1),
+        header_row=header_row,
+        add_total=False,
+    )
+
+
+@dataclass(frozen=True)
+class RoundEvoRow:
+    """One (supplier × cell) round-evolution line: the per-round price seq + first→last Δ."""
+
+    dc_name: str
+    lot_name: str
+    tf_name: str
+    supplier_name: str
+    prices: list[Decimal | None]  # one entry per round (None = no priced bid that round)
+    delta: Decimal  # last priced − first priced
+    pct: Decimal
+    direction: str
+
+
+def _gather_round_evolution(
+    session: Session, seeded: SeededCycle, round_ids: list[str]
+) -> list[RoundEvoRow]:
+    """Per (supplier × cell): the priced $/case across each round R1..Rn + first→last Δ + direction.
+
+    Reads the priced `bid.bid_line` rows for EVERY round (we persist all rounds; the engine scores
+    only the final). Returns rows only where >=2 rounds have a price, so the movement is real. The
+    negotiation story the proven v3 `Round Evolution` tool surfaces and we lacked.
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+
+    rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, round_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc"
+        ),
+        {"cyc": seeded.cycle_id},
+    ).all()
+    # (sup,dc,lot,tf) -> {round_id: price}
+    by_cell: dict[tuple[str, str, str, str], dict[str, Decimal]] = defaultdict(dict)
+    for sup_id, dc_id, lot_id, tf_id, rnd_id, price in rows:
+        if price is not None:
+            by_cell[(sup_id, dc_id, lot_id, tf_id)][rnd_id] = Decimal(str(price))
+
+    out: list[RoundEvoRow] = []
+    for (sup_id, dc_id, lot_id, tf_id), prices in by_cell.items():
+        seq: list[Decimal | None] = [prices.get(rid) for rid in round_ids]
+        present = [p for p in seq if p is not None]
+        if len(present) < 2:
+            continue
+        first, last = present[0], present[-1]
+        delta = last - first
+        pct = delta / first if first > 0 else Decimal("0")
+        direction = "↓ down" if delta < 0 else ("↑ up" if delta > 0 else "→ flat")
+        out.append(
+            RoundEvoRow(
+                dc_name=dc_name.get(dc_id, dc_id[:6]),
+                lot_name=lot_name.get(lot_id, lot_id[:6]),
+                tf_name=tf_name.get(tf_id, tf_id[:6]),
+                supplier_name=sup_name.get(sup_id, sup_id[:6]),
+                prices=seq,
+                delta=delta,
+                pct=pct,
+                direction=direction,
+            )
+        )
+    out.sort(key=lambda r: (r.dc_name, r.lot_name, r.tf_name, r.supplier_name))
+    return out
+
+
+def _write_round_evolution_tab(
+    wb: Workbook, rows: list[RoundEvoRow], round_labels: list[str]
+) -> None:
+    """Round Evolution — $/case per round + first→last Δ + direction per (supplier × cell)."""
+
+    ws = wb.create_sheet("Round Evolution")
+    columns: list[Col] = [Col("DC", 16), Col("Lot", 20), Col("Timeframe", 16), Col("Supplier", 22)]
+    for lbl in round_labels:
+        columns.append(Col(lbl, 13, NUMFMT_MONEY))
+    columns += [
+        Col("Δ first→last", 13, NUMFMT_MONEY),
+        Col("Δ %", 10, NUMFMT_PCT),
+        Col("Direction", 11),
+    ]
+    header_row = 6
+    row = header_row + 1
+    for r in rows:
+        ws.cell(row=row, column=1, value=r.dc_name)
+        ws.cell(row=row, column=2, value=r.lot_name)
+        ws.cell(row=row, column=3, value=r.tf_name)
+        ws.cell(row=row, column=4, value=r.supplier_name)
+        col = 5
+        for p in r.prices:
+            ws.cell(row=row, column=col, value=float(p) if p is not None else None)
+            col += 1
+        ws.cell(row=row, column=col, value=float(r.delta))
+        ws.cell(row=row, column=col + 1, value=float(r.pct))
+        ws.cell(row=row, column=col + 2, value=r.direction)
+        row += 1
+
+    format_table(
+        ws,
+        title="ROUND EVOLUTION — how each bid moved across the negotiation rounds",
+        subtitle_lines=[
+            "Per supplier × cell: the priced $/case in each round, then first→last movement. "
+            "Down = competitive tension working. Only cells priced in ≥2 rounds shown.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(rows),
+        header_row=header_row,
+        add_total=False,
+    )
+
+
+def _write_data_quality_tab(
+    wb: Workbook,
+    seeded: SeededCycle,
+    cells: list[CellInfo],
+    details: list[ScoreDetail],
+) -> None:
+    """Data Quality — no-bid cells / advisory gate flags surfaced, never fatal (v3 Missing Data).
+
+    Mirrors the proven v3 `Missing Data` tab: a flag / count / detail register of the data-quality
+    conditions the team should see — suppliers that didn't bid a cell, cells with thin competition,
+    and advisory gate flags — surfaced (transparency) but non-blocking (decision-support, ADR-0006).
+    """
+
+    ws = wb.create_sheet("Data Quality")
+    n_sup = len(seeded.suppliers)
+
+    # No-bid count: per cell, suppliers invited minus suppliers who priced.
+    no_bid_total = sum(max(0, n_sup - len(c.price_by_supplier)) for c in cells)
+    thin_cells = sum(1 for c in cells if len(c.price_by_supplier) < 3)
+    gate_flagged = sum(1 for d in details if d.gate_flags)
+    ineligible = sum(1 for d in details if not d.is_eligible)
+
+    issues: list[tuple[str, int, str]] = [
+        (
+            "No-bid cells (supplier × cell with no priced bid)",
+            no_bid_total,
+            "Suppliers that did not price a cell. Expected (suppliers decline cells); the cell is "
+            "still scored from those who bid. Non-blocking.",
+        ),
+        (
+            "Thin-competition cells (<3 bidders)",
+            thin_cells,
+            "Cells with fewer than 3 priced bids — the Z-score is less reliable; advisory "
+            "flag, the bid stays eligible.",
+        ),
+        (
+            "Bids carrying an advisory gate flag",
+            gate_flagged,
+            "Outlier / low-bidder-count notes accumulated in gate_flags. Advisory — does not by "
+            "itself make a bid ineligible.",
+        ),
+        (
+            "Bids gated ineligible",
+            ineligible,
+            "Failed a hard gate (no valid price / premium over ceiling / coverage < floor). Scored "
+            "but not awardable. Recommends-not-asserts: surfaced for review.",
+        ),
+    ]
+    columns = [Col("Flag", 46), Col("Count", 9, NUMFMT_INT), Col("Detail / Action", 70)]
+    header_row = 6
+    row = header_row + 1
+    for flag, count, detail in issues:
+        ws.cell(row=row, column=1, value=flag)
+        ws.cell(row=row, column=2, value=count)
+        c3 = ws.cell(row=row, column=3, value=detail)
+        c3.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.row_dimensions[row].height = 42
+        row += 1
+
+    format_table(
+        ws,
+        title="DATA QUALITY — surfaced, never hidden, never fatal",
+        subtitle_lines=[
+            "The data-quality conditions the team should see before aligning. All non-blocking "
+            "(decision-support) — the run completes and recommends; the human reviews these.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(issues),
+        header_row=header_row,
+        add_total=False,
+        add_autofilter=False,
+    )
+
+
+def _augment_summary_index(wb: Workbook, tab_index: list[tuple[str, str]]) -> None:
+    """Add a 'What's in this workbook' tab index to the Summary tab — the front door (study §3.7).
+
+    The proven v3 tool proved 20 flat tabs need navigation. With ~12 tabs we add a compact index on
+    the Overview/Summary tab: each tab + the one question it answers, so the buyer knows where to.
+    """
+
+    ws = wb["Summary"]
+    start = (ws.max_row or 1) + 2
+    title = ws.cell(row=start, column=1, value="What's in this workbook (where to go)")
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    ws.merge_cells(start_row=start, start_column=1, end_row=start, end_column=2)
+    ws.cell(row=start, column=2).fill = _TITLE_FILL
+    r = start + 1
+    hc1 = ws.cell(row=r, column=1, value="Tab")
+    hc2 = ws.cell(row=r, column=2, value="Answers the question")
+    for hc in (hc1, hc2):
+        hc.font = _HEADER_FONT
+        hc.fill = _HEADER_FILL
+        hc.border = _BORDER
+        hc.alignment = _CENTER
+    r += 1
+    for tab, question in tab_index:
+        c1 = ws.cell(row=r, column=1, value=tab)
+        c1.font = _TOTAL_FONT
+        c1.alignment = _LEFT
+        c1.border = _BORDER
+        c2 = ws.cell(row=r, column=2, value=question)
+        c2.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        c2.border = _BORDER
+        ws.row_dimensions[r].height = 22
+        r += 1
+
+
 def write_scenario_workbook_xlsx(
     session: Session,
     seeded: SeededCycle,
@@ -3020,12 +3672,19 @@ def write_scenario_workbook_xlsx(
 ) -> Path:
     """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26/D27) from the sealed records.
 
-    Tabs: Summary (headline) · Scenario Comparison (lenses side by side + LIVE Custom column + an
-    EXPANDABLE scenario→DC→supplier drill via outline grouping + per-DC matrix, D26/D27) · Supplier
-    Comparison (THE CENTERPIECE — every supplier per cell + min/impact) · Custom Scenario
-    (interactive, per-cell dropdowns + live spend/savings/cap-breach, D25) · Data (pivot me) (a flat
-    Excel Table the buyer can drop a native PivotTable on, D27) · Scored Bids · _Prices (hidden
-    helper grid the live formulas reference).
+    Redesigned per SCENARIO_TOOL_DESIGN_STUDY.md §4 — single-purpose tabs named for the
+    question, read left-to-right as a decision flow, depth via drill/filter/live (D27),
+    not 20-tab sprawl. Tabs: Summary/Overview (headline + tab index = the front door) ·
+    Scenario Comparison (lenses side by side + LIVE Custom + drill + per-DC matrix) ·
+    Supplier Comparison (CENTERPIECE — every supplier per cell) · Lowest-Cost Check (why
+    the rec ≠ cheapest) · Coverage (offered vs required) · Detailed Scoring (5 factors +
+    the market stats behind them) · TF Comparison (if >1 TF) · Round Evolution (if >1
+    round) · Data Quality (surfaced, never fatal) · Custom Scenario (interactive, D25) ·
+    Data (pivot me) (flat Excel Table, D27) · _Prices (hidden live-formula grid). The
+    high-value v3 views we were light on are ADDED clean; Bidder Detail / Top-5 /
+    Share-of-Business / Regional / Vol-Util are reachable by drilling Scenario Comparison +
+    pivoting Data (depth-on-demand), not as separate tabs. Visual design-language
+    (color/type) is DEFERRED to the downstream design review.
     """
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -3041,7 +3700,22 @@ def write_scenario_workbook_xlsx(
         session, seeded, scenarios, analysis_run_id
     )
     details = _gather_award_details(session, seeded, scenarios, analysis_run_id)
+    score_detail = _gather_score_detail(
+        session, seeded, analysis_run_id, final_round_id, award
+    )
+    coverage_rows = _gather_coverage(
+        session, seeded, analysis_run_id, final_round_id, award
+    )
     dc_names = [dc.name for dc in seeded.dcs]
+
+    # The tab index for the Overview front door (study §3.7) — built as tabs are added.
+    tab_index: list[tuple[str, str]] = [
+        ("Scenario Comparison", "Which lens? A-G + LIVE Custom side by side, drill to DC."),
+        ("Supplier Comparison", "Which supplier per cell? Every eligible supplier's $/case."),
+        ("Lowest-Cost Check", "Is the rec the cheapest? If not, why (the premium it trades)."),
+        ("Coverage", "Can they supply it? Offered vs required volume + cover band."),
+        ("Detailed Scoring", "Why these scores? The 5 factors + the market stats behind them."),
+    ]
 
     wb = Workbook()
     # fullCalcOnLoad → Excel recomputes every live formula (the Custom column + Custom tab) on open,
@@ -3052,10 +3726,42 @@ def write_scenario_workbook_xlsx(
         wb, rollups, baseline_total, stly_total, dc_names, details, cells
     )
     _write_supplier_comparison_tab(wb, config, cells, seeded)
+    # --- ADDED high-value v3 views (study §4), clean + single-purpose. ---
+    _write_lowest_cost_check_tab(wb, cells, score_detail)
+    _write_coverage_tab(wb, coverage_rows, config)
+    _write_detailed_scoring_tab(wb, score_detail)
+    # TF Comparison only when the cycle has >1 timeframe (else the view is degenerate).
+    if len(seeded.tfs) > 1:
+        _write_tf_comparison_tab(wb, cells)
+        tab_index.append(
+            ("TF Comparison", "Same supplier across timeframes? Seasonal split to align on.")
+        )
+    # Round Evolution only when the cycle has >1 round (the negotiation story needs movement).
+    if len(seeded.rounds) > 1:
+        round_ids = [r.id for r in seeded.rounds]
+        round_labels = [r.name for r in seeded.rounds]
+        evo_rows = _gather_round_evolution(session, seeded, round_ids)
+        _write_round_evolution_tab(wb, evo_rows, round_labels)
+        tab_index.append(
+            ("Round Evolution", "How did bids move across rounds? First→last price + direction.")
+        )
+    _write_data_quality_tab(wb, seeded, cells, score_detail)
+    tab_index.append(
+        ("Data Quality", "What's missing/thin? No-bids, thin competition, gate flags.")
+    )
+    # --- Interactive + self-serve (KEEP). ---
     prices_sheet = _write_prices_helper(wb, cells)
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
     _write_data_pivot_tab(wb, details)
-    _write_scored_bids_tab(wb, seeded, session, analysis_run_id)
+    tab_index.append(
+        ("Custom Scenario", "Build your own: override the supplier per cell, recomputes live.")
+    )
+    tab_index.append(
+        ("Data (pivot me)", "Slice it yourself: a flat Excel Table to drop a native PivotTable on.")
+    )
+
+    # Front door: the tab index on the Overview/Summary tab (study §3.7).
+    _augment_summary_index(wb, tab_index)
 
     path = OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx"
     wb.save(path)
