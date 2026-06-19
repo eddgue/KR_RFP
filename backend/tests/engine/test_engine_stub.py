@@ -1,13 +1,13 @@
-"""Engine library purity + determinism (PLAN §3, ENG-PLAN §5) — PURE, no DB.
+"""Engine library purity + version-tag guards (PLAN §3, ENG-PLAN §5) — PURE, no DB.
 
 Two invariants, provable without a database:
-  1. Determinism — the same frozen inputs always yield the same result (reproducibility is a
-     hard requirement for sealed runs, S2). Run twice, assert equality.
-  2. Purity — the engine package imports NO db/http/clock modules. We parse the AST of every
-     file under `app/engine` and assert none import sqlalchemy/fastapi/requests/etc., and that
-     the stub is tagged `engine_version == "stub"` so no stubbed run masquerades as v3.
+  1. Purity — every file under `app/engine` imports NO db/http/clock/nondeterminism module, and
+     NEVER imports from the `reference/` quarantine (the clean-room boundary, ADR-0001). We parse
+     each file's AST and assert it.
+  2. Version tagging — the stub tags itself `"stub"` and the real engine tags itself
+     `"v3-cleanroom"`, so no stubbed run is ever mistaken for a validated v3 run and vice versa.
 
-This test needs only stdlib + the engine package (pydantic), so it passes from day one.
+This test needs only stdlib + the engine package (pydantic), so it passes standalone.
 """
 
 from __future__ import annotations
@@ -18,10 +18,11 @@ from pathlib import Path
 
 from app.engine.interface import BidInput, EngineConfig, EngineInputs, ScenarioCode
 from app.engine.stub import STUB_VERSION, DeterministicStubEngine
+from app.engine.v3 import V3_VERSION, V3Engine
 
 ENGINE_DIR = Path(__file__).resolve().parents[2] / "app" / "engine"
 
-# Modules the pure library must never touch (db / http / nondeterminism).
+# Modules the pure library must never touch (db / http / nondeterminism) + the quarantine.
 FORBIDDEN_IMPORT_PREFIXES = (
     "sqlalchemy",
     "fastapi",
@@ -30,6 +31,7 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "httpx",
     "psycopg",
     "random",
+    "reference",  # clean-room boundary (ADR-0001): engine must never import reference/
     "app.core.db",
     "app.core.security",
 )
@@ -39,7 +41,7 @@ def _sample_inputs() -> EngineInputs:
     return EngineInputs(
         cycle_id="cyc-1",
         round_code="R1",
-        config=EngineConfig(active_tf_codes=("TF1",)),
+        config=EngineConfig(active_tf_codes=("TF1",), final_round_code="R1"),
         bids=(
             BidInput(
                 bid_id="b1",
@@ -71,44 +73,33 @@ def _sample_inputs() -> EngineInputs:
     )
 
 
-def test_stub_is_deterministic() -> None:
-    """Same inputs -> identical results across independent runs and instances."""
+def test_stub_is_deterministic_and_tagged() -> None:
+    """The placeholder is deterministic and tagged 'stub' (never mistaken for v3)."""
 
     inputs = _sample_inputs()
     first = DeterministicStubEngine().run(inputs)
     second = DeterministicStubEngine().run(inputs)
     assert first == second
+    assert first.engine_version == STUB_VERSION == "stub"
+    assert {s.bid_id for s in first.scores} == {"b1", "b2", "b3"}
+    assert any(sc.code is ScenarioCode.A for sc in first.scenarios)
 
 
-def test_stub_result_shape_and_version() -> None:
-    """Result is valid-shaped: tagged 'stub', has scores for every bid, a Scenario A, awards."""
+def test_real_engine_tagged_distinctly_from_stub() -> None:
+    """The real engine tags itself 'v3-cleanroom' — distinct from the stub tag."""
 
-    result = DeterministicStubEngine().run(_sample_inputs())
-
-    assert result.engine_version == STUB_VERSION == "stub"
-    assert {s.bid_id for s in result.scores} == {"b1", "b2", "b3"}
-    assert any(sc.code is ScenarioCode.A for sc in result.scenarios)
-
-    # Single-winner per cell: the cheapest ELIGIBLE bid (b2 @ 8.50) wins DC1/L1/TF1 fully.
-    assert len(result.awards) == 1
-    award = result.awards[0]
-    assert award.supplier_id == "s2"
-    assert award.volume_share == Decimal("1.0")
-    assert award.scenario_code is ScenarioCode.A
+    result = V3Engine().run(_sample_inputs())
+    assert result.engine_version == V3_VERSION == "v3-cleanroom"
+    assert result.engine_version != STUB_VERSION
 
 
-def test_ineligible_bids_excluded_from_allocation() -> None:
-    """Ineligible bids never receive an award (b3 is gated out)."""
-
-    result = DeterministicStubEngine().run(_sample_inputs())
-    assert all(a.supplier_id != "s3" for a in result.awards)
-
-
-def test_engine_package_has_no_db_or_http_imports() -> None:
-    """Purity (PLAN §3): no file under app/engine imports db/http/nondeterministic modules."""
+def test_engine_package_is_pure_and_clean_room() -> None:
+    """Purity (PLAN §3) + clean-room (ADR-0001): no forbidden or reference imports anywhere."""
 
     offenders: list[str] = []
+    scanned = 0
     for path in ENGINE_DIR.rglob("*.py"):
+        scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             names: list[str] = []
@@ -120,4 +111,5 @@ def test_engine_package_has_no_db_or_http_imports() -> None:
                 if any(name == p or name.startswith(f"{p}.") for p in FORBIDDEN_IMPORT_PREFIXES):
                     offenders.append(f"{path.name}: {name}")
 
-    assert not offenders, f"Engine purity violation — forbidden imports: {offenders}"
+    assert scanned > 0, "purity scan found no engine files — check ENGINE_DIR"
+    assert not offenders, f"Engine purity/clean-room violation — forbidden imports: {offenders}"

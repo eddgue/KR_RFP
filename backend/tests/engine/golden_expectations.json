@@ -1,0 +1,102 @@
+{
+  "_doc": "Independently-derived golden expectations for the synthetic fixture (GOLDEN_MASTER.md §3). Values traced by hand from V3_ENGINE_LOGIC.md band TABLES, NOT from our engine and NOT from the quarantined v3 (clean-room, ADR-0001). The test asserts the lifted engine reproduces these. Tolerance: band scores exact; RecScore exact to 2dp. NO real data — placeholders only.",
+  "weights_default": {
+    "price": "0.35", "coverage": "0.25", "historical": "0.20", "zrisk": "0.10", "continuity": "0.10"
+  },
+  "price_band": {
+    "_note": "edge bid: cov=100, hist=50 (no baseline), z=100 (2-bid group), cont=0; rec = price*.35 + 45",
+    "b_pe_LP01_e": {"price_score": "100", "rec_score": "80.00", "eligible": true},
+    "b_pe_LP02_e": {"price_score": "100", "rec_score": "80.00", "eligible": true},
+    "b_pe_LP03_e": {"price_score": "80", "rec_score": "73.00", "eligible": true},
+    "b_pe_LP04_e": {"price_score": "80", "rec_score": "73.00", "eligible": true},
+    "b_pe_LP05_e": {"price_score": "50", "rec_score": "62.50", "eligible": true},
+    "b_pe_LP06_e": {"price_score": "50", "rec_score": "62.50", "eligible": true},
+    "b_pe_LP07_e": {"price_score": "20", "rec_score": "52.00", "eligible": false, "gate": "Price premium exceeds threshold"}
+  },
+  "coverage_band": {
+    "_note": "edge bid: price=100, hist=50, z=100, cont=0; rec = 55 + cov*.25",
+    "b_cov_LC01_e": {"coverage_score": "0", "rec_score": "55.00", "eligible": false, "gate": "Insufficient volume (<80%)"},
+    "b_cov_LC02_e": {"coverage_score": "40", "rec_score": "65.00", "eligible": false, "gate": "Insufficient volume (<80%)"},
+    "b_cov_LC03_e": {"coverage_score": "40", "rec_score": "65.00", "eligible": false, "gate": "Insufficient volume (<80%)"},
+    "b_cov_LC04_e": {"coverage_score": "70", "rec_score": "72.50", "eligible": true},
+    "b_cov_LC05_e": {"coverage_score": "70", "rec_score": "72.50", "eligible": true},
+    "b_cov_LC06_e": {"coverage_score": "100", "rec_score": "80.00", "eligible": true},
+    "b_cov_LC07_e": {"coverage_score": "100", "rec_score": "80.00", "eligible": true},
+    "b_cov_LC08_e": {"coverage_score": "95", "rec_score": "78.75", "eligible": true},
+    "b_cov_nan_e": {"coverage_score": "30", "rec_score": "62.50", "eligible": true},
+    "b_cov_an_e": {"coverage_score": "70", "rec_score": "72.50", "eligible": true}
+  },
+  "historical_band": {
+    "_note": "edge bid: price=100, cov=100, z=100, cont=0; rec = 70 + hist*.20",
+    "b_h_LH01": {"hist_score": "100", "rec_score": "90.00"},
+    "b_h_LH02": {"hist_score": "100", "rec_score": "90.00"},
+    "b_h_LH03": {"hist_score": "85", "rec_score": "87.00"},
+    "b_h_LH04": {"hist_score": "70", "rec_score": "84.00"},
+    "b_h_LH05": {"hist_score": "45", "rec_score": "79.00"},
+    "b_h_LH06": {"hist_score": "20", "rec_score": "74.00"},
+    "b_h_nobase": {"hist_score": "50", "rec_score": "80.00"}
+  },
+  "zrisk_band": {
+    "b_zl1": {"zrisk_score": "100"},
+    "b_zlow": {"zrisk_score": "60", "gate": "Low price outlier: validate sustainability"},
+    "b_zhigh": {"zrisk_score": "40", "gate": "High price outlier"}
+  },
+  "continuity": {
+    "_note": "DC60/LT01: incumbent S70 vs cheaper non-incumbent rival S71. Continuity 100 for the incumbent, 0 for the rival.",
+    "b_inc": {"continuity_score": "100", "rec_score": "90.00", "is_incumbent": true},
+    "b_inc_rival": {"continuity_score": "0", "rec_score": "80.00", "is_incumbent": false}
+  },
+  "scenario_c_incumbent_defense": {
+    "_note": "DC60/LT01: A picks the cheapest (rival S71); B picks the highest RecScore (incumbent S70, continuity-boosted); C retains the incumbent S70 (within comparable premium at full coverage). Proves A != B and the incumbent-defense lens.",
+    "dc_no": "DC60", "lot_id": "LT01",
+    "a_supplier": "S71", "b_supplier": "S70", "c_supplier": "S70"
+  },
+  "cost_construction": {
+    "b_fallback": {"awarded_price": "95.00", "_note": "All-In blank -> FOB 90 + Del 5 + Veg 3 - Lot 2 - AllLot 1"},
+    "b_doublesub": {"awarded_price": "95.00", "_note": "All-In 95 present WITH Lot_Discount 2 -> NOT re-subtracted (guard)"},
+    "b_zeroprice": {"eligible": false, "gate": "No valid price"}
+  },
+  "scenario_d_split": {
+    "_note": "DC20/TF1: SupRankScore -> top-2 = {S31 (68), S33 (63)} over S32 (62.75, dragged by its weak LT01 alt). LT03 is coverable only by S32 (outside top-2) -> fallback-flagged fill.",
+    "dc_no": "DC20", "tf_code": "TF1", "max_sup_dc": 2,
+    "awards": [
+      {"lot_id": "LT01", "supplier_id": "S31", "is_fallback": false},
+      {"lot_id": "LT02", "supplier_id": "S31", "is_fallback": false},
+      {"lot_id": "LT03", "supplier_id": "S32", "is_fallback": true},
+      {"lot_id": "LT04", "supplier_id": "S33", "is_fallback": false}
+    ]
+  },
+  "scenario_a_lowest_cost": {
+    "_note": "Scenario A picks the cheapest eligible bid per cell. On DC40/LT01 the cheapest eligible is SX0 @ 100.00.",
+    "dc_no": "DC40", "lot_id": "LT01", "supplier_id": "SX0", "awarded_price": "100.00"
+  },
+  "scenario_b_recommended": {
+    "_note": "B is the highest-RecScore pick per cell. On DC40/LT01, SX0 (cheaper, same scores) wins.",
+    "dc_no": "DC40", "lot_id": "LT01", "supplier_id": "SX0"
+  },
+  "scenario_e_exclusion": {
+    "_note": "SX0 excluded -> E re-runs B minus SX0 -> SX1 wins DC40/LT01.",
+    "dc_no": "DC40", "lot_id": "LT01", "supplier_id": "SX1"
+  },
+  "scenario_f_custom": {
+    "_note": "Custom override forces S32 on DC20/LT01 (B picked S31).",
+    "dc_no": "DC20", "lot_id": "LT01", "b_supplier": "S31", "f_supplier": "S32"
+  },
+  "scenario_g_preferred": {
+    "_note": "Preferred rule forces S32 on DC20/LT01; a second rule for a no-bid supplier on LT99 hits the exception path and keeps B's pick.",
+    "dc_no": "DC20", "lot_id": "LT01", "g_supplier": "S32"
+  },
+  "concentration": {
+    "_note": "S50's Scenario-B RecSpend (6000 cases * 100) is >= 40% of total category B spend -> flagged. Distinct from the per-DC cap.",
+    "flagged_suppliers": ["S50"]
+  },
+  "cap_breach": {
+    "_note": "DC11/TF1 awards span >2 suppliers across its lots in Scenario B -> cap_breach_flag set on those B awards.",
+    "breaching_dc_tf": ["DC11", "TF1"]
+  },
+  "weight_renormalization": {
+    "_note": "Weights summing to 1.20 (0.42/0.30/0.24/0.12/0.12) renormalize to 0.35/0.25/0.20/0.10/0.10 (sum 1.0).",
+    "raw": {"price": "0.42", "coverage": "0.30", "historical": "0.24", "zrisk": "0.12", "continuity": "0.12"},
+    "normalized": {"price": "0.35", "coverage": "0.25", "historical": "0.20", "zrisk": "0.10", "continuity": "0.10"}
+  }
+}
