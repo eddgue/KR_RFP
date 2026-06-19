@@ -83,10 +83,24 @@ def _build_instructions(ws: Worksheet, scope: CycleScope) -> None:
         ws.cell(row=offset, column=2, value=value)
 
 
-def _scope_cell_values(row: ScopeRow) -> dict[BidColumn, str]:
-    """The system-owned scope values written into a `Bids` row (labels, not ids — human-facing)."""
+def _scope_cell_values(row: ScopeRow, cycle_id: str) -> dict[BidColumn, str]:
+    """The system-owned scope cells written into a `Bids` row.
+
+    D21: the KEY-ID columns carry the system-owned surrogate UUIDs (the join identity); the display
+    columns carry the human names (attributes only). Both are system-owned/locked — a supplier
+    never edits them — but only the keys are the identity the ingester validates against the scope.
+    """
 
     return {
+        # --- Key IDs (D21) — the join identity (validated, never resolved, on ingest). ---
+        BidColumn.CYCLE_ID: cycle_id,
+        BidColumn.ROUND_ID: row.round_id,
+        BidColumn.TF_ID: row.tf_id,
+        BidColumn.LOT_ID: row.lot_id,
+        BidColumn.ITEM_ID: row.item_id,
+        BidColumn.DC_ID: row.dc_id,
+        BidColumn.SUPPLIER_ID: row.supplier_id,
+        # --- Display names (attributes only; a mismatch warns, never re-resolves). ---
         BidColumn.ROUND: row.round_code,
         BidColumn.BID_TYPE: row.bid_type,
         BidColumn.SUPPLIER: row.supplier_label,
@@ -101,7 +115,7 @@ def _build_bids(ws: Worksheet, scope: CycleScope) -> None:
     _write_headers(ws, f"Bids — {scope.cycle_name}", BID_HEADERS)
     header_index = {header: i for i, header in enumerate(BID_HEADERS, start=1)}
     for offset, scope_row in enumerate(scope.rows, start=BODY_START_ROW):
-        for column, value in _scope_cell_values(scope_row).items():
+        for column, value in _scope_cell_values(scope_row, scope.cycle_id).items():
             ws.cell(row=offset, column=header_index[column.value], value=value)
         # Price/volume cells are intentionally left blank for the supplier to fill.
 

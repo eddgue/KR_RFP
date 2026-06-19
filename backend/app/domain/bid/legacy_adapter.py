@@ -4,8 +4,13 @@ D20: our owned template is the LIVE contract; the messy reference formats (.xlsb
 are TEST/REFERENCE inputs only — proof of migration resilience, not the live path. This adapter
 is the migration bridge: it reads a *different-shaped* (synthetic, our own — NOT the quarantined
 real files) workbook, maps its columns onto our owned `Bids` grain, and hands the normalized bytes
-to `bid_ingester.ingest_template`. Anything it cannot map flows through to the ingester's
-quarantine (we never guess).
+to the ingester. Anything it cannot map flows through to quarantine (we never guess).
+
+D21 boundary — this is the ONLY place name resolution lives. Legacy inputs predate the embedded
+key IDs, so their identity can only come from the human labels resolved via the ref/alias layer
+(`IdentityResolver`). This adapter therefore calls `bid_ingester.ingest_template_resolved`
+(the LEGACY-ONLY, name-resolving entry point) — NOT the live, key-validated `ingest_template`.
+The name-resolver fallback is bounded to migration: the live product never reaches it.
 
 This deliberately mirrors the §2/§4 reality of the reference corpus WITHOUT importing it: a header
 row that is NOT at our row 2, supplier/DC/item down the rows, a primary block of cost sub-fields,
@@ -19,7 +24,11 @@ from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
 
-from app.domain.bid.bid_ingester import IdentityResolver, IngestResult, ingest_template
+from app.domain.bid.bid_ingester import (
+    IdentityResolver,
+    IngestResult,
+    ingest_template_resolved,
+)
 from app.domain.bid.template_schema import (
     BID_HEADERS,
     BODY_START_ROW,
@@ -116,9 +125,13 @@ def ingest_legacy(
     sheet_name: str,
     legacy_header_row: int,
 ) -> IngestResult:
-    """Adapt a synthetic legacy workbook to our owned template, then ingest it normally."""
+    """Adapt a synthetic legacy workbook to our owned grain, then NAME-RESOLVE it (legacy only).
+
+    Legacy inputs have no embedded keys, so identity is the labels resolved via `resolver`. This
+    is the only sanctioned caller of `ingest_template_resolved` — the live product key-validates.
+    """
 
     owned_bytes = adapt_legacy_to_owned(
         legacy_bytes, sheet_name=sheet_name, legacy_header_row=legacy_header_row
     )
-    return ingest_template(owned_bytes, resolver)
+    return ingest_template_resolved(owned_bytes, resolver)

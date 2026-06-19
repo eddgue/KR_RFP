@@ -16,6 +16,7 @@ from app.domain.bid.bid_ingester import (
     PRICE_BASIS_ALL_IN,
     PRICE_BASIS_FALLBACK,
     Completeness,
+    QuarantineReason,
     ingest_template,
 )
 from app.domain.bid.template_generator import (
@@ -30,7 +31,7 @@ from app.domain.bid.template_schema import (
     SHEET_INSTRUCTIONS,
     BidColumn,
 )
-from tests.bid.synthetic import build_resolver, build_scope
+from tests.bid.synthetic import build_scope
 
 _D = Decimal
 
@@ -85,14 +86,16 @@ def test_generated_template_has_owned_sheets_and_grain() -> None:
 
 def test_round_trip_grain_and_components_exact() -> None:
     scope = build_scope()
-    resolver = build_resolver()
 
     template_bytes = generate_template_bytes(scope)
     filled_bytes = _fill_bids(template_bytes)
-    result = ingest_template(filled_bytes, resolver)
+    # D21: ingest OUR template by KEY VALIDATION against the scope (no name resolver in sight).
+    result = ingest_template(filled_bytes, scope)
 
     # Nothing quarantined — a clean self-generated round-trip.
     assert result.quarantined == []
+    # No name warnings — the generator wrote the scope's own names against its own keys.
+    assert result.name_warnings == []
     # Same number of lines as scope rows (grain count round-trips).
     assert len(result.lines) == len(scope.rows)
 
@@ -112,6 +115,21 @@ def test_round_trip_grain_and_components_exact() -> None:
         (r.round_code, r.supplier_id, r.dc_id, r.lot_id, r.item_id, r.tf_code) for r in scope.rows
     }
     assert ingested_grain == scope_grain
+
+    # D21: the EMBEDDED KEY tuples round-trip EXACTLY — generated scope keys == ingested keys.
+    ingested_keys = {
+        (
+            line.identity.cycle_id,
+            line.identity.round_id,
+            line.identity.tf_id,
+            line.identity.lot_id,
+            line.identity.item_id,
+            line.identity.dc_id,
+            line.identity.supplier_id,
+        )
+        for line in result.lines
+    }
+    assert ingested_keys == scope.key_set()
 
     by_row = {line.source_row_number: line for line in result.lines}
     first_row = min(by_row)
@@ -140,3 +158,106 @@ def test_round_trip_grain_and_components_exact() -> None:
     assert result.bid_count == len(scope.rows)
     assert result.no_bid_count == 0
     assert result.incomplete_count == 0
+
+
+def _fill_all_in(template_bytes: bytes) -> tuple[bytes, list[int]]:
+    """Fill every body row with a simple All-In bid; return (bytes, body row numbers)."""
+
+    wb = load_workbook(BytesIO(template_bytes))
+    ws = wb[SHEET_BIDS]
+    col = {h: i for i, h in enumerate(BID_HEADERS, start=1)}
+    body_rows = list(range(HEADER_ROW + 1, ws.max_row + 1))
+    for row in body_rows:
+        ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue(), body_rows
+
+
+def test_tampered_embedded_key_quarantines_not_resolved() -> None:
+    """D21: a row whose embedded LOT_ID is tampered to an unknown key quarantines (UNKNOWN_KEY).
+
+    The display names are LEFT INTACT and valid — proving we do NOT silently re-resolve the row
+    from its names; an out-of-scope embedded key is fatal for that row.
+    """
+
+    scope = build_scope()
+    template_bytes = generate_template_bytes(scope)
+
+    wb = load_workbook(BytesIO(template_bytes))
+    ws = wb[SHEET_BIDS]
+    col = {h: i for i, h in enumerate(BID_HEADERS, start=1)}
+    body_rows = list(range(HEADER_ROW + 1, ws.max_row + 1))
+    for row in body_rows:
+        ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
+    # Tamper ONLY the embedded LOT_ID key on the first row (names stay valid + in-scope).
+    ws.cell(row=body_rows[0], column=col[BidColumn.LOT_ID.value], value="LOT-TAMPERED")
+    buffer = BytesIO()
+    wb.save(buffer)
+    tampered = buffer.getvalue()
+
+    result = ingest_template(tampered, scope)
+
+    assert len(result.quarantined) == 1
+    assert result.quarantined[0].reason is QuarantineReason.UNKNOWN_KEY
+    # The tampered row did NOT become a parsed line (no name-based re-resolve).
+    assert len(result.lines) == len(scope.rows) - 1
+
+
+def test_blank_embedded_key_quarantines_missing_key() -> None:
+    """D21: clearing a locked KEY-ID cell quarantines MISSING_KEY (never name-resolved)."""
+
+    scope = build_scope()
+    template_bytes = generate_template_bytes(scope)
+    filled, body_rows = _fill_all_in(template_bytes)
+
+    wb = load_workbook(BytesIO(filled))
+    ws = wb[SHEET_BIDS]
+    col = {h: i for i, h in enumerate(BID_HEADERS, start=1)}
+    # Clear the locked SUPPLIER_ID cell (openpyxl ignores value=None on a populated cell, so "").
+    ws.cell(row=body_rows[0], column=col[BidColumn.SUPPLIER_ID.value], value="")
+    buffer = BytesIO()
+    wb.save(buffer)
+
+    result = ingest_template(buffer.getvalue(), scope)
+
+    assert len(result.quarantined) == 1
+    assert result.quarantined[0].reason is QuarantineReason.MISSING_KEY
+    assert len(result.lines) == len(scope.rows) - 1
+
+
+def test_name_mismatch_warns_but_keys_still_resolve() -> None:
+    """D21: a display NAME that disagrees with the keyed identity WARNS — it does not re-resolve.
+
+    We overwrite a row's SUPPLIER display name (an attribute) but leave its embedded keys intact.
+    The row STILL loads on its keys (correct supplier_id), and a name-mismatch warning is raised.
+    """
+
+    scope = build_scope()
+    template_bytes = generate_template_bytes(scope)
+    filled, body_rows = _fill_all_in(template_bytes)
+
+    wb = load_workbook(BytesIO(filled))
+    ws = wb[SHEET_BIDS]
+    col = {h: i for i, h in enumerate(BID_HEADERS, start=1)}
+    # Capture the embedded supplier_id we expect the row to keep loading under.
+    kept_supplier_id = ws.cell(row=body_rows[0], column=col[BidColumn.SUPPLIER_ID.value]).value
+    ws.cell(row=body_rows[0], column=col[BidColumn.SUPPLIER.value], value="Totally Wrong Name")
+    buffer = BytesIO()
+    wb.save(buffer)
+
+    result = ingest_template(buffer.getvalue(), scope)
+
+    # No quarantine — the row loads on its KEYS (the name is an attribute, not the join key).
+    assert result.quarantined == []
+    assert len(result.lines) == len(scope.rows)
+    # Exactly one name-mismatch WARNING, on the Supplier column.
+    assert len(result.name_warnings) == 1
+    warning = result.name_warnings[0]
+    assert warning.column == BidColumn.SUPPLIER.value
+    assert warning.found_name == "Totally Wrong Name"
+    # The row that warned still carries the CORRECT keyed supplier_id (no re-resolve to the name).
+    warned_line = next(
+        line for line in result.lines if line.source_row_number == body_rows[0]
+    )
+    assert warned_line.identity.supplier_id == kept_supplier_id

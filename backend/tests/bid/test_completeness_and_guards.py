@@ -21,7 +21,7 @@ from app.domain.bid.bid_ingester import (
 )
 from app.domain.bid.template_generator import generate_template_bytes
 from app.domain.bid.template_schema import BID_HEADERS, HEADER_ROW, SHEET_BIDS, BidColumn
-from tests.bid.synthetic import build_resolver, build_scope
+from tests.bid.synthetic import build_scope
 
 _D = Decimal
 
@@ -39,21 +39,20 @@ def _fill(template_bytes: bytes, filler) -> bytes:  # type: ignore[no-untyped-de
 
 def test_no_bid_and_incomplete_and_bid_flags() -> None:
     scope = build_scope()
-    resolver = build_resolver()
     template = generate_template_bytes(scope)
 
     def filler(ws, col, body_rows):  # type: ignore[no-untyped-def]
-        # Row 0: a real bid. Row 1: leave entirely blank (no_bid). Row 2: only a volume,
-        # no price (incomplete). Remaining rows: real bids.
+        # Row 0: a real bid. Row 1: leave price/volume blank but KEEP the embedded keys (no_bid).
+        # Row 2: only a volume, no price (incomplete). Remaining rows: real bids.
         ws.cell(row=body_rows[0], column=col[BidColumn.ALL_IN.value], value="100.00")
-        # body_rows[1] left blank -> no_bid
+        # body_rows[1] price/volume left blank -> no_bid (keys are intact from the generator)
         ws.cell(
             row=body_rows[2], column=col[BidColumn.TOTAL_VOL_OFFERED.value], value="120"
         )  # vol but no price -> incomplete
         for row in body_rows[3:]:
             ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
 
-    result = ingest_template(_fill(template, filler), resolver)
+    result = ingest_template(_fill(template, filler), scope)
 
     assert result.quarantined == []
     assert result.no_bid_count == 1
@@ -67,7 +66,6 @@ def test_no_bid_and_incomplete_and_bid_flags() -> None:
 
 def test_double_subtract_blocked_and_quarantined() -> None:
     scope = build_scope()
-    resolver = build_resolver()
     template = generate_template_bytes(scope)
 
     def filler(ws, col, body_rows):  # type: ignore[no-untyped-def]
@@ -77,7 +75,7 @@ def test_double_subtract_blocked_and_quarantined() -> None:
         for row in body_rows[1:]:
             ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
 
-    result = ingest_template(_fill(template, filler), resolver)
+    result = ingest_template(_fill(template, filler), scope)
 
     # The ambiguous row is quarantined (not silently recomputed), the rest ingest cleanly.
     assert len(result.quarantined) == 1
@@ -103,23 +101,32 @@ def test_construct_price_guard_unit() -> None:
     assert price == _D("96.00") and basis == "COMPONENT_FALLBACK" and err is None
 
 
-def test_unresolvable_supplier_quarantined_not_guessed() -> None:
+def test_unknown_supplier_name_warns_not_quarantined_d21() -> None:
+    """D21: for OUR template, an unknown supplier NAME is an attribute mismatch — WARN, not fail.
+
+    The pre-D21 behavior (quarantine UNRESOLVED_SUPPLIER on an unknown name) is gone for our own
+    template: identity comes from the embedded KEY, not the name. An unknown name therefore loads
+    on its keys and raises a name-mismatch warning — it is NEVER re-resolved from the name. The
+    name-resolver quarantine survives ONLY on the legacy path (see test_legacy_resilience).
+    """
+
     scope = build_scope()
-    resolver = build_resolver()
     template = generate_template_bytes(scope)
 
     def filler(ws, col, body_rows):  # type: ignore[no-untyped-def]
-        # Corrupt one row's supplier to an unknown label, price it.
+        # Corrupt one row's supplier display NAME to an unknown label (keys left intact), price all.
         ws.cell(
             row=body_rows[0], column=col[BidColumn.SUPPLIER.value], value="Unknown Vendor LLC"
         )
         for row in body_rows:
             ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
 
-    result = ingest_template(_fill(template, filler), resolver)
+    result = ingest_template(_fill(template, filler), scope)
 
-    assert len(result.quarantined) == 1
-    assert result.quarantined[0].reason is QuarantineReason.UNRESOLVED_SUPPLIER
-    assert result.quarantined[0].detail == "Unknown Vendor LLC"
-    # The unresolved row is NOT in the parsed lines (we did not guess an identity).
-    assert len(result.lines) == len(scope.rows) - 1
+    # No quarantine — the row loads on its embedded keys.
+    assert result.quarantined == []
+    assert len(result.lines) == len(scope.rows)
+    # The mismatching display name produced a WARNING (not a re-resolve).
+    assert len(result.name_warnings) == 1
+    assert result.name_warnings[0].column == BidColumn.SUPPLIER.value
+    assert result.name_warnings[0].found_name == "Unknown Vendor LLC"
