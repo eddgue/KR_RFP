@@ -27,6 +27,7 @@ from decimal import Decimal
 from app.engine.allocation import (
     cap_breach_cells,
     concentration_flags,
+    rec_type,
     scenario_a,
     scenario_b,
     scenario_c,
@@ -213,6 +214,9 @@ class V3Engine(Engine):
                         ScenarioCode.B,
                         is_recommended=True,
                         cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach,
+                        # §5 — the authoritative per-cell reason the recommendation rests on
+                        # (single source of truth; the output renders it, never re-derives it).
+                        rec_type_label=rec_type(sb, config),
                     )
                 )
 
@@ -248,6 +252,7 @@ class V3Engine(Engine):
         *,
         is_recommended: bool = False,
         cap_breach: bool = False,
+        rec_type_label: str | None = None,
     ) -> ScenarioAward:
         return ScenarioAward(
             scenario_code=code,
@@ -260,4 +265,5 @@ class V3Engine(Engine):
             is_recommended=is_recommended,
             is_fallback=False,
             cap_breach_flag=cap_breach,
+            rec_type=rec_type_label,
         )

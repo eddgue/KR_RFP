@@ -87,3 +87,28 @@ def test_engine_never_auto_asserts_a_single_winner() -> None:
         assert 0 <= a.volume_share <= 1
     # Scenario A (lowest-cost reference) is always present as the benchmark lens.
     assert any(s.code.value == "A" for s in result.scenarios)
+
+
+def test_b_awards_carry_the_engine_rec_type() -> None:
+    """D28: every Scenario-B pick carries the engine's authoritative RecType; other lenses don't.
+
+    The per-cell reason is computed ONCE in the engine and travels on the award (the runner seals
+    it, outputs render it — never re-derive it). RecType is the recommendation's 'why', so it is
+    B-only; non-B lenses leave it None.
+    """
+
+    allowed = {
+        "Lowest cost",
+        "Coverage advantage",
+        "Comparable premium",
+        "Defensible premium",
+        "Risk-adjusted",
+    }
+    result = V3Engine().run(build_inputs())
+    b_awards = [a for a in result.awards if a.scenario_code.value == "B"]
+    assert b_awards, "expected Scenario B (recommendation) awards"
+    for a in b_awards:
+        assert a.rec_type in allowed, f"B award missing/invalid rec_type: {a.rec_type!r}"
+    for a in result.awards:
+        if a.scenario_code.value != "B":
+            assert a.rec_type is None, f"non-B {a.scenario_code.value} carried a rec_type"

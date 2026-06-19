@@ -392,6 +392,7 @@ class EngineRunner:
                     is_recommended=award.is_recommended,
                     is_fallback=award.is_fallback,
                     cap_breach_flag=award.cap_breach_flag,
+                    rec_type=award.rec_type,
                 )
             )
 
@@ -470,6 +471,7 @@ def _outputs_manifest(result: EngineResult) -> dict[str, object]:
                     str(a.awarded_price),
                     a.is_fallback,
                     a.cap_breach_flag,
+                    a.rec_type or "",
                 ]
                 for a in result.awards
             ]

@@ -402,3 +402,16 @@ This uses the same proven live-formula mechanism as the existing builder (the `_
 no macros, recalculates on open (`fullCalcOnLoad`). The result is 18 tabs. **Charts and visual-layout
 polish remain the downstream design review's job — to be added without changing the file or its
 architecture; this study fixes structure, views, interactivity, and navigation only.**
+
+### 8.6 Explanations are engine-derived, not boilerplate (D28, added 2026-06-19)
+
+Governing principle (sponsor): every explanatory string in an output is the **engine's authoritative
+computed reason, rendered from the sealed records** — specific to the row, deterministic, never a
+generic catch-all and never generated at output time. First applied to the Lowest-Cost Check's
+"why not lowest": the engine's per-cell **RecType** (V3 §5 — Lowest cost / Coverage advantage /
+Comparable / Defensible / Risk-adjusted) was computed-but-unused; it is now produced by `V3Engine`
+for the B picks, **sealed on `eng.analysis_scenario_award.rec_type`** (migration 0009), and rendered
+specifically per cell (e.g. *"Coverage advantage — clears >120% of required volume; 2.8% over the
+market low buys supply security"*) instead of one boilerplate clause. Single source of truth: the
+engine decides the reason once, the output renders it (no re-derivation that can drift). Pinned by an
+engine invariant test. New explanatory text must follow D28.

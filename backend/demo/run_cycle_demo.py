@@ -1522,6 +1522,7 @@ class CellInfo:
     price_by_supplier: dict[str, Decimal]  # supplier NAME -> $/case for this cell
     score_by_supplier: dict[str, Decimal]  # supplier NAME -> RecScore for this cell
     transit_by_supplier: dict[str, int]  # supplier NAME -> lane transit days (hidden cost)
+    rec_type: str  # the engine's authoritative B reason for this cell (§5; "" if none)
 
 
 def _gather_cells(
@@ -1581,6 +1582,20 @@ def _gather_cells(
     rec_by_cell = {
         (c.dc_id, c.lot_id, c.tf_id): sup_name.get(c.supplier_id, c.supplier_id[:6])
         for c in award.cells
+    }
+    # The engine's AUTHORITATIVE per-cell reason (RecType) for the B pick — sealed on the award
+    # (D28: outputs render the engine's reason, never a hardcoded clause). Keyed (dc, lot, tf).
+    rec_type_by_cell: dict[tuple[str, str, str], str] = {
+        (r[0], r[1], r[2]): (r[3] or "")
+        for r in session.execute(
+            text(
+                "SELECT a.dc_id, a.lot_id, a.tf_id, a.rec_type "
+                "FROM eng.analysis_scenario_award a "
+                "JOIN eng.analysis_scenario s ON s.analysis_scenario_id = a.analysis_scenario_id "
+                "WHERE s.analysis_run_id = :run AND s.scenario_code = 'B'"
+            ),
+            {"run": analysis_run_id},
+        ).all()
     }
     # Incumbent supplier name per (dc, lot) — a reference point throughout (D26).
     incumbent_name_by = {
@@ -1642,6 +1657,7 @@ def _gather_cells(
                 price_by_supplier=price_map,
                 score_by_supplier=score_map,
                 transit_by_supplier=transit_map,
+                rec_type=rec_type_by_cell.get(key_t, ""),
             )
         )
     # Stable, readable order.
@@ -3153,6 +3169,35 @@ def _gather_score_detail(
     return details
 
 
+def _rec_type_reason(rec_type: str, prem: Decimal, *, is_lowest: bool) -> str:
+    """Render the engine's AUTHORITATIVE RecType label as a specific reason (D28).
+
+    The category (Lowest cost / Coverage advantage / Comparable / Defensible / Risk-adjusted) is the
+    engine's sealed `rec_type` — we RENDER it, we do not re-derive it. The premium % is from the
+    sealed prices. No generic catch-all: each cell states the reason that actually applies.
+    """
+
+    pct = f"{prem * 100:.1f}% over the market low"
+    if is_lowest:
+        return "Recommended pick IS the market-low bid (the floor)."
+    rendered = {
+        "Lowest cost": f"Lowest cost — {pct}, effectively at the floor (within the 2% band).",
+        "Coverage advantage": (
+            f"Coverage advantage — clears >120% of required volume; {pct} buys supply security."
+        ),
+        "Comparable premium": f"Comparable — {pct}, inside the 3% comparable band.",
+        "Defensible premium": f"Defensible — {pct}, inside the 7% defensible band.",
+        "Risk-adjusted": (
+            f"Risk-adjusted — {pct}, earned on RecScore (coverage/continuity), not price alone."
+        ),
+    }
+    if rec_type in rendered:
+        return rendered[rec_type]
+    if rec_type:
+        return f"{rec_type} — {pct}."
+    return f"{pct} — risk-adjusted on RecScore. Benchmark = Scenario A."
+
+
 def _write_lowest_cost_check_tab(
     wb: Workbook, cells: list[CellInfo], details: list[ScoreDetail]
 ) -> None:
@@ -3190,13 +3235,7 @@ def _write_lowest_cost_check_tab(
         rec_price = d.price if d else c.price_by_supplier.get(c.rec_supplier, Decimal("0"))
         prem = (rec_price - min_price) / min_price if min_price > 0 else Decimal("0")
         is_lowest = abs(rec_price - min_price) < Decimal("0.005")
-        if is_lowest:
-            reason = "Recommended pick IS the market-low bid."
-        else:
-            reason = (
-                f"{prem * 100:.1f}% over the low — risk-adjusted for coverage/continuity "
-                "(RecScore, not price alone). Benchmark = Scenario A."
-            )
+        reason = _rec_type_reason(c.rec_type, prem, is_lowest=is_lowest)
         ws.cell(row=row, column=1, value=c.dc_name)
         ws.cell(row=row, column=2, value=c.lot_name)
         ws.cell(row=row, column=3, value=c.item_name)

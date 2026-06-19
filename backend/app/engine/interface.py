@@ -259,6 +259,7 @@ class ScenarioAward(BaseModel):
     is_recommended: bool = False
     is_fallback: bool = False
     cap_breach_flag: bool = False
+    rec_type: str | None = None  # §5 B reason label (Lowest cost / Coverage advantage / …); B-only
 
 
 class Scenario(BaseModel):

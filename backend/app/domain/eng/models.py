@@ -111,3 +111,6 @@ class AnalysisScenarioAward(EngBase):
     is_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cap_breach_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # §5 Scenario-B reason label (Lowest cost / Coverage advantage / Comparable / Defensible /
+    # Risk-adjusted). The authoritative per-cell "why this pick"; B-only, NULL for other lenses.
+    rec_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
