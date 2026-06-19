@@ -114,6 +114,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Implications.** Definition of Done per module = a working prototype of the *whole* capability (not a stub/thin MVP cut). Aligns with the existing modular architecture (8 domain packages per schema, engine-as-a-library behind an interface, additive migrations). The engine's deterministic stub was a D2-deferral placeholder only — with D2 resolved (adopt v3), the engine module becomes the real v3 prototype. Roadmap phases/epics are **modules**, each built to prototype fidelity. **Supersedes any "MVP" framing** in prior docs.
 **Linked:** ADR-0003, ADR-0006, ADR-0016, Ways of Working §1.
 
+### D20 — Round-trip ingest: the system ingests the files it generates · **RATIFIED 2026-06-18**
+**Principle (sponsor).** "The engine should be able to ingest the files it itself is creating." The system **owns both ends** of the bid round-trip: it **generates** the RFP/bid template (multi-sheet, our design — D17) and **ingests** the returned files. Generation + ingestion share **one owned, versioned template schema**; the importer reads back OUR format, not arbitrary legacy layouts.
+**Implications.** (1) The **intake module is paired with template generation** — same schema, two ends. (2) Ingest is robust by design — **no universal-format guessing for the live product**; the messy reference formats (`.xlsb`, 14-tab legacy) are **test/reference inputs only** (prove resilience during migration), not the live contract. (3) **Round-trip test:** generate the template for a cycle scope → fill (synthetic) → ingest → assert the `bid.bid_line` grain round-trips exactly. (4) Generalizes — generated artifacts are structured and re-ingestable where useful (not dead-end Excel). (5) The template is generated **from the cycle setup/strategy** (scope: lots, DCs, items, TFs, rounds) — ties to kickoff + strategy (D9/D18); and it carries the engine's IN_Bids contract (supplier×DC×lot×item×TF×round + cost components).
+**Linked:** D17, D18, E-15 (template release), CYCLE_FIELDTOMATO_STRUCTURE.md (the IN_Bids contract), ADR-0016.
+
 ---
 
 ## Dependencies (logistics blockers)
