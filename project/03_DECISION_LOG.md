@@ -124,6 +124,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Implications.** (1) Every grain has an explicit ID; composite-identity FKs (already a KEEP strength — 46 of them) extend down to bid-line level. (2) **The generated bid template (D20) embeds the relevant key IDs** (cycle/round/tf/lot/item/dc) in each row, so returned bids carry their identity → **ingestion is a key-validated load, not a text resolve**; rows whose keys don't match the cycle scope are quarantined, never guessed. (3) The engine reads cycle → rounds → bids → lines → scores by **traversing keys** (cascading dependencies). (4) "Open last cycle" and audit are key-joins. (5) Surrogate keys are system-owned (UUIDs); human/source codes (UPC, SAP subcommodity, supplier names) are *attributes* resolved to keys via the alias layer, not the join key.
 **Linked:** D20, ADR-002 (lot grain replaces string-concat), as-built composite-identity FKs (keep list), engine (no string-concat match key), the intake module.
 
+### D22 — Booking guide is the FINAL post-award output; two audiences · **RATIFIED 2026-06-19**
+**Clarification (sponsor).** The booking guide is the **final step, after awards** — not generated directly from a scenario. Real sequence: scenario → **human selects** → `awd.award` → **freeze** → **sign-off** → **booking guide**. Two versions, both generated from the frozen award records: (a) **internal** — buyers + pricing use it to **update pricing in the system**; (b) **per-supplier** — each awarded supplier receives their own "here is what you've been awarded" guide. The demo generated the booking guide straight off the recommended scenario (a shortcut) — the real flow routes through award selection + freeze first.
+**Linked:** G3, E-21/E-22 (award/freeze/sign-off), E-23 (generated docs: internal booking guide + per-supplier award guide), D9 (pricing update).
+
+### D23 — Human-facing outputs render resolved NAMES, never key IDs · **RATIFIED 2026-06-19**
+**Principle (sponsor).** Every generated/human-facing surface (booking guide, recommendation, letters, the web UI) must display **resolved human-readable names** — supplier name, lot/item description, DC name — **never the data keys** (UUIDs/codes). Keys are for *joining* (D21); names are for *reading*. Feedback that triggered this: the demo booking guide showed `SUP-*`/`LOT-*` keys — "I can't read data keys." Corollary of D21 (keys join, names display).
+**Implication.** Output generators resolve keys → display attributes (via the ref/alias layer) before rendering; the synthetic seed must also carry readable names so demos are legible.
+**Linked:** D21, E-23, the output layer, ref/alias.
+
 ---
 
 ## Dependencies (logistics blockers)
