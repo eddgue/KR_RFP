@@ -1,0 +1,15 @@
+{
+  "//": "RFP_MCP — Claude Code MCP server registration for the produce-RFP pilot.",
+  "//paths": "Edit `cwd` to the absolute path of the backend/ folder in your KR_RFP checkout. The command runs the stdio server from backend/.venv so the `mcp` SDK + app code resolve. The package is `rfp_mcp` (NOT `mcp`) so it never shadows the installed MCP SDK.",
+  "mcpServers": {
+    "rfp-pilot": {
+      "command": "${KR_RFP_BACKEND}/.venv/bin/python",
+      "args": ["-m", "rfp_mcp.rfp_pilot_server"],
+      "cwd": "${KR_RFP_BACKEND}",
+      "env": {
+        "DATABASE_URL": "postgresql+psycopg://app:app@localhost:5432/kr_rfp",
+        "PILOT_VAULT_ROOT": "${RFP_PILOT_VAULT}"
+      }
+    }
+  }
+}

@@ -15,6 +15,7 @@ The scaffold (identical every run):
       memory/      # extra docs the sponsor provides + the pilot's own ad-hoc outputs
       NOTES.md     # running notes/memory — "remember X" lands here; links each memory file by name
       RUN.md       # the kanban/status manifest (Done · Doing · Next · Waiting on you)
+      run_data.json # a git-versioned JSON snapshot of THIS run's governed records (names not keys)
       cycle_id.txt # the link to the governed Postgres cycle
 
 DB = governed data; the vault = the documents + their git history. This module touches only the
@@ -42,6 +43,10 @@ _RUNS_DIR = "runs"
 _NOTES_NAME = "NOTES.md"
 _RUN_NAME = "RUN.md"
 _CYCLE_ID_NAME = "cycle_id.txt"
+# The git-versioned per-run DATA snapshot of THIS run's governed records (names not keys, D23).
+# Written by PilotService.export_run_data after each governed write (run/freeze/adjustment) and
+# included in the close-out archive. The sponsor's "data in git per run" — on Postgres, not Dolt.
+RUN_DATA_NAME = "run_data.json"
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,7 @@ class RunPaths:
     notes_md: Path
     run_md: Path
     cycle_id_file: Path
+    run_data_file: Path
     slug: str
 
 
@@ -82,6 +88,7 @@ def _build_run_paths(vault_root: Path, slug: str) -> RunPaths:
         notes_md=root / _NOTES_NAME,
         run_md=root / _RUN_NAME,
         cycle_id_file=root / _CYCLE_ID_NAME,
+        run_data_file=root / RUN_DATA_NAME,
         slug=slug,
     )
 
@@ -163,8 +170,9 @@ def create_run(vault_root: Path, *, commodity: str, label: str) -> RunPaths:
     """Stamp out the IDENTICAL run scaffold for a new RFP and commit it to the vault.
 
     slug = `<commodity-slug>-<YYYYMMDD>-<short-id>`. Creates `runs/<slug>/{inputs,outputs,memory}/`
-    plus seeded NOTES.md, RUN.md, and an (empty) cycle_id.txt — the same structure every run. If the
-    vault is (or should be) a git repo, the new run is committed.
+    plus seeded NOTES.md, RUN.md, an (empty) cycle_id.txt, and a placeholder run_data.json (the
+    git-versioned governed-data snapshot, filled in once the cycle exists) — the same structure
+    every run. If the vault is (or should be) a git repo, the new run is committed.
     """
 
     vault_root = Path(vault_root)
@@ -182,6 +190,12 @@ def create_run(vault_root: Path, *, commodity: str, label: str) -> RunPaths:
     # cycle_id.txt is created empty (the link is written on setup ingest); keeps the scaffold
     # structurally identical from the first commit.
     paths.cycle_id_file.write_text("", encoding="utf-8")
+    # run_data.json starts as an empty placeholder (no cycle yet); PilotService.export_run_data
+    # fills it after each governed write so the scaffold is identical from the first commit.
+    paths.run_data_file.write_text(
+        '{\n  "status": "no cycle yet — run setup ingest to create the governed cycle"\n}\n',
+        encoding="utf-8",
+    )
     # Keep empty subdirs under git so the scaffold is identical (git ignores empty dirs).
     for subdir in (paths.inputs, paths.outputs, paths.memory):
         (subdir / ".gitkeep").write_text("", encoding="utf-8")
@@ -277,15 +291,16 @@ def _git(vault_root: Path, *args: str) -> bool:
 # The full normalized history a close-out archives (PILOT_SYSTEM_DESIGN step 10): the inputs/
 # outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
 _ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
-_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, _CYCLE_ID_NAME)
+_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, _CYCLE_ID_NAME)
 
 
 def archive_run(runpaths: RunPaths) -> Path:
     """Zip the FULL normalized history of a run into a folder-set zip under the vault; return it.
 
     Archives the complete run picture (step 10): every file under inputs/ + outputs/ + memory/ plus
-    NOTES.md, RUN.md and cycle_id.txt — each stored under the run slug inside the zip so the archive
-    is a faithful, self-describing folder set. The zip is written under `<vault>/archives/` (NOT
+    NOTES.md, RUN.md, run_data.json (the governed-data snapshot) and cycle_id.txt — each stored
+    under the run slug inside the zip so the archive is a faithful, self-describing folder set. The
+    zip is written under `<vault>/archives/` (NOT
     inside the run folder, so a subsequent purge of the run folder leaves the archive intact). This
     is the present step of the present→confirm→purge close-out; `purge_run` does the removal after
     the buyer confirms.

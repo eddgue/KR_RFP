@@ -19,11 +19,13 @@ generate_bid_template, ingest_bids, ingest_any, run_round, freeze_award, record_
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -378,6 +380,7 @@ class PilotService:
             runpaths,
             extra_done=[f"Round {round_no} alignment analysis v{version_seq} ready"],
         )
+        self.export_run_data(session, runpaths)
         git_commit_run(
             self.vault_root,
             runpaths.slug,
@@ -427,6 +430,7 @@ class PilotService:
         self._render_kanban(
             session, runpaths, extra_done=[f"Award {award_code} frozen — booking guides ready"]
         )
+        self.export_run_data(session, runpaths)
         git_commit_run(
             self.vault_root, runpaths.slug, f"award {award_code} frozen → booking guides"
         )
@@ -472,6 +476,7 @@ class PilotService:
         self._render_kanban(
             session, runpaths, extra_done=[f"Post-award adjustment v{version_no} recorded"]
         )
+        self.export_run_data(session, runpaths)
         git_commit_run(
             self.vault_root, runpaths.slug, f"post-award adjustment v{version_no} recorded"
         )
@@ -551,6 +556,116 @@ class PilotService:
             "output_files": output_files,
         }
 
+    def export_run_data(self, session: Session, runpaths: RunPaths) -> Path:
+        """Write `<run>/run_data.json` — a git-versioned snapshot of THIS run's governed records.
+
+        The sponsor's "data in git per run" requirement, on Postgres (NOT Dolt): a JSON snapshot of
+        the run's governed DATA so the run folder's git history carries the data alongside the
+        documents. NAMES not keys (D23): every dc/lot/timeframe/supplier is rendered by its display
+        name. Captures the cycle + scope, bid-line counts per round, the sealed `eng.analysis_run`
+        versions, and the frozen `awd.award` + its adjustment version history. Does NOT commit here
+        (the calling op commits the whole step so run_data.json rides the same commit). Returns the
+        written path. Called at the end of run_round / freeze_award / record_adjustment so the
+        snapshot stays current, and it is included in the close-out archive (it lives in the run
+        root, which `archive_run` zips).
+        """
+
+        cycle_id = self._cycle_id(runpaths)
+        if cycle_id is None:
+            snapshot: dict[str, object] = {
+                "run": runpaths.slug,
+                "status": "no cycle yet — run setup ingest to create the governed cycle",
+            }
+            self._write_run_data(runpaths, snapshot)
+            return runpaths.run_data_file
+
+        cycle = self._load_cycle(session, runpaths)
+        name_by_id = self._name_index(cycle)
+
+        round_number_by_id = {
+            row[0]: int(row[1])
+            for row in session.execute(
+                text(
+                    "SELECT round_id, round_number FROM cyc.cycle_round WHERE cycle_id = :cyc"
+                ),
+                {"cyc": cycle_id},
+            ).all()
+        }
+
+        # bid_line counts per round (names not keys: rounds reported by their number).
+        bid_counts = [
+            {
+                "round": round_number_by_id.get(round_id, 0),
+                "bid_lines": int(count),
+            }
+            for round_id, count in session.execute(
+                text(
+                    "SELECT round_id, count(*) FROM bid.bid_line "
+                    "WHERE cycle_id = :cyc GROUP BY round_id"
+                ),
+                {"cyc": cycle_id},
+            ).all()
+        ]
+        bid_counts.sort(key=lambda r: r["round"])
+
+        hist = self.history(session, runpaths)
+        hist_runs = cast(list[dict[str, object]], hist["analysis_runs"])
+        hist_awards = cast(list[dict[str, object]], hist["awards"])
+        analysis_versions = [
+            {
+                "version": run["version"],
+                "round": run["round_number"],
+                "engine_version": run["engine_version"],
+                "sealed_at": self._iso(run["sealed_at"]),
+            }
+            for run in hist_runs
+        ]
+
+        awards: list[dict[str, object]] = []
+        for award in hist_awards:
+            versions = cast(list[dict[str, object]], award["versions"])
+            awards.append(
+                {
+                    "award_code": award["award_code"],
+                    "scenario": award["scenario_code"],
+                    "lines": self._award_lines_by_name(
+                        session, str(award["award_id"]), name_by_id
+                    ),
+                    "versions": [
+                        {
+                            "version": v["version_no"],
+                            "type": v["adjustment_type"],
+                            "effective_date": self._iso(v["effective_date"]),
+                            "reason": v["reason"],
+                            "cells_changed": v["n_lines"],
+                            "recorded_by": v["created_by"],
+                        }
+                        for v in versions
+                    ],
+                }
+            )
+
+        snapshot = {
+            "run": runpaths.slug,
+            "exported_at": self._iso(datetime.now(UTC)),
+            "cycle": {
+                "name": cycle.cycle_name,
+                "commodity_id": cycle.commodity_id,
+            },
+            "scope": {
+                "dcs": [dc.name for dc in cycle.dcs],
+                "lots": [lot.name for lot in cycle.lots],
+                "timeframes": [tf.name for tf in cycle.tfs],
+                "suppliers": [sup.name for sup in cycle.suppliers],
+                "rounds": [rnd.name for rnd in cycle.rounds],
+            },
+            "bid_lines_by_round": bid_counts,
+            "analysis_versions": analysis_versions,
+            "awards": awards,
+        }
+        self._write_run_data(runpaths, snapshot)
+        return runpaths.run_data_file
+
     def close_run(self, runpaths: RunPaths) -> Path:
         """Archive the FULL normalized history of a run into a zip; return the zip path (step 10).
 
@@ -582,6 +697,66 @@ class PilotService:
                 f"run {runpaths.slug} has no cycle yet — ingest the setup workbook first"
             )
         return load_cycle(session, cycle_id)
+
+    @staticmethod
+    def _name_index(cycle: CycleView) -> dict[str, str]:
+        """A flat id -> display-name index over every scope entity (for names-not-keys output)."""
+
+        index: dict[str, str] = {}
+        for entity in (
+            *cycle.dcs,
+            *cycle.lots,
+            *cycle.tfs,
+            *cycle.suppliers,
+            *cycle.rounds,
+        ):
+            index[entity.id] = entity.name
+        return index
+
+    @staticmethod
+    def _iso(value: object) -> str | None:
+        """ISO-8601 a datetime/date for JSON (None passes through)."""
+
+        if isinstance(value, datetime | date):
+            return value.isoformat()
+        return None if value is None else str(value)
+
+    def _award_lines_by_name(
+        self, session: Session, award_id: str, name_by_id: dict[str, str]
+    ) -> list[dict[str, object]]:
+        """The frozen award's baseline lines by name (dc/lot/timeframe/supplier + price)."""
+
+        rows = session.execute(
+            select(
+                AwardLine.dc_id,
+                AwardLine.lot_id,
+                AwardLine.tf_id,
+                AwardLine.supplier_id,
+                AwardLine.volume_share,
+                AwardLine.frozen_price,
+            ).where(AwardLine.award_id == award_id)
+        ).all()
+        lines = [
+            {
+                "dc": name_by_id.get(dc_id, dc_id),
+                "lot": name_by_id.get(lot_id, lot_id),
+                "timeframe": name_by_id.get(tf_id, tf_id),
+                "supplier": name_by_id.get(sup_id, sup_id),
+                "volume_share": str(share),
+                "frozen_price": str(price),
+            }
+            for dc_id, lot_id, tf_id, sup_id, share, price in rows
+        ]
+        lines.sort(key=lambda r: (r["dc"], r["lot"], r["supplier"]))
+        return lines
+
+    @staticmethod
+    def _write_run_data(runpaths: RunPaths, snapshot: dict[str, object]) -> None:
+        """Serialize the governed-data snapshot to `<run>/run_data.json` (stable, pretty JSON)."""
+
+        runpaths.run_data_file.write_text(
+            json.dumps(snapshot, indent=2, sort_keys=False) + "\n", encoding="utf-8"
+        )
 
     def _render_kanban(
         self,

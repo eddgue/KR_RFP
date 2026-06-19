@@ -15,6 +15,7 @@ Synthetic only (clean-room, ADR-0001). DB-touching parts are marked integration 
 
 from __future__ import annotations
 
+import json
 import zipfile
 from datetime import date
 from decimal import Decimal
@@ -368,6 +369,21 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     assert "04_round1_alignment_v1.xlsx" in hist["output_files"]  # type: ignore[operator]
     assert "09_post_award_v1.xlsx" in hist["output_files"]  # type: ignore[operator]
 
+    # 5b) the per-run governed-DATA snapshot is written to run_data.json (data-in-git per run),
+    # carries names not keys (D23), and reflects the sealed analysis version + the frozen award.
+    assert paths.run_data_file.is_file()
+    run_data = json.loads(paths.run_data_file.read_text())
+    assert run_data["cycle"]["name"] == "E2E Tomatoes Cycle"
+    assert "Atlanta DC" in run_data["scope"]["dcs"]  # names, not keys
+    assert run_data["bid_lines_by_round"] == [{"round": 1, "bid_lines": 8}]
+    assert run_data["analysis_versions"][0]["version"] == 1
+    assert run_data["awards"][0]["award_code"] == "AWD-E2E-1"
+    award_version_nos = {v["version"] for v in run_data["awards"][0]["versions"]}
+    assert award_version_nos == {0, 1}
+    # the award lines name their supplier (a known synthetic supplier), never a raw key.
+    award_suppliers = {line["supplier"] for line in run_data["awards"][0]["lines"]}
+    assert award_suppliers <= {"Green Valley Farms", "Sunbelt Produce"}
+
     # leave a memory note so the archive's memory/ is exercised.
     service.add_memory(paths, "buyer_note.txt", b"prioritize Dallas", "Buyer ask captured")
 
@@ -381,6 +397,7 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     assert any(n.startswith(f"{slug}/outputs/") for n in names)
     assert any(n.startswith(f"{slug}/memory/") for n in names)
     assert f"{slug}/NOTES.md" in names
+    assert f"{slug}/run_data.json" in names  # the governed-data snapshot rides the archive
     assert any("alignment_v1" in n for n in names)
     assert any("post_award_v1" in n for n in names)
 
