@@ -24,8 +24,8 @@ git-versioned run folder**.
 | Repo | Owner | Holds |
 |---|---|---|
 | **KR_RFP** (this) | platform | The engine, the governed Postgres schema, the document generators (`app.output`), the **pilot service** (`app.pilot`), the **MCP server** source, and the **skill** |
-| **MCP repo** (sponsor creates on GitHub) | sponsor | A thin deployable copy/submodule of the MCP server so Claude Code can register it (`.mcp.json`) — points at the platform + the run vault |
-| **Run Vault** (sponsor creates on GitHub) | sponsor | The **main single repository** the routine runs in. One **sub-folder ("run") per RFP**, git-versioned: the fill-out inputs, the filled files, and every generated/versioned output + a status manifest |
+| **`RFP_MCP`** (sponsor, private) | sponsor | A thin deployable copy/submodule of the MCP server so Claude Code can register it (`.mcp.json`) — points at the platform + the run vault |
+| **`RFP_PILOT_VAULT`** (sponsor, private) | sponsor | The **main single repository** the routine runs in. One **sub-folder ("run") per RFP**, git-versioned, **identical structure every run** (§2): the fill-out inputs, the formally-uploaded filled files, every generated/versioned output, the pilot's notes + memory, and a status manifest |
 
 The platform's **Postgres** is the governed system of record (cycle, bids, sealed analysis runs,
 awards, adjustments). The **Run Vault** is the **file/document** record (the actual workbooks the
@@ -34,22 +34,43 @@ data; vault = the documents + their git history.
 
 ## 2. Multi-RFP: one vault, a sub-repo per run, the session pointed at it
 
-- The routine runs in the **single Run Vault repository**. When a new RFP starts, the pilot
-  **creates a per-RFP run folder** (a self-contained "sub-repo": `runs/<rfp-slug>/`) and **points the
-  session window at it** (the working directory / the active run). Each run folder:
+- The routine runs in the **single Run Vault repository** (`RFP_PILOT_VAULT`). When a new RFP starts,
+  the pilot **stamps out a per-RFP run folder** from a fixed scaffold and **points the session window
+  at it** (the working directory / the active run). **Every run folder is structurally identical**
+  (the sponsor's "exactly the same" rule):
   ```
-  runs/<commodity>-<cycle>-<id>/
-    inputs/      # the fill-out docs Claude generates + the files the buyer drops back in
-    outputs/     # generated, VERSIONED: alignment_v1.xlsx, booking_guide.xlsx, post_award_v2.xlsx…
-    RUN.md       # the kanban/status manifest (where we are, what's next, history of versions)
+  runs/<rfp-slug>/
+    inputs/      # fill-out docs the pilot generates + the formally-uploaded filled files
+    outputs/     # generated, VERSIONED workbooks (alignment, booking guide, post-award)
+    memory/      # additional documentation the SPONSOR provides + the pilot's OWN extra outputs
+    NOTES.md     # the running notes/memory — "remember X" lands here; links each memory file by name
+    RUN.md       # the kanban/status manifest (Done · Doing · Next · Waiting on you + version log)
     cycle_id.txt # the link to the governed Postgres cycle
   ```
+- **Normalized, workflow-stage file naming** (predictable + sorts by workflow). Files are named by the
+  step that produced them, zero-padded so they order naturally:
+  `01_setup_kickoff.xlsx` · `02_round1_bid_template.xlsx` · `03_round1_bids_uploaded.xlsx` ·
+  `04_round1_alignment_v1.xlsx` · `05_round2_bid_template.xlsx` · … · `08_award_booking_guide.xlsx` ·
+  `09_post_award_v1.xlsx` · `09_post_award_v2.xlsx`. The in-file version heading (Analysis v_n_,
+  Post-Award Version _N_) matches the file's version suffix and the git commit.
+- **NOTES.md + memory.** When the sponsor says "remember X", the pilot appends a dated entry to
+  `NOTES.md`. Additional documents the sponsor hands over go in `memory/`, and the related `NOTES.md`
+  entry **records the file name** so each memory note is traceable to its file. The pilot also writes
+  its **own ad-hoc outputs** to `memory/` (scratch analyses, summaries) — kept out of the formal
+  `outputs/` versioned set.
 - Because each RFP is its own folder + Postgres cycle_id, the sponsor can **start a second one** and
-  run **multiple RFPs in parallel** — `list runs` shows them all; the skill always states *which run*
+  run **multiple RFPs in parallel** — `run_list` shows them all; the skill always states *which run*
   it is acting on.
-- Everything in a run folder is **committed to the vault** as it changes (inputs interpreted,
-  outputs generated) — git is the version history of the documents; the version headings in the
-  files (Analysis v_n_, Post-Award Version _N_) match the committed artifacts.
+- Everything in a run folder is **committed to the vault** as it changes — git is the version history
+  of the documents; the version headings in the files match the committed artifacts.
+
+### Data governance — RFP data moves only by formal request + upload
+The buyer's actual RFP data (bids, prices, volumes, incumbents) enters the system **only through a
+formal request-and-upload step**: the pilot **requests** a specific document (a named fill-out doc
+or "please upload supplier X's Round 2 file"), the sponsor **uploads** it into `inputs/`, and only
+then does the pilot ingest it. No RFP data is pulled in silently or moved between runs/back-channels.
+Generated outputs and notes/memory may be written freely by the pilot; **inbound RFP data is gated**
+(request → upload → ingest → commit), which keeps the provenance clean and auditable (ADR-0006).
 
 ## 3. The cycle loop (what the skill drives, per run)
 
