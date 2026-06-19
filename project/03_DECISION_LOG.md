@@ -158,6 +158,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 - **Expandable pivot in Scenario Comparison:** collapse/expand from scenario totals → per-DC → per-supplier (outline grouping; + a flat data table the buyer can natively pivot).
 - **More detail + flexibility:** per-DC and per-supplier breakdowns, volumes, premiums — reachable by drilling, not dumped.
 **Homes.** Excel deliverable now (outline grouping / Excel Tables / live formulas); web UI later (real pivot/filter/drill on the store).
+**Ownership (sponsor 2026-06-19).** The **binding requirement is that the buyer can *play with the data to make decisions*.** The specific mechanics above are **illustrative direction, not spec** — the studio owns the design, grounded in these decisions and the actual schema (what the records can support). Iterate toward the decision-making goal, not a fixed layout.
 **Linked:** D25, D26, web UI scenario-review (Phase F), ADR-0016, intake (Ed's allocation models = the "great but messy" reference).
 
 ---
