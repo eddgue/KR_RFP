@@ -75,7 +75,7 @@ def register_immutability_guards() -> None:
     from sqlalchemy import event
 
     try:
-        from app.domain.eng.models import AnalysisRun  # type: ignore[attr-defined]
+        from app.domain.eng.models import AnalysisRun
 
         event.listen(AnalysisRun, "before_update", block_update_if_sealed)
         event.listen(AnalysisRun, "before_delete", block_delete_governed)

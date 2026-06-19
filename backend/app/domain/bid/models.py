@@ -54,6 +54,8 @@ class BidLine(BidBaseT):
     # --- Engine IN_Bids cost stack (All-In primary + §7 fallback components). ---
     submitted_all_in_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)
     fob_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)
+    # Offered volume (cases) — the coverage feed the engine reads (baseline bid.bid_line column).
+    volume_minimum_cases: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
     # Added by migration 0007 — the engine's named surcharge/discount components.
     delivery_surcharge_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)
     vegcool_surcharge_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)

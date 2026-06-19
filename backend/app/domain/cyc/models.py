@@ -153,6 +153,106 @@ class CycleNarrative(CycBase):
     )
 
 
+class CycleRound(CycBase):
+    """A cycle round. Mirrors the baseline cyc.cycle_round (db/baseline/schema.sql).
+
+    Keystone read target for the engine runner (the round the analysis is sealed for). Only the
+    columns the runner reads by key are mapped; the rest are managed by SQL (the same partial-map
+    rule the bid/ref models follow).
+    """
+
+    __tablename__ = "cycle_round"
+
+    round_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    round_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class CycleTimeframe(CycBase):
+    """A cycle timeframe (period). Mirrors the baseline cyc.cycle_timeframe.
+
+    Keystone read target: maps the runner's tf_id <-> tf_code period token.
+    """
+
+    __tablename__ = "cycle_timeframe"
+
+    tf_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    tf_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    tf_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    week_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CycleLot(CycBase):
+    """A cycle lot. Mirrors the baseline cyc.cycle_lot."""
+
+    __tablename__ = "cycle_lot"
+
+    lot_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lot_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    lot_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class CycleItemScope(CycBase):
+    """Item-in-scope row. Mirrors the baseline cyc.cycle_item_scope (PK cycle_id, item_id)."""
+
+    __tablename__ = "cycle_item_scope"
+
+    cycle_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    commodity_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    subcommodity_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    inclusion_status: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    added_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class CycleLotItem(CycBase):
+    """The lot<->item link (one lot per item). Mirrors the baseline cyc.cycle_lot_item.
+
+    Keystone read target: the runner aggregates item-grain demand to the engine's lot-grain cell.
+    """
+
+    __tablename__ = "cycle_lot_item"
+
+    lot_item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    required_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CycleProjectedVolume(CycBase):
+    """Projected demand at DC x item x tf. Mirrors the baseline cyc.cycle_projected_volume.
+
+    Keystone read target: the runner aggregates this to the engine's (dc, lot, tf) cell grain.
+    """
+
+    __tablename__ = "cycle_projected_volume"
+
+    volume_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dc_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    tf_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    volume_input_method: Mapped[str] = mapped_column(Text, nullable=False)
+    projected_weekly_cases: Mapped[Decimal | None] = mapped_column(Numeric(18, 3), nullable=True)
+    projected_period_cases: Mapped[Decimal] = mapped_column(Numeric(18, 3), nullable=False)
+    growth_override_pct: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    normalization_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
 class CycleSafety(CycBase):
     """A per-RFP pricing-safety CONTRACT term (D13/ADR-0014). Mirrors cyc.cycle_safety (0003).
 
