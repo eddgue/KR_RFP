@@ -4,23 +4,37 @@ Runs the entire decision-support loop against a REAL local governed Postgres sto
 data, then produces tangible, client-openable output files:
 
   seed (synthetic cycle: client/commodity, ~3 DCs, ~4 lots/items, 2 TFs, 3 rounds, ~6 suppliers,
-        a strategy config, volumes, incumbents)
+        a strategy config, volumes, incumbents — every entity carries a clearly-SYNTHETIC but
+        READABLE name/description so the outputs are legible, D23)
     -> generate the OWNED bid template for the cycle scope (intake generator; keys embedded, D21)
     -> simulate supplier returns (fill the template with varied synthetic bids across the rounds)
     -> ingest via the KEY-VALIDATED path (D21) -> bid.bid_line rows
     -> run the ENGINE RUNNER on the final round -> sealed eng.analysis_run + scores + scenarios
        + split awards (decision-support; never asserts an award, ADR-0006)
-    -> generate human-readable output FROM THE RECORDS:
+    -> generate the pre-award decision-support view FROM THE RECORDS:
          demo/output/RECOMMENDATION.md   — cycle + strategy + scenario comparison + per-cell split
                                            award recommendation (DC x lot x TF -> supplier(s) with
                                            volume_share %, awarded price, savings vs baseline)
-         demo/output/BOOKING_GUIDE.xlsx  — the award output generated from the records
-                                           (awarded supplier per DC x item, FOB/landed, volume)
+    -> SIMULATE the human selecting Scenario B -> promote to an AWARD (a simple in-memory award
+       selection for the demo; the real flow gates this through award -> freeze -> sign-off before
+       any output is generated, D22) -> generate the FINAL post-award booking outputs FROM THE
+       AWARD (D22 — booking guide is the LAST step, after awards, not straight off a scenario):
+         demo/output/BOOKING_GUIDE_INTERNAL.xlsx  — the buyers/pricing master: awarded supplier
+                                           (NAME) per DC x lot x item x TF with FOB/landed $/case,
+                                           volume, routing — what pricing uses to update the system
+         demo/output/SUPPLIER_AWARD_GUIDES.xlsx   — one sheet per awarded supplier: "here is what
+                                           you've been awarded" (that supplier's lots/DCs/volumes/
+                                           prices only)
 
-SYNTHETIC ONLY — every name/price is a placeholder (SUP-* / DC-* / LOT- * / ITEM-*). This output is
-shown to a client, so it contains NO real names or prices. This script is pragmatic (it seeds via
-raw SQL for the FK-heavy governed ref/cyc/norm spine) but stays clean; the runner it drives is the
-real service. Run with `DATABASE_URL` pointed at a fresh DB that has had `alembic upgrade head`.
+D23 — human-facing outputs render RESOLVED NAMES, never key IDs. The keys JOIN (D21); the NAMES
+DISPLAY. Every readable cell shows the seeded supplier/DC/lot/item/TF name resolved from the result
+keys; a trailing "key" reference column is kept for traceability but the readable columns lead.
+
+SYNTHETIC ONLY — every name is a clearly-fictional placeholder (e.g. "Green Valley Farms (DEMO)",
+"Atlanta DC (ATL)") and every price is invented. This output is shown to a client, so it contains
+NO real supplier names or prices. This script is pragmatic (it seeds via raw SQL for the FK-heavy
+governed ref/cyc/norm spine) but stays clean; the runner it drives is the real service. Run with
+`DATABASE_URL` pointed at a fresh DB that has had `alembic upgrade head`.
 """
 
 from __future__ import annotations
@@ -67,6 +81,48 @@ N_TFS = 2
 N_ROUNDS = 3
 N_SUPPLIERS = 6
 WEEKS_PER_TF = 13
+
+# --- Clearly-SYNTHETIC but READABLE names (D23). Every name is OBVIOUSLY fictional — flagged
+#     (DEMO) on suppliers, parenthetical demo codes on DCs — so a reader can tell at a glance the
+#     output is synthetic, while still reading a name instead of a key. NO real supplier names. ---
+SUPPLIER_NAMES: tuple[str, ...] = (
+    "Green Valley Farms (DEMO)",
+    "Sunbelt Produce (DEMO)",
+    "Harvest Ridge Growers (DEMO)",
+    "Blue Sky Packing (DEMO)",
+    "Cornerstone Fresh (DEMO)",
+    "Riverbend Organics (DEMO)",
+)
+# DC display name carries a short demo airport-style code in parens (readable + locatable).
+DC_NAMES: tuple[tuple[str, str], ...] = (
+    ("Atlanta DC (ATL)", "ATL"),
+    ("Dallas DC (DAL)", "DAL"),
+    ("Denver DC (DEN)", "DEN"),
+)
+# Lot/item readable descriptions (a lot == one item at the engine grain) + a pack descriptor.
+ITEM_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
+    ("Premium Grape Tomato 10oz", "10oz clamshell"),
+    ("Roma Tomato Bulk 25lb", "25lb carton"),
+    ("Vine-Ripe Tomato 4x5", "25lb 2-layer"),
+    ("Cherry Tomato Pint", "12x1pt flat"),
+)
+LOT_NAMES: tuple[str, ...] = (
+    "Lot 1 — Grape Tomato",
+    "Lot 2 — Roma Bulk",
+    "Lot 3 — Vine-Ripe",
+    "Lot 4 — Cherry",
+)
+# Timeframe readable names (a season window with the fiscal periods it spans).
+TF_NAMES: tuple[str, ...] = (
+    "Spring 2026 (P4-P6)",
+    "Summer 2026 (P7-P9)",
+)
+# Round readable labels (final = last).
+ROUND_NAMES: tuple[str, ...] = (
+    "Round 1 — Opening",
+    "Round 2 — Negotiation",
+    "Round 3 — Final",
+)
 
 
 def _id() -> str:
@@ -165,25 +221,28 @@ def seed_cycle(session: Session) -> SeededCycle:
         },
     )
 
-    # DCs (ref.dc) — placeholders DC-01..DC-03.
+    # DCs (ref.dc) — readable demo names ("Atlanta DC (ATL)", ...). `code` is the short
+    # demo region code (DC key reference); `name` is what every human-facing output renders (D23).
     dcs: list[Entity] = []
     for i in range(1, N_DCS + 1):
         dc_id = _id()
+        dc_name, region_code = DC_NAMES[(i - 1) % len(DC_NAMES)]
         code = f"DC{i:02d}"
         session.execute(
             text(
                 "INSERT INTO ref.dc (dc_id, dc_code, dc_name, region, division, active_flag) "
-                "VALUES (:id, :code, :name, 'REGION-X', 'DIV-Y', true)"
+                "VALUES (:id, :code, :name, :region, 'Produce (DEMO)', true)"
             ),
-            {"id": dc_id, "code": code, "name": f"DC-{i:02d} (SYNTHETIC)"},
+            {"id": dc_id, "code": code, "name": dc_name, "region": region_code},
         )
-        dcs.append(Entity(dc_id, code, f"DC-{i:02d}"))
+        dcs.append(Entity(dc_id, code, dc_name))
 
-    # Suppliers (ref.supplier) — placeholders SUP-01..SUP-06.
+    # Suppliers (ref.supplier) — clearly-fictional readable names ("Green Valley Farms (DEMO)").
+    # `name` (canonical_name) is what every output renders; `code` keeps a short key reference.
     suppliers: list[Entity] = []
     for i in range(1, N_SUPPLIERS + 1):
         sup_id = _id()
-        name = f"SUP-{i:02d} (SYNTHETIC)"
+        name = SUPPLIER_NAMES[(i - 1) % len(SUPPLIER_NAMES)]
         session.execute(
             text(
                 "INSERT INTO ref.supplier (supplier_id, canonical_name, active_flag, created_at) "
@@ -191,26 +250,28 @@ def seed_cycle(session: Session) -> SeededCycle:
             ),
             {"id": sup_id, "name": name, "now": now},
         )
-        suppliers.append(Entity(sup_id, f"SUP-{i:02d}", f"SUP-{i:02d}"))
+        suppliers.append(Entity(sup_id, f"SUP-{i:02d}", name))
 
-    # Items (ref.item) — one per lot. Placeholders ITEM-01..ITEM-04.
+    # Items (ref.item) — one per lot. Readable descriptions ("Premium Grape Tomato 10oz").
     items: list[Entity] = []
     for i in range(1, N_LOTS + 1):
         item_id = _id()
+        desc, pack = ITEM_DESCRIPTIONS[(i - 1) % len(ITEM_DESCRIPTIONS)]
         session.execute(
             text(
-                "INSERT INTO ref.item (item_id, item_code, description, commodity_id, "
-                "subcommodity_id) VALUES (:id, :code, :desc, :cid, :sid)"
+                "INSERT INTO ref.item (item_id, item_code, description, pack_desc, commodity_id, "
+                "subcommodity_id) VALUES (:id, :code, :desc, :pack, :cid, :sid)"
             ),
             {
                 "id": item_id,
                 "code": f"ITEM-{i:02d}",
-                "desc": f"ITEM-{i:02d} Description (SYNTHETIC)",
+                "desc": desc,
+                "pack": pack,
                 "cid": commodity_text_id,
                 "sid": subcommodity_id,
             },
         )
-        items.append(Entity(item_id, f"ITEM-{i:02d}", f"ITEM-{i:02d}"))
+        items.append(Entity(item_id, f"ITEM-{i:02d}", desc))
 
     # Timeframes (cyc.cycle_timeframe) — TF-01, TF-02.
     tfs: list[Entity] = []
