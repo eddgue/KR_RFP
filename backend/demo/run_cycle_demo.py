@@ -48,6 +48,9 @@ from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -127,6 +130,174 @@ ROUND_NAMES: tuple[str, ...] = (
 
 def _id() -> str:
     return str(uuid.uuid4())
+
+
+# ---------------------------------------------------------------------------
+# D24 — PRESENTATION FORMATTING. A reusable styling pass for every xlsx output:
+#   a titled header block, a bold white-on-color header row, sensible column
+#   widths, $/% number formats, thin borders, freeze panes under the header, a
+#   TOTAL/summary row, and an AutoFilter. NOT a raw CSV-like dump (D24).
+# ---------------------------------------------------------------------------
+NUMFMT_MONEY = "$#,##0.00"
+NUMFMT_PCT = "0.0%"  # applied to a FRACTION (0.05 -> 5.0%)
+NUMFMT_PCT_WHOLE = "0.0%"
+NUMFMT_INT = "#,##0"
+
+# Brand palette (decision-support neutral; readable on a projector).
+_HEADER_FILL = PatternFill("solid", fgColor="1F3864")  # deep navy
+_TITLE_FILL = PatternFill("solid", fgColor="2E5496")  # lighter navy band
+_TOTAL_FILL = PatternFill("solid", fgColor="D9E1F2")  # pale blue summary band
+_HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
+_TITLE_FONT = Font(bold=True, color="FFFFFF", size=13)
+_SUBTITLE_FONT = Font(italic=True, color="FFFFFF", size=9)
+_TOTAL_FONT = Font(bold=True, color="1F3864")
+_THIN = Side(style="thin", color="BFBFBF")
+_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+_CENTER = Alignment(horizontal="center", vertical="center")
+_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
+_WRAP_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+# The standard provenance strap every presentation surface carries (ADR-0006).
+DECISION_SUPPORT_STRAP = "DECISION-SUPPORT — recommends, does not assert"
+
+
+@dataclass(frozen=True)
+class Col:
+    """One column in a formatted table: header text, width, and a number format."""
+
+    header: str
+    width: int = 16
+    number_format: str | None = None  # None -> text/general
+    total: str = ""  # "sum" -> SUM over the body; "" -> no total cell
+
+
+def _title_block(
+    ws: Worksheet,
+    *,
+    title: str,
+    subtitle_lines: list[str],
+    span: int,
+    start_row: int = 1,
+) -> int:
+    """Write a titled header block across `span` columns; return the next free row.
+
+    Row 1 = cycle/strategy title (large, white-on-navy). Following rows = subtitle
+    lines (date, strategy, the decision-support strap). The whole block is merged
+    across the table width so it reads as a banner, not a stray cell (D24).
+    """
+
+    last_col = get_column_letter(span)
+    row = start_row
+    ws.merge_cells(f"A{row}:{last_col}{row}")
+    cell = ws.cell(row=row, column=1, value=title)
+    cell.font = _TITLE_FONT
+    cell.fill = _TITLE_FILL
+    cell.alignment = _LEFT
+    ws.row_dimensions[row].height = 22
+    for c in range(1, span + 1):
+        ws.cell(row=row, column=c).fill = _TITLE_FILL
+    row += 1
+    for line in subtitle_lines:
+        ws.merge_cells(f"A{row}:{last_col}{row}")
+        cell = ws.cell(row=row, column=1, value=line)
+        cell.font = _SUBTITLE_FONT
+        cell.fill = _TITLE_FILL
+        cell.alignment = _LEFT
+        for c in range(1, span + 1):
+            ws.cell(row=row, column=c).fill = _TITLE_FILL
+        row += 1
+    return row + 1  # one blank spacer row below the banner
+
+
+def format_table(
+    ws: Worksheet,
+    *,
+    title: str,
+    subtitle_lines: list[str],
+    columns: list[Col],
+    n_body_rows: int,
+    header_row: int | None = None,
+    total_label_col: int = 1,
+    total_label: str = "TOTAL",
+    add_total: bool = True,
+    add_autofilter: bool = True,
+) -> dict[str, int]:
+    """Apply the full D24 presentation pass to a sheet whose body is ALREADY written.
+
+    Expects the caller to have written the data rows starting at `header_row + 1`.
+    Writes the title banner (above the header), styles the header row bold
+    white-on-color, sets column widths + number formats, draws thin borders over
+    the table, freezes panes under the header, appends a styled TOTAL row that SUMs
+    the money/count columns, and turns on an AutoFilter. Returns key row indices.
+    """
+
+    span = len(columns)
+    # Title banner occupies rows 1..(header_row-1); caller may pass header_row, else
+    # we compute it from the banner height.
+    if header_row is None:
+        next_row = _title_block(
+            ws, title=title, subtitle_lines=subtitle_lines, span=span
+        )
+        header_row = next_row
+    else:
+        _title_block(
+            ws, title=title, subtitle_lines=subtitle_lines, span=span, start_row=1
+        )
+
+    # Header row — bold white-on-color, centered, wrapped, bordered.
+    for ci, col in enumerate(columns, start=1):
+        cell = ws.cell(row=header_row, column=ci, value=col.header)
+        cell.font = _HEADER_FONT
+        cell.fill = _HEADER_FILL
+        cell.alignment = _WRAP_CENTER
+        cell.border = _BORDER
+        ws.column_dimensions[get_column_letter(ci)].width = col.width
+    ws.row_dimensions[header_row].height = 30
+
+    body_start = header_row + 1
+    body_end = body_start + n_body_rows - 1
+
+    # Body — number formats + borders + alignment.
+    for ci, col in enumerate(columns, start=1):
+        for r in range(body_start, body_end + 1):
+            cell = ws.cell(row=r, column=ci)
+            cell.border = _BORDER
+            if col.number_format:
+                cell.number_format = col.number_format
+                cell.alignment = _CENTER
+            else:
+                cell.alignment = _LEFT
+
+    # TOTAL / summary row.
+    total_row = None
+    if add_total and n_body_rows > 0:
+        total_row = body_end + 1
+        ws.cell(row=total_row, column=total_label_col, value=total_label)
+        for ci, col in enumerate(columns, start=1):
+            cell = ws.cell(row=total_row, column=ci)
+            cell.fill = _TOTAL_FILL
+            cell.font = _TOTAL_FONT
+            cell.border = _BORDER
+            cell.alignment = _CENTER if col.number_format else _LEFT
+            if col.total == "sum" and n_body_rows > 0:
+                letter = get_column_letter(ci)
+                cell.value = f"=SUM({letter}{body_start}:{letter}{body_end})"
+                cell.number_format = col.number_format or NUMFMT_INT
+
+    # Freeze panes directly under the header (title + header stay on screen).
+    ws.freeze_panes = ws.cell(row=body_start, column=1)
+
+    # AutoFilter across the header + body (not the title banner, not the total).
+    if add_autofilter and n_body_rows > 0:
+        last_col = get_column_letter(span)
+        ws.auto_filter.ref = f"A{header_row}:{last_col}{body_end}"
+
+    return {
+        "header_row": header_row,
+        "body_start": body_start,
+        "body_end": body_end,
+        "total_row": total_row if total_row is not None else body_end,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1057,41 +1228,34 @@ def write_booking_guide_internal_xlsx(
     ws = wb.active
     assert ws is not None  # noqa: S101
     ws.title = "Internal Booking Guide"
-    ws.cell(
-        row=1,
-        column=1,
-        value=(
-            f"INTERNAL BOOKING GUIDE (SYNTHETIC) — {seeded.cycle_name} — "
-            f"awarded from Scenario {award.scenario_code} ({award.scenario_label}); "
-            "post-award (selected -> awarded -> frozen -> signed off)"
-        ),
-    )
-    headers = [
-        "DC",
-        "Lot",
-        "Item",
-        "Timeframe",
-        "Awarded Supplier",
-        "Volume Share %",
-        "FOB $/case",
-        "Landed $/case",
-        "Awarded Period Cases",
-        "Routing Baseline $/case",
-        "Savings vs Baseline %",
-        "Key ref (DC·lot·sup)",  # traceability column — names lead, keys trail (D23)
-    ]
-    for ci, h in enumerate(headers, start=1):
-        ws.cell(row=2, column=ci, value=h)
 
-    row = 3
+    columns = [
+        Col("DC", 18),
+        Col("Lot", 22),
+        Col("Item", 26),
+        Col("Timeframe", 20),
+        Col("Awarded Supplier", 26),
+        Col("Volume Share", 13, NUMFMT_PCT),
+        Col("FOB $/case", 14, NUMFMT_MONEY),
+        Col("Landed $/case", 14, NUMFMT_MONEY),
+        Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
+        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
+        Col("Routing Baseline $/case", 20, NUMFMT_MONEY),
+        Col("Savings vs Baseline", 16, NUMFMT_PCT),
+        Col("Key ref (DC·lot·sup)", 22),  # traceability — names lead, keys trail (D23)
+    ]
+    header_row = 5  # title banner occupies rows 1-4
+    row = header_row + 1
+    n_rows = 0
     for c in sorted(
         award.cells, key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, ""))
     ):
-        savings = (
-            (c.routing_baseline - c.awarded_price) / c.routing_baseline * Decimal("100")
+        savings_frac = (
+            (c.routing_baseline - c.awarded_price) / c.routing_baseline
             if c.routing_baseline > 0
             else Decimal("0")
         )
+        awarded_cases = c.period_cases * c.volume_share
         key_ref = (
             f"{dc_code.get(c.dc_id, c.dc_id[:6])}·{lot_code.get(c.lot_id, c.lot_id[:6])}·"
             f"{sup_code.get(c.supplier_id, c.supplier_id[:6])}"
@@ -1101,17 +1265,31 @@ def write_booking_guide_internal_xlsx(
         ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
         ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
         ws.cell(row=row, column=5, value=sup_name.get(c.supplier_id, c.supplier_id[:6]))
-        ws.cell(row=row, column=6, value=float(c.volume_share * Decimal("100")))
+        ws.cell(row=row, column=6, value=float(c.volume_share))  # fraction -> 0.0% fmt
         # Demo economics use All-In as both the FOB and the landed basis (placeholders only).
         ws.cell(row=row, column=7, value=float(c.awarded_price))
         ws.cell(row=row, column=8, value=float(c.awarded_price))
-        ws.cell(row=row, column=9, value=float(c.period_cases * c.volume_share))
-        ws.cell(row=row, column=10, value=float(c.routing_baseline))
-        ws.cell(row=row, column=11, value=float(savings))
-        ws.cell(row=row, column=12, value=key_ref)
+        ws.cell(row=row, column=9, value=float(awarded_cases))
+        ws.cell(row=row, column=10, value=float(c.awarded_price * awarded_cases))
+        ws.cell(row=row, column=11, value=float(c.routing_baseline))
+        ws.cell(row=row, column=12, value=float(savings_frac))  # fraction -> 0.0% fmt
+        ws.cell(row=row, column=13, value=key_ref)
         row += 1
+        n_rows += 1
 
-    _autosize(ws)
+    format_table(
+        ws,
+        title=f"INTERNAL BOOKING GUIDE — {seeded.cycle_name}",
+        subtitle_lines=[
+            f"Awarded from Scenario {award.scenario_code} ({award.scenario_label}) · "
+            f"post-award: selected → awarded → frozen → signed off (D22)",
+            f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
+            f"{DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=n_rows,
+        header_row=header_row,
+    )
     path = OUTPUT_DIR / "BOOKING_GUIDE_INTERNAL.xlsx"
     wb.save(path)
     return path
@@ -1143,43 +1321,50 @@ def write_supplier_award_guides_xlsx(
     # Drop the default empty sheet once we add the first real one.
     default_ws = wb.active
 
-    headers = [
-        "DC",
-        "Lot",
-        "Item",
-        "Timeframe",
-        "Volume Share %",
-        "Awarded Period Cases",
-        "Awarded $/case",
+    columns = [
+        Col("DC", 18),
+        Col("Lot", 22),
+        Col("Item", 26),
+        Col("Timeframe", 20),
+        Col("Volume Share", 13, NUMFMT_PCT),
+        Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
+        Col("Awarded $/case", 16, NUMFMT_MONEY),
+        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
     ]
+    header_row = 5  # title banner occupies rows 1-4
     # Stable, readable order: awarded suppliers by name.
     for sup_id in sorted(cells_by_sup, key=lambda s: sup_name.get(s, s)):
-        title = _sheet_title(sup_name.get(sup_id, sup_id[:6]))
+        sup_disp = sup_name.get(sup_id, sup_id[:6])
+        title = _sheet_title(sup_disp)
         ws = wb.create_sheet(title=title)
-        ws.cell(
-            row=1,
-            column=1,
-            value=(
-                f"AWARD GUIDE (SYNTHETIC) — {sup_name.get(sup_id, sup_id[:6])} — "
-                f"{seeded.cycle_name}: here is what you've been awarded"
-            ),
-        )
-        for ci, h in enumerate(headers, start=1):
-            ws.cell(row=2, column=ci, value=h)
-        row = 3
+        row = header_row + 1
+        n_rows = 0
         for c in sorted(
             cells_by_sup[sup_id],
             key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, "")),
         ):
+            awarded_cases = c.period_cases * c.volume_share
             ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
             ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
             ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
             ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
-            ws.cell(row=row, column=5, value=float(c.volume_share * Decimal("100")))
-            ws.cell(row=row, column=6, value=float(c.period_cases * c.volume_share))
+            ws.cell(row=row, column=5, value=float(c.volume_share))
+            ws.cell(row=row, column=6, value=float(awarded_cases))
             ws.cell(row=row, column=7, value=float(c.awarded_price))
+            ws.cell(row=row, column=8, value=float(c.awarded_price * awarded_cases))
             row += 1
-        _autosize(ws)
+            n_rows += 1
+        format_table(
+            ws,
+            title=f"AWARD GUIDE — {sup_disp}",
+            subtitle_lines=[
+                f"{seeded.cycle_name}: here is what you've been awarded",
+                f"Generated {date.today():%Y-%m-%d} · SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+            ],
+            columns=columns,
+            n_body_rows=n_rows,
+            header_row=header_row,
+        )
 
     if default_ws is not None and len(wb.sheetnames) > 1:
         wb.remove(default_ws)
@@ -1196,16 +1381,603 @@ def _sheet_title(name: str) -> str:
     return cleaned[:31] or "Supplier"
 
 
-def _autosize(ws: Worksheet) -> None:
-    """Widen each column to its longest cell (legibility — names, not truncated keys)."""
+# ---------------------------------------------------------------------------
+# 8) INTERACTIVE SCENARIO WORKBOOK (D25) — SCENARIO_WORKBOOK.xlsx
+#
+# A live workbook the buyer can PLAY on, generated from the sealed records:
+#   * Summary          — cycle/strategy header + the A-G scenario spend table.
+#   * Scored Bids      — per bid: names + the 5 factors + RecScore + eligible?.
+#   * Allocation (Rec B) — per cell: recommended supplier + $/case + volume + savings.
+#   * Custom Scenario  — THE INTERACTIVE TAB. One row per (DC x lot x item x TF) cell
+#                        with a data-validation DROPDOWN of the eligible suppliers (by
+#                        NAME) and LIVE Excel formulas: the chosen supplier's $/case is
+#                        looked up from the hidden `_Prices` grid (SUMIFS over a key
+#                        column), line spend = price x volume, and everything rolls to a
+#                        TOTAL spend + savings-vs-baseline + a per-DC cap-breach flag
+#                        (distinct suppliers per DC > max_sup_dc). Pre-filled with
+#                        Scenario B's picks so it opens on the recommendation; changing
+#                        any dropdown recomputes live.
+#   * _Prices (hidden) — the supplier x cell price grid the formulas reference.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class CellInfo:
+    """One (DC x lot x item x TF) allocation cell, resolved to names + economics."""
 
-    for col_cells in ws.columns:
-        width = max(
-            (len(str(cell.value)) for cell in col_cells if cell.value is not None),
-            default=10,
+    dc_id: str
+    lot_id: str
+    item_id: str
+    tf_id: str
+    cell_key: str  # a stable text key "DCxx|LOT-xx|TFxx" the _Prices grid is keyed on
+    dc_name: str
+    lot_name: str
+    item_name: str
+    tf_name: str
+    volume: Decimal  # projected period cases for the cell
+    baseline_price: Decimal  # incumbent routing baseline $/case
+    eligible_suppliers: list[str]  # supplier NAMES eligible for this cell (dropdown list)
+    rec_supplier: str  # Scenario B recommended supplier NAME (the pre-filled pick)
+    price_by_supplier: dict[str, Decimal]  # supplier NAME -> $/case for this cell
+
+
+def _gather_cells(
+    session: Session,
+    seeded: SeededCycle,
+    analysis_run_id: str,
+    final_round_id: str,
+    award: SelectedAward,
+) -> list[CellInfo]:
+    """Resolve every allocation cell to names + the price grid + eligibility + the B pick.
+
+    Prices come from the FINAL-round `bid.bid_line` rows (the priced reality the engine
+    scored); eligibility comes from `eng.bid_score.is_eligible`; the B pick comes from the
+    selected award. All by KEY (D21); all rendered by NAME (D23).
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    dc_code = {dc.id: dc.code for dc in seeded.dcs}
+    lot_code = {lot.id: lot.code for lot in seeded.lots}
+    tf_code = {tf.id: tf.code for tf in seeded.tfs}
+    item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
+
+    # Final-round prices per (supplier, dc, lot, tf) from the persisted bid lines.
+    price_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+        ),
+        {"cyc": seeded.cycle_id, "rnd": final_round_id},
+    ).all()
+    price_by: dict[tuple[str, str, str, str], Decimal] = {}
+    for sup_id, dc_id, lot_id, tf_id, price in price_rows:
+        if price is not None:
+            price_by[(sup_id, dc_id, lot_id, tf_id)] = Decimal(str(price))
+
+    # Eligibility per (supplier, dc, lot, tf) from the sealed scores.
+    elig_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, is_eligible "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+    eligible_by: dict[tuple[str, str, str, str], bool] = {
+        (s, d, lo, t): bool(e) for s, d, lo, t, e in elig_rows
+    }
+
+    # The Scenario B recommended supplier per cell (the pre-filled dropdown pick).
+    rec_by_cell = {
+        (c.dc_id, c.lot_id, c.tf_id): sup_name.get(c.supplier_id, c.supplier_id[:6])
+        for c in award.cells
+    }
+
+    cells: list[CellInfo] = []
+    for c in award.cells:
+        key_t = (c.dc_id, c.lot_id, c.tf_id)
+        # Suppliers that BOTH priced this cell AND scored eligible -> the valid dropdown.
+        price_map: dict[str, Decimal] = {}
+        eligible_names: list[str] = []
+        for sup in seeded.suppliers:
+            p = price_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
+            if p is None:
+                continue
+            name = sup_name.get(sup.id, sup.id[:6])
+            price_map[name] = p
+            if eligible_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id), False):
+                eligible_names.append(name)
+        # Always include the recommended pick even if the gate marked it ineligible elsewhere.
+        rec = rec_by_cell.get(key_t, "")
+        if rec and rec not in eligible_names and rec in price_map:
+            eligible_names.append(rec)
+        if not eligible_names:  # fall back to anyone who priced, so the dropdown is never empty
+            eligible_names = sorted(price_map)
+        eligible_names = sorted(dict.fromkeys(eligible_names))
+
+        item = item_for_lot.get(c.lot_id)
+        cell_key = (
+            f"{dc_code.get(c.dc_id, c.dc_id[:4])}|{lot_code.get(c.lot_id, c.lot_id[:4])}|"
+            f"{tf_code.get(c.tf_id, c.tf_id[:4])}"
         )
-        letter = col_cells[0].column_letter
-        ws.column_dimensions[letter].width = min(max(width + 2, 12), 60)
+        cells.append(
+            CellInfo(
+                dc_id=c.dc_id,
+                lot_id=c.lot_id,
+                item_id=item.id if item else c.lot_id,
+                tf_id=c.tf_id,
+                cell_key=cell_key,
+                dc_name=dc_name.get(c.dc_id, c.dc_id[:6]),
+                lot_name=lot_name.get(c.lot_id, c.lot_id[:6]),
+                item_name=item.name if item else "",
+                tf_name=tf_name.get(c.tf_id, c.tf_id[:6]),
+                volume=c.period_cases,
+                baseline_price=c.routing_baseline,
+                eligible_suppliers=eligible_names,
+                rec_supplier=rec or (eligible_names[0] if eligible_names else ""),
+                price_by_supplier=price_map,
+            )
+        )
+    # Stable, readable order.
+    cells.sort(key=lambda c: (c.dc_name, c.lot_name, c.tf_name))
+    return cells
+
+
+def _write_summary_tab(
+    wb: Workbook,
+    seeded: SeededCycle,
+    config: EngineConfig,
+    scenarios: list[AnalysisScenario],
+) -> None:
+    """Summary tab — cycle/strategy header + the A-G scenario spend comparison."""
+
+    ws = wb.active
+    assert ws is not None  # noqa: S101
+    ws.title = "Summary"
+
+    spend_by_code = {s.scenario_code: s.objective_total_spend for s in scenarios}
+    baseline = spend_by_code.get("A")  # lowest-cost reference benchmark
+
+    columns = [
+        Col("Lens", 8),
+        Col("Scenario", 34),
+        Col("Objective Spend (synthetic)", 26, NUMFMT_MONEY),
+        Col("Δ vs A (lowest-cost)", 20, NUMFMT_MONEY),
+        Col("Δ vs A %", 14, NUMFMT_PCT),
+    ]
+    header_row = 6  # banner rows 1-5 (extra strategy lines)
+    row = header_row + 1
+    n_rows = 0
+    for s in sorted(scenarios, key=lambda x: x.scenario_code):
+        spend = s.objective_total_spend
+        delta = (spend - baseline) if (spend is not None and baseline is not None) else None
+        delta_pct = (
+            (spend - baseline) / baseline
+            if (spend is not None and baseline is not None and baseline > 0)
+            else None
+        )
+        ws.cell(row=row, column=1, value=s.scenario_code)
+        ws.cell(row=row, column=2, value=s.label)
+        ws.cell(row=row, column=3, value=float(spend) if spend is not None else None)
+        ws.cell(row=row, column=4, value=float(delta) if delta is not None else None)
+        ws.cell(row=row, column=5, value=float(delta_pct) if delta_pct is not None else None)
+        row += 1
+        n_rows += 1
+
+    format_table(
+        ws,
+        title=f"SCENARIO WORKBOOK — {seeded.cycle_name}",
+        subtitle_lines=[
+            f"Strategy: {config.preset.value} · weights "
+            f"P{config.weight_price}/Cov{config.weight_coverage}/Hist{config.weight_historical}"
+            f"/Z{config.weight_zrisk}/Cont{config.weight_continuity} · "
+            f"max {config.max_sup_dc} suppliers/DC",
+            f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
+            f"{DECISION_SUPPORT_STRAP}",
+            "Scenario A = lowest-cost benchmark (never auto-applied). "
+            "Scenario B = risk-adjusted recommendation. Play on the Custom Scenario tab.",
+        ],
+        columns=columns,
+        n_body_rows=n_rows,
+        header_row=header_row,
+        add_total=False,
+    )
+
+
+def _write_scored_bids_tab(
+    wb: Workbook,
+    seeded: SeededCycle,
+    session: Session,
+    analysis_run_id: str,
+) -> None:
+    """Scored Bids tab — per bid: names, DC/lot/item/TF, the 5 factors + RecScore, eligible?."""
+
+    ws = wb.create_sheet("Scored Bids")
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    item_for_lot = {seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))}
+
+    rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, price_score, coverage_score, "
+            "hist_score, zrisk_score, continuity_score, rec_score, is_eligible, gate_flags "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+
+    columns = [
+        Col("Supplier", 26),
+        Col("DC", 18),
+        Col("Lot", 22),
+        Col("Item", 24),
+        Col("Timeframe", 20),
+        Col("Price", 9, NUMFMT_INT),
+        Col("Coverage", 10, NUMFMT_INT),
+        Col("Historical", 11, NUMFMT_INT),
+        Col("Z-Risk", 9, NUMFMT_INT),
+        Col("Continuity", 11, NUMFMT_INT),
+        Col("RecScore", 11, NUMFMT_INT),
+        Col("Eligible?", 11),
+        Col("Gate flags", 24),
+    ]
+    header_row = 5
+    body = sorted(
+        rows,
+        key=lambda r: (
+            dc_name.get(r[1], ""),
+            lot_name.get(r[2], ""),
+            tf_name.get(r[3], ""),
+            -float(r[9]),
+        ),
+    )
+    row = header_row + 1
+    for r in body:
+        (sup_id, dc_id, lot_id, tf_id, ps, cov, hist, z, cont, rec, elig, flags) = r
+        ws.cell(row=row, column=1, value=sup_name.get(sup_id, sup_id[:6]))
+        ws.cell(row=row, column=2, value=dc_name.get(dc_id, dc_id[:6]))
+        ws.cell(row=row, column=3, value=lot_name.get(lot_id, lot_id[:6]))
+        ws.cell(row=row, column=4, value=item_for_lot.get(lot_id, ""))
+        ws.cell(row=row, column=5, value=tf_name.get(tf_id, tf_id[:6]))
+        ws.cell(row=row, column=6, value=float(ps))
+        ws.cell(row=row, column=7, value=float(cov))
+        ws.cell(row=row, column=8, value=float(hist))
+        ws.cell(row=row, column=9, value=float(z))
+        ws.cell(row=row, column=10, value=float(cont))
+        ws.cell(row=row, column=11, value=float(rec))
+        ws.cell(row=row, column=12, value="Yes" if elig else "No")
+        ws.cell(row=row, column=13, value=flags or "—")
+        row += 1
+
+    format_table(
+        ws,
+        title="SCORED BIDS — five-factor banded scoring → RecScore",
+        subtitle_lines=[
+            "Per priced bid line on the final round. Scores 0-100; RecScore is the "
+            "weighted blend. Eligible? = passed the gates.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(body),
+        header_row=header_row,
+        add_total=False,
+    )
+
+
+def _write_allocation_tab(
+    wb: Workbook,
+    cells: list[CellInfo],
+) -> None:
+    """Allocation (Rec B) tab — per cell: recommended supplier, $/case, volume, savings, flags."""
+
+    ws = wb.create_sheet("Allocation (Rec B)")
+    columns = [
+        Col("DC", 18),
+        Col("Lot", 22),
+        Col("Item", 24),
+        Col("Timeframe", 20),
+        Col("Recommended Supplier", 26),
+        Col("Awarded $/case", 15, NUMFMT_MONEY),
+        Col("Period Cases", 14, NUMFMT_INT, total="sum"),
+        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
+        Col("Baseline $/case", 15, NUMFMT_MONEY),
+        Col("Savings vs Baseline", 16, NUMFMT_PCT),
+    ]
+    header_row = 5
+    row = header_row + 1
+    for c in cells:
+        price = c.price_by_supplier.get(c.rec_supplier, Decimal("0"))
+        savings = (
+            (c.baseline_price - price) / c.baseline_price if c.baseline_price > 0 else Decimal("0")
+        )
+        ws.cell(row=row, column=1, value=c.dc_name)
+        ws.cell(row=row, column=2, value=c.lot_name)
+        ws.cell(row=row, column=3, value=c.item_name)
+        ws.cell(row=row, column=4, value=c.tf_name)
+        ws.cell(row=row, column=5, value=c.rec_supplier)
+        ws.cell(row=row, column=6, value=float(price))
+        ws.cell(row=row, column=7, value=float(c.volume))
+        ws.cell(row=row, column=8, value=float(price * c.volume))
+        ws.cell(row=row, column=9, value=float(c.baseline_price))
+        ws.cell(row=row, column=10, value=float(savings))
+        row += 1
+
+    format_table(
+        ws,
+        title="ALLOCATION — Scenario B (risk-adjusted recommendation)",
+        subtitle_lines=[
+            "One row per DC × lot × item × timeframe cell, with the recommended supplier "
+            "and its awarded economics.",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(cells),
+        header_row=header_row,
+    )
+
+
+def _write_prices_helper(
+    wb: Workbook,
+    cells: list[CellInfo],
+) -> str:
+    """Hidden `_Prices` sheet: a long supplier × cell price grid the formulas SUMIFS over.
+
+    Columns: Match Key | Cell Key | Supplier | $/case, where Match Key = cell_key & "@" &
+    supplier (so a single SUMIFS on Match Key resolves the chosen supplier's price for a
+    cell). Returns the sheet name.
+    """
+
+    sheet_name = "_Prices"
+    ws = wb.create_sheet(sheet_name)
+    ws["A1"] = "Match Key"
+    ws["B1"] = "Cell Key"
+    ws["C1"] = "Supplier"
+    ws["D1"] = "$/case"
+    r = 2
+    for c in cells:
+        for supplier, price in c.price_by_supplier.items():
+            ws.cell(row=r, column=1, value=f"{c.cell_key}@{supplier}")
+            ws.cell(row=r, column=2, value=c.cell_key)
+            ws.cell(row=r, column=3, value=supplier)
+            ws.cell(row=r, column=4, value=float(price))
+            ws.cell(row=r, column=4).number_format = NUMFMT_MONEY
+            r += 1
+    for col, width in (("A", 36), ("B", 18), ("C", 26), ("D", 12)):
+        ws.column_dimensions[col].width = width
+    ws.sheet_state = "hidden"
+    return sheet_name
+
+
+def _write_custom_scenario_tab(
+    wb: Workbook,
+    config: EngineConfig,
+    cells: list[CellInfo],
+    prices_sheet: str,
+) -> None:
+    """THE INTERACTIVE TAB — per-cell supplier dropdowns + live spend/savings/cap-breach.
+
+    Layout: an instruction banner, then one row per cell with a Supplier dropdown
+    (data-validation list = the cell's eligible suppliers, by NAME) and LIVE formulas:
+      $/case  = SUMIFS(_Prices!$D, _Prices!$A, CellKey & "@" & ChosenSupplier)
+      Volume  = a literal (projected period cases)
+      Line Spend = $/case × Volume
+    Below the table: a summary block with TOTAL spend (=SUM), baseline total, savings
+    vs baseline (live), and per-DC distinct-supplier counts with a cap-breach flag
+    (distinct suppliers in a DC > max_sup_dc). Pre-filled with Scenario B's picks.
+    """
+
+    ws = wb.create_sheet("Custom Scenario")
+
+    columns = [
+        Col("DC", 18),
+        Col("Lot", 22),
+        Col("Item", 24),
+        Col("Timeframe", 18),
+        Col("Supplier (change me ▼)", 26),
+        Col("$/case (live)", 14, NUMFMT_MONEY),
+        Col("Volume (cases)", 14, NUMFMT_INT, total="sum"),
+        Col("Line Spend (live)", 18, NUMFMT_MONEY, total="sum"),
+        Col("Baseline $/case", 15, NUMFMT_MONEY),
+        Col("Cell Key", 16),  # the SUMIFS key (kept visible-but-narrow for traceability)
+    ]
+    header_row = 6  # banner rows 1-5 (instruction is prominent)
+    body_start = header_row + 1
+    body_end = body_start + len(cells) - 1
+
+    # Column letters used inside the live formulas.
+    col_supplier = get_column_letter(5)
+    col_price = get_column_letter(6)
+    col_vol = get_column_letter(7)
+    col_spend = get_column_letter(8)
+    col_cellkey = get_column_letter(10)
+    p_key = f"'{prices_sheet}'!$A:$A"
+    p_val = f"'{prices_sheet}'!$D:$D"
+
+    row = body_start
+    for c in cells:
+        ws.cell(row=row, column=1, value=c.dc_name)
+        ws.cell(row=row, column=2, value=c.lot_name)
+        ws.cell(row=row, column=3, value=c.item_name)
+        ws.cell(row=row, column=4, value=c.tf_name)
+        # The interactive pick — pre-filled with Scenario B's recommended supplier.
+        ws.cell(row=row, column=5, value=c.rec_supplier)
+        # LIVE: chosen supplier's $/case via SUMIFS on the hidden _Prices match key.
+        ws.cell(
+            row=row,
+            column=6,
+            value=(
+                f'=SUMIFS({p_val},{p_key},{col_cellkey}{row}&"@"&{col_supplier}{row})'
+            ),
+        )
+        # Volume is a literal projected demand for the cell.
+        ws.cell(row=row, column=7, value=float(c.volume))
+        # LIVE: line spend = price × volume.
+        ws.cell(row=row, column=8, value=f"={col_price}{row}*{col_vol}{row}")
+        ws.cell(row=row, column=9, value=float(c.baseline_price))
+        ws.cell(row=row, column=10, value=c.cell_key)
+        row += 1
+
+    fmt = format_table(
+        ws,
+        title="CUSTOM SCENARIO — override the supplier per cell, watch it recompute LIVE",
+        subtitle_lines=[
+            "▶ Change the Supplier dropdown on any row — Total Spend / Savings / "
+            "Cap-Breach update live.",
+            "Opens on Scenario B's recommendation. Dropdown lists only the eligible "
+            "suppliers for that cell (by name).",
+            f"SYNTHETIC · max {config.max_sup_dc} suppliers/DC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(cells),
+        header_row=header_row,
+        total_label_col=1,
+        total_label="TOTAL (live)",
+    )
+    total_row = fmt["total_row"]
+
+    # Per-cell data-validation dropdowns — list = the cell's eligible suppliers (by NAME).
+    # openpyxl inline list formula must be wrapped in double-quotes; commas separate items.
+    for offset, c in enumerate(cells):
+        r = body_start + offset
+        items = ",".join(c.eligible_suppliers)
+        # Excel inline lists are capped ~255 chars; our short demo names fit comfortably.
+        dv = DataValidation(
+            type="list",
+            formula1=f'"{items}"',
+            allow_blank=False,
+            showDropDown=False,  # False => the dropdown arrow IS shown (Excel quirk)
+        )
+        dv.error = "Pick a supplier from the eligible list for this cell."
+        dv.errorTitle = "Not an eligible supplier"
+        dv.prompt = "Choose the supplier for this DC × lot × timeframe cell."
+        dv.promptTitle = "Override supplier"
+        ws.add_data_validation(dv)
+        dv.add(ws.cell(row=r, column=5))
+
+    # --- LIVE summary block below the table (spend / savings / cap-breach). ---
+    s_label_col = 4  # put labels in col D, values in col E for readability
+    s_val_col = 5
+    val_letter = get_column_letter(s_val_col)
+    base_total = sum((c.baseline_price * c.volume for c in cells), Decimal("0"))
+
+    summary_top = total_row + 2
+    sr = summary_top  # row of the first block; baseline is the next row
+    blocks: list[tuple[str, object, str | None]] = [
+        # Total custom spend = the table's live total spend cell.
+        ("Total Custom Spend (live):", f"={col_spend}{total_row}", NUMFMT_MONEY),
+        ("Baseline Spend (incumbent routing):", float(base_total), NUMFMT_MONEY),
+        # Savings $ = baseline - custom; live off the two rows above.
+        (
+            "Savings vs Baseline ($, live):",
+            f"={val_letter}{sr + 1}-{val_letter}{sr}",
+            NUMFMT_MONEY,
+        ),
+        (
+            "Savings vs Baseline (%, live):",
+            (
+                f"=IF({val_letter}{sr + 1}=0,0,"
+                f"({val_letter}{sr + 1}-{val_letter}{sr})/{val_letter}{sr + 1})"
+            ),
+            NUMFMT_PCT,
+        ),
+    ]
+
+    r = summary_top
+    for label, value, numfmt in blocks:
+        lcell = ws.cell(row=r, column=s_label_col, value=label)
+        lcell.font = _TOTAL_FONT
+        lcell.alignment = _LEFT
+        vcell = ws.cell(row=r, column=s_val_col, value=value)
+        vcell.font = _TOTAL_FONT
+        vcell.fill = _TOTAL_FILL
+        vcell.border = _BORDER
+        vcell.alignment = _CENTER
+        if numfmt:
+            vcell.number_format = numfmt
+        r += 1
+
+    # --- Per-DC cap-breach block: distinct chosen suppliers per DC vs max_sup_dc. ---
+    dc_names = sorted({c.dc_name for c in cells})
+    cap_title_row = r + 1
+    tcell = ws.cell(
+        row=cap_title_row,
+        column=s_label_col,
+        value=f"Cap-breach check — distinct suppliers per DC (cap = {config.max_sup_dc}):",
+    )
+    tcell.font = _TOTAL_FONT
+    tcell.alignment = _LEFT
+
+    dc_col = get_column_letter(1)
+    cap_row = cap_title_row + 1
+    for dc in dc_names:
+        # Distinct chosen suppliers in this DC across the body rows: a SUMPRODUCT over
+        # 1/COUNTIFS restricted to the DC's rows. Built as an array-ish SUMPRODUCT that
+        # Excel evaluates live as the dropdowns change.
+        # distinct = SUM over rows in DC of 1/(count of same supplier within the DC rows).
+        rng_dc = f"${dc_col}${body_start}:${dc_col}${body_end}"
+        rng_sup = f"${col_supplier}${body_start}:${col_supplier}${body_end}"
+        # Distinct chosen suppliers within this DC's rows: SUMPRODUCT of (row is in DC) /
+        # (count of rows sharing this row's DC AND supplier). COUNTIFS is >=1 for every
+        # row (each row matches itself), so there is no div/0; the (dc=…) numerator zeroes
+        # non-DC rows, leaving the distinct count for the DC. Recomputes live.
+        distinct_formula = (
+            f'=SUMPRODUCT(({rng_dc}="{dc}")/'
+            f"COUNTIFS({rng_dc},{rng_dc},{rng_sup},{rng_sup}))"
+        )
+        lcell = ws.cell(row=cap_row, column=s_label_col, value=dc)
+        lcell.alignment = _LEFT
+        dcell = ws.cell(row=cap_row, column=s_val_col, value=distinct_formula)
+        dcell.alignment = _CENTER
+        dcell.border = _BORDER
+        # Flag column right of the count.
+        flag_formula = (
+            f'=IF({val_letter}{cap_row}>{config.max_sup_dc},"⚠ CAP BREACH","OK")'
+        )
+        fcell = ws.cell(row=cap_row, column=s_val_col + 1, value=flag_formula)
+        fcell.font = _TOTAL_FONT
+        fcell.alignment = _LEFT
+        cap_row += 1
+
+    # Header labels for the cap block columns.
+    ws.cell(row=cap_title_row + 0, column=s_val_col, value="# suppliers").font = _SUBTITLE_FONT
+
+
+def write_scenario_workbook_xlsx(
+    session: Session,
+    seeded: SeededCycle,
+    config: EngineConfig,
+    analysis_run_id: str,
+    final_round_id: str,
+    award: SelectedAward,
+) -> Path:
+    """Generate the interactive Scenario Workbook (D25) from the sealed records.
+
+    Tabs: Summary · Scored Bids · Allocation (Rec B) · Custom Scenario (interactive,
+    per-cell dropdowns + live formulas) · _Prices (hidden helper grid).
+    """
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    scenarios = (
+        session.query(AnalysisScenario)
+        .filter(AnalysisScenario.analysis_run_id == analysis_run_id)
+        .order_by(AnalysisScenario.scenario_code)
+        .all()
+    )
+    cells = _gather_cells(session, seeded, analysis_run_id, final_round_id, award)
+
+    wb = Workbook()
+    _write_summary_tab(wb, seeded, config, scenarios)
+    _write_scored_bids_tab(wb, seeded, session, analysis_run_id)
+    _write_allocation_tab(wb, cells)
+    prices_sheet = _write_prices_helper(wb, cells)
+    _write_custom_scenario_tab(wb, config, cells, prices_sheet)
+
+    path = OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx"
+    wb.save(path)
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -1291,16 +2063,23 @@ def main() -> None:
             "[freeze + sign-off gates noted, deferred to the awd.* phase]"
         )
 
-        print("[7/8] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD (buyers/pricing)…")
+        print("[7/9] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD "
+              "(buyers/pricing; presentation-formatted — D24)…")
         internal_path = write_booking_guide_internal_xlsx(seeded, award)
-        print("[8/8] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
-              "(one sheet per awarded supplier)…")
+        print("[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
+              "(one sheet per awarded supplier; presentation-formatted — D24)…")
         supplier_path = write_supplier_award_guides_xlsx(seeded, award)
+        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — interactive Custom Scenario tab "
+              "(per-cell supplier dropdowns + live spend/savings/cap-breach — D25)…")
+        workbook_path = write_scenario_workbook_xlsx(
+            session, seeded, config, run_result.analysis_run_id, final_round.id, award
+        )
 
     print("=== DONE ===")
     print(f"   {rec_path}  ({rec_path.stat().st_size} bytes)")
     print(f"   {internal_path}  ({internal_path.stat().st_size} bytes)")
     print(f"   {supplier_path}  ({supplier_path.stat().st_size} bytes)")
+    print(f"   {workbook_path}  ({workbook_path.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
