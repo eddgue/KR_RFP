@@ -105,6 +105,10 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Clarification (sponsor).** The uploaded Field Tomatoes corpus (engine input, ingestion sheets, booking guide, raw supplier bids, etc.) is **AS-IS reference** — it reflects how the work is done **today, manually, in Excel** — for understanding the logic/data and for **testing**, **not a layout or a workflow to replicate.** Rule: **KEEP the technical substance + the domain truths** (the engine I/O contract, the bid grain + cost components, scoring config/constraints, data semantics, and the captured requirements/decisions D1–D16); **BUILD our own** system — our own **strategies, process steps, presentation, generated outputs, and RFP/bid template.** We are **not** digitizing today's manual workflow one-for-one; we improve it (governed gates, automation, new capabilities like E-28/E-30/E-32), and the **process shape is per-cycle configurable** — the setup file defines the rail (intake locked-truth #8), not a hardcode of today's steps. The supplier-facing RFP/bid template stays **multi-sheet** as a concept, but it is our design. Generalizes ADR-0006 ("lift the logic, drop the Excel") to the whole reference corpus and to the process itself.
 **Linked:** ADR-0006, ADR-0013, gap G10 (rail from cycle timeline), CYCLE_FIELDTOMATO_STRUCTURE.md, FEEDS_ITRADE.md.
 
+### D18 — Strategy-agnostic platform: strategies are first-class, developed & run · **RATIFIED 2026-06-18** (ADR-0016)
+**Principle (sponsor).** The reference files are **single-strategy molds** (one RFP's approach each). We build a **strategy-agnostic platform** where strategies are **developed** (composed, saved as reusable, versioned templates) and **run** (bound to a cycle and executed). **Nothing strategy-specific is hardcoded.** A *strategy* = objective(s) + pricing model/cadence/safeties + scoring weights/preset (or custom) + award constraints (max-sup-per-DC, single-supplier-per-lot, premium thresholds, coverage floor) + the scenario lenses to run + process rail/steps + preferences/exclusions. Generalizes the engine's commodity-agnostic/config-driven design and the per-cycle rail (locked-truth #8) into a first-class **Strategy**. **Commodity-agnostic ⊆ strategy-agnostic.** Every run records its strategy version → reproducibility + faithful historic render.
+**Linked:** ADR-0016, ADR-0006, D9/D12/D13, scenario_config_version/metric_definition_version/engine_release, intake locked-truth #8.
+
 ---
 
 ## Dependencies (logistics blockers)
@@ -116,7 +120,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
 | DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
-| DEP-6 | **Market-price feed** (e.g. the USDA market data referenced in the kickoff docs) | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Data | OPEN |
+| DEP-6 | **Market-price feed — USDA `FVWTRDS-1662`** (the series the price-backtest HTML uses; confirmed 2026-06-18) | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Data | OPEN — feed identified, access TBD |
 | DEP-7 | **Award files + round/negotiation analysis** (sponsor to pass later) | understanding the live-negotiation process (round loop, target-setting); E-28 backfill | Sponsor | OPEN — deferred, low urgency |
 
 ---

@@ -53,6 +53,11 @@ The intake called the five pricing safeties "the real product," and the original
 - Data model: `cyc.cycle_safety` stores the declared terms + parameters; `awd.award_layer` records actual reprices; a future `execution`/monitoring surface computes formulaic moves and flags disaster events for human action.
 - Strengthens E-28: "was this deal honored?" = compare contract terms (+ legitimate safety moves) vs iTrade effective.
 
+## Confirmed (2026-06-18 — via the sponsor's `xl-roma-pricing-backtest.html`)
+- **Tolerance-band mechanic CONFIRMED** (resolves the prior open question): a `±band%` corridor (HTML default **15%**) around a **scheduled-reset base** (trailing-average window over a reset cadence — the HTML uses 13-wk reset / 4-wk trailing; *per-RFP configurable* per the flexibility rule). A print outside the band **starts a clock; 2 consecutive weeks outside confirm** an interim reprice (1-wk lag); 2 weeks back inside revert. Matches the "outside-and-persists-≥2-weeks → temporary reprice, then review" reading.
+- **Collar asymmetry CONFIRMED:** the collar is **Kroger-optional** — it fires only when it *lowers* Kroger's price (cap protects Kroger on the upside; the floor is the supplier's). Plus a re-mark rule for runaway second legs.
+- **Market feed identified:** USDA **`FVWTRDS-1662`** (the series the HTML backtests against) → **DEP-6**. This closes ADR-0014's "where does the market reference come from."
+- **Still per-RFP-flexible:** all windows/cadences/bands are set per cycle (ADR's flexibility rule); the HTML figures (15% / 13-wk / 4-wk) are reference defaults, not fixed.
+
 ## Open / to confirm
-- The exact mechanics above (this ADR is the sponsor's words, structured — confirm before build).
-- Where the market reference comes from (USDA market data is referenced in the kickoff docs; the rolling-midpoint/tolerance-band need a market price series feed). **Likely a new feed (market index), TBD.**
+- Final per-RFP default values at template time (the HTML gives reference defaults).
