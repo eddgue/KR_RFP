@@ -380,3 +380,25 @@ item, not an output-design one.
 **`Negotiation Dynamics`** · `Coverage` · `Detailed Scoring` · `TF Comparison` · `Round Evolution` ·
 `Data Quality` · `Custom Scenario` (now with live transit) · `Data (pivot me)` (+ transit, relationship)
 · `_Prices`. Still clean, still playable; now it reads as a negotiation instrument, not a price report.
+
+### 8.5 Live custom — the dashboards move with the build (added 2026-06-19)
+
+The automated dashboards read the recommended Scenario B. To answer *"see all the dashboards change
+when I build a custom scenario, not just the automated one,"* a **`Custom Dashboard`** tab recomputes
+the lenses **entirely from live Excel formulas** over the Custom Scenario builder rows — so changing a
+supplier dropdown moves the rollup:
+
+- **Cost:** total spend, savings vs incumbent $/% — `SUM`/`SUMPRODUCT` over the builder's live
+  `Line Spend` and `Volume × Baseline` columns.
+- **Hidden cost:** volume-weighted avg transit + freshness-watch count — `SUMPRODUCT`/`COUNTIF` over
+  the builder's live transit column.
+- **Relationships:** per-supplier custom share (`SUMIF`/total) with a live dependency flag at the
+  concentration threshold (heatmap + rule), and live custom spend/savings per DC.
+- Each beside the **Recommended (B)** value with a **Δ vs rec** column — "your build vs the rec" at a
+  glance. On the B pre-fill every Δ is 0 (validated: total spend, savings, suppliers, freshness,
+  volume-weighted transit all match the recommendation exactly), then it diverges as you build.
+
+This uses the same proven live-formula mechanism as the existing builder (the `_Prices` SUMIFS grid);
+no macros, recalculates on open (`fullCalcOnLoad`). The result is 18 tabs. **Charts and visual-layout
+polish remain the downstream design review's job — to be added without changing the file or its
+architecture; this study fixes structure, views, interactivity, and navigation only.**

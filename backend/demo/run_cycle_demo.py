@@ -4587,6 +4587,183 @@ def _write_kpi_band(wb: Workbook, kpis: list[_Kpi]) -> None:
         r += 1
 
 
+def _write_custom_dashboard_tab(
+    wb: Workbook,
+    n_cells: int,
+    seeded: SeededCycle,
+    config: EngineConfig,
+    baseline_total: Decimal,
+    rec_spend: Decimal,
+    rec_avg_transit: float,
+    rec_fresh: int,
+    rec_n_suppliers: int,
+    incumbent_names: set[str],
+) -> None:
+    """Custom Dashboard — the lenses LIVE off the Custom Scenario build (not the automated B).
+
+    Every value is an Excel formula reading the Custom Scenario rows, so as the buyer changes a
+    supplier dropdown the whole dashboard recomputes: total spend & savings (cost), avg transit &
+    freshness (hidden cost), per-supplier share & dependency (relationships) — each shown beside
+    the recommended Scenario B so 'your build vs the recommendation' is one glance. The 'see all
+    the dashboards move when I build custom, not just the automated one' ask (D25/D27).
+    """
+
+    ws = wb.create_sheet("Custom Dashboard")
+    s, e = 7, 6 + n_cells
+    cs = "'Custom Scenario'"
+    sup_r = f"{cs}!$E${s}:$E${e}"
+    spend_r = f"{cs}!$K${s}:$K${e}"
+    vol_r = f"{cs}!$J${s}:$J${e}"
+    base_r = f"{cs}!$L${s}:$L${e}"
+    tr_r = f"{cs}!$N${s}:$N${e}"
+    dc_r = f"{cs}!$A${s}:$A${e}"
+    base_spend = f"SUMPRODUCT({vol_r},{base_r})"
+    cust_spend = f"SUM({spend_r})"
+
+    next_row = _title_block(
+        ws,
+        title="Custom Dashboard — LIVE off your Custom Scenario build",
+        subtitle_lines=[
+            "Change a supplier on the Custom Scenario tab and every number here recomputes.",
+            DECISION_SUPPORT_STRAP,
+        ],
+        span=4,
+    )
+    for col, w in (("A", 32), ("B", 18), ("C", 18), ("D", 16)):
+        ws.column_dimensions[col].width = w
+
+    def section(row: int, label: str, span: int = 4) -> int:
+        c = ws.cell(row=row, column=1, value=label)
+        c.font = _TITLE_FONT
+        c.fill = _TITLE_FILL
+        c.alignment = _LEFT
+        for cc in range(1, span + 1):
+            ws.cell(row=row, column=cc).fill = _TITLE_FILL
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=span)
+        return row + 1
+
+    def header(row: int, labels: list[str]) -> int:
+        for ci, h in enumerate(labels, start=1):
+            c = ws.cell(row=row, column=ci, value=h)
+            c.font = _HEADER_FONT
+            c.fill = _HEADER_FILL
+            c.alignment = _CENTER
+            c.border = _BORDER
+        return row + 1
+
+    # --- Section 1: your build vs the recommendation (live KPIs) ---
+    r = section(next_row, "Your build vs the recommendation")
+    r = header(r, ["Metric", "Custom (LIVE)", "Recommended (B)", "Δ vs rec"])
+    base_rec = baseline_total - rec_spend
+    pct_rec = float(base_rec / baseline_total) if baseline_total > 0 else 0.0
+    kpi_rows: list[tuple[str, str, float, str | None]] = [
+        ("Total spend", f"={cust_spend}", float(rec_spend), NUMFMT_MONEY),
+        (
+            "Savings vs incumbent $",
+            f"={base_spend}-{cust_spend}", float(base_rec), NUMFMT_MONEY,
+        ),
+        (
+            "Savings vs incumbent %",
+            f"=IFERROR(({base_spend}-{cust_spend})/{base_spend},0)",
+            pct_rec, NUMFMT_PCT,
+        ),
+        (
+            "Avg transit (days, vol-wtd)",
+            f"=IFERROR(SUMPRODUCT({vol_r},{tr_r})/SUM({vol_r}),0)",
+            rec_avg_transit, "0.0",
+        ),
+        (
+            "Freshness watches (cells)",
+            f'=COUNTIF({tr_r},">{FRESHNESS_WATCH_DAYS}")',
+            float(rec_fresh), NUMFMT_INT,
+        ),
+        (
+            "Suppliers used",
+            f"=SUMPRODUCT(1/COUNTIF({sup_r},{sup_r}))",
+            float(rec_n_suppliers), NUMFMT_INT,
+        ),
+    ]
+    for label, cust_f, rec_v, nf in kpi_rows:
+        lc = ws.cell(row=r, column=1, value=label)
+        lc.font = _TOTAL_FONT
+        lc.border = _BORDER
+        lc.alignment = _LEFT
+        cc = ws.cell(row=r, column=2, value=cust_f)
+        rc = ws.cell(row=r, column=3, value=rec_v)
+        dc = ws.cell(row=r, column=4, value=f"=B{r}-C{r}")
+        for cell in (cc, rc, dc):
+            cell.border = _BORDER
+            cell.alignment = _CENTER
+            if nf:
+                cell.number_format = nf
+        cc.font = Font(bold=True, color="1F3864")
+        r += 1
+    r += 1
+
+    # --- Section 2: supplier share — LIVE ---
+    r = section(r, "Supplier share — LIVE (relationships & dependency)")
+    r = header(r, ["Supplier", "Role", "Custom share", "Dependency"])
+    share_start = r
+    for sup in seeded.suppliers:
+        nm = sup.name.replace('"', '""')
+        ws.cell(row=r, column=1, value=sup.name).border = _BORDER
+        role = ws.cell(
+            row=r, column=2, value="Preserve" if sup.name in incumbent_names else "Create"
+        )
+        role.border = _BORDER
+        role.alignment = _CENTER
+        sh = ws.cell(
+            row=r,
+            column=3,
+            value=f'=IFERROR(SUMIF({sup_r},"{nm}",{spend_r})/{cust_spend},0)',
+        )
+        sh.number_format = NUMFMT_PCT
+        sh.alignment = _CENTER
+        sh.border = _BORDER
+        dep = ws.cell(
+            row=r, column=4,
+            value=f'=IF(C{r}>={float(config.conc_thresh)},"DEPENDENCY","")',
+        )
+        dep.alignment = _CENTER
+        dep.border = _BORDER
+        r += 1
+    share_end = r - 1
+    ws.conditional_formatting.add(
+        f"C{share_start}:C{share_end}",
+        ColorScaleRule(
+            start_type="num", start_value=0, start_color="FFFFFF",
+            mid_type="num", mid_value=float(config.conc_thresh), mid_color="FFEB9C",
+            end_type="num", end_value=0.6, end_color="F8696B",
+        ),
+    )
+    ws.conditional_formatting.add(
+        f"D{share_start}:D{share_end}",
+        CellIsRule(
+            operator="equal", formula=['"DEPENDENCY"'], fill=_BREACH_FILL, font=_BREACH_FONT
+        ),
+    )
+    r += 1
+
+    # --- Section 3: spend by DC — LIVE ---
+    r = section(r, "Spend by DC — LIVE", span=3)
+    r = header(r, ["DC", "Custom spend", "Savings vs incumbent"])
+    for dc in seeded.dcs:
+        nm = dc.name.replace('"', '""')
+        base_dc = f'SUMPRODUCT(({dc_r}="{nm}")*{vol_r}*{base_r})'
+        ws.cell(row=r, column=1, value=dc.name).border = _BORDER
+        cspend = ws.cell(row=r, column=2, value=f'=SUMIF({dc_r},"{nm}",{spend_r})')
+        cspend.number_format = NUMFMT_MONEY
+        cspend.alignment = _CENTER
+        cspend.border = _BORDER
+        sav = ws.cell(row=r, column=3, value=f"={base_dc}-SUMIF({dc_r},\"{nm}\",{spend_r})")
+        sav.number_format = NUMFMT_MONEY
+        sav.alignment = _CENTER
+        sav.border = _BORDER
+        r += 1
+    ws.freeze_panes = ws.cell(row=next_row, column=1)
+    ws.sheet_view.showGridLines = False
+
+
 def write_scenario_workbook_xlsx(
     session: Session,
     seeded: SeededCycle,
@@ -4742,9 +4919,25 @@ def write_scenario_workbook_xlsx(
     tab_index.append(("§ BUILD & SLICE", ""))
     prices_sheet = _write_prices_helper(wb, cells)
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
+    # The Custom Dashboard recomputes the lenses LIVE off the builder (not the automated B).
+    # Volume-weighted transit (matches the live SUMPRODUCT) so Δ-vs-rec reads 0 on the B pre-fill.
+    rec_vol = sum((d.volume for d in rec_details), Decimal("0"))
+    rec_avg_transit = (
+        float(sum((d.transit_days * d.volume for d in rec_details), Decimal("0")) / rec_vol)
+        if rec_vol > 0 else 0.0
+    )
+    rec_fresh = sum(1 for d in rec_details if d.transit_days > FRESHNESS_WATCH_DAYS)
+    rec_n_suppliers = len({d.supplier_name for d in rec_details})
+    _write_custom_dashboard_tab(
+        wb, len(cells), seeded, config, baseline_total, rec_spend,
+        rec_avg_transit, rec_fresh, rec_n_suppliers, incumbent_names,
+    )
     _write_data_pivot_tab(wb, details)
     tab_index.append(
         ("Custom Scenario", "Build your own: override the supplier per cell, recomputes live.")
+    )
+    tab_index.append(
+        ("Custom Dashboard", "Your build's lenses LIVE — spend, savings, share, transit move too.")
     )
     tab_index.append(
         ("Data (pivot me)", "Slice it yourself: a flat Excel Table to drop a native PivotTable on.")
