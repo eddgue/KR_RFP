@@ -52,6 +52,7 @@ from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -1393,16 +1394,21 @@ def _sheet_title(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 8) ALIGNMENT / COMPARISON SCENARIO WORKBOOK (D26) — SCENARIO_WORKBOOK.xlsx
+# 8) ALIGNMENT / COMPARISON SCENARIO WORKBOOK (D26/D27) — SCENARIO_WORKBOOK.xlsx
 #
 # The team-alignment tool — the comparison surfaces buyers/category/sourcing work through to
-# DECIDE in the alignment call (D26), NOT a flat summary. Generated from the sealed records:
+# DECIDE in the alignment call (D26), with MANIPULABLE data (D27 — pivot/drill/filter, depth on
+# demand, not fixed tables). Generated from the sealed records:
 #   * Summary             — the headline: cycle/strategy + the A-vs-B alignment call + a guide.
 #   * Scenario Comparison — the lenses A-G SIDE BY SIDE (which lens): spend, Δ between lenses,
 #                           savings vs baseline / vs STLY, supplier count, cap-breaches, # cells;
-#                           A (benchmark) + B (recommendation) highlighted. Below it a PER-DC
-#                           MATRIX (DCs down, scenarios across → spend + supplier mix) so the team
-#                           sees WHERE the lenses differ.
+#                           A (benchmark) + B (recommendation) highlighted; + a LIVE Custom row
+#                           (formulas off the Custom Scenario tab, read side by side vs A-G, D27).
+#                           Below it an EXPANDABLE DRILL (outline grouping, summaryBelow=False):
+#                           each scenario TOTAL → per-DC → per-supplier, opens COLLAPSED to totals,
+#                           expand for depth on demand (D27). Then a PER-DC MATRIX (DCs down,
+#                           scenarios across → spend + supplier mix) so the team sees WHERE lenses
+#                           differ.
 #   * Supplier Comparison — THE CENTERPIECE (the v3 FOB comparison). One row per (DC x lot x item
 #                           x TF) cell with demand, baseline + incumbent $/case, then ONE COLUMN
 #                           PER SUPPLIER (all-in $/case, blank if no bid). The MIN per row is
@@ -1415,7 +1421,12 @@ def _sheet_title(name: str) -> str:
 #                           chosen supplier's $/case (SUMIFS over the hidden `_Prices` grid), vs Min
 #                           / vs Incumbent / vs Baseline %, line spend = price x volume; everything
 #                           rolls to a TOTAL spend + savings-vs-baseline + a per-DC cap-breach flag.
-#                           Pre-filled with Scenario B; changing any dropdown recomputes live.
+#                           Pre-filled with Scenario B; changing any dropdown recomputes live (and
+#                           drives the live Custom row + column on Scenario Comparison).
+#   * Data (pivot me)     — THE FLAT MANIPULABLE DATASET (D27). One row per (scenario × DC × lot ×
+#                           item × TF × awarded-supplier) with every metric, as a REAL Excel Table
+#                           (ListObject) with AutoFilter — drop a native PivotTable / filter / slice
+#                           on it to cut the data any way. Rich but neat: detail lives here.
 #   * Scored Bids         — per bid: names + the 5 factors + RecScore + eligible?.
 #   * _Prices (hidden)    — the supplier x cell price grid + per-cell Min/Incumbent/Baseline
 #                           reference grid the live formulas reference.
@@ -1683,6 +1694,146 @@ def _gather_scenario_rollups(
     return rollups, baseline_total, stly_total
 
 
+# ---------------------------------------------------------------------------
+# D27 — DRILL-DOWN + FLAT DATASET precompute. The "data is manipulable" core:
+# every scenario's awards resolved to one fully-detailed row per
+# (scenario × DC × lot × item × TF × awarded-supplier), with all metrics
+# (volume, $/case, spend, savings vs baseline, the 5 scores, premium, flags).
+# This single sealed-record set feeds BOTH the expandable scenario→DC→supplier
+# pivot (rolled up two ways) AND the flat `Data (pivot me)` Excel Table.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class AwardDetail:
+    """One fully-resolved award line for the drill pivot + the flat pivot-me dataset (D27)."""
+
+    scenario_code: str
+    scenario_label: str
+    dc_name: str
+    lot_name: str
+    item_name: str
+    tf_name: str
+    supplier_name: str
+    incumbent_name: str
+    is_incumbent: bool
+    volume: Decimal  # awarded cases = projected period cases × volume_share
+    volume_share: Decimal
+    price: Decimal  # awarded $/case
+    spend: Decimal  # price × awarded cases
+    baseline_price: Decimal
+    baseline_spend: Decimal  # baseline $/case × awarded cases
+    savings_vs_baseline: Decimal  # baseline_spend − spend ($)
+    premium_vs_baseline_frac: Decimal  # (price − baseline) / baseline
+    price_score: Decimal
+    coverage_score: Decimal
+    hist_score: Decimal
+    zrisk_score: Decimal
+    continuity_score: Decimal
+    rec_score: Decimal
+    cap_breach: bool
+    is_fallback: bool
+
+
+def _gather_award_details(
+    session: Session,
+    seeded: SeededCycle,
+    scenarios: list[AnalysisScenario],
+    analysis_run_id: str,
+) -> list[AwardDetail]:
+    """Resolve every A-G award row to a fully-detailed line (names + metrics + 5 scores + flags).
+
+    One row per (scenario × DC × lot × item × TF × awarded-supplier). The award metrics come from
+    `eng.analysis_scenario_award`; the five factor scores + RecScore are joined per cell+supplier
+    from `eng.bid_score`; volume from the seeded projected cases × the award's volume_share; the
+    baseline from the seeded incumbent routing. All by KEY (D21), all rendered by NAME (D23). This
+    one set drives the drill pivot AND the flat pivot-me table.
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
+    incumbent_name_by = {
+        (dc_id, lot_id): sup_name.get(sup_id, sup_id[:6])
+        for (dc_id, lot_id), sup_id in seeded.incumbent_by_dc_lot.items()
+    }
+    vol_by_cell = dict(seeded.period_cases_by_cell)
+    label_by_code = {s.scenario_code: s.label for s in scenarios}
+
+    # Five-factor scores per (supplier, dc, lot, tf) for the run (joined onto each award).
+    score_rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, price_score, coverage_score, "
+            "hist_score, zrisk_score, continuity_score, rec_score "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+    score_by: dict[tuple[str, str, str, str], tuple[Decimal, ...]] = {}
+    for s, d, lo, t, ps, cov, hist, z, cont, rec in score_rows:
+        score_by[(s, d, lo, t)] = tuple(
+            Decimal(str(v)) for v in (ps, cov, hist, z, cont, rec)
+        )
+
+    award_rows = session.execute(
+        text(
+            "SELECT s.scenario_code, a.dc_id, a.lot_id, a.tf_id, a.supplier_id, "
+            "a.volume_share, a.awarded_price, a.cap_breach_flag, a.is_fallback "
+            "FROM eng.analysis_scenario_award a "
+            "JOIN eng.analysis_scenario s ON s.analysis_scenario_id = a.analysis_scenario_id "
+            "WHERE s.analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+
+    details: list[AwardDetail] = []
+    for code, dc_id, lot_id, tf_id, sup_id, share, price, breach, fallback in award_rows:
+        share_d = Decimal(str(share))
+        price_d = Decimal(str(price))
+        cases = vol_by_cell.get((dc_id, lot_id, tf_id), Decimal("0")) * share_d
+        baseline = seeded.incumbent_routing.get((dc_id, lot_id), Decimal("0"))
+        spend = price_d * cases
+        baseline_spend = baseline * cases
+        premium = (price_d - baseline) / baseline if baseline > 0 else Decimal("0")
+        scores = score_by.get((sup_id, dc_id, lot_id, tf_id), tuple(Decimal("0") for _ in range(6)))
+        item = item_for_lot.get(lot_id)
+        sup_disp = sup_name.get(sup_id, sup_id[:6])
+        inc_disp = incumbent_name_by.get((dc_id, lot_id), "")
+        details.append(
+            AwardDetail(
+                scenario_code=code,
+                scenario_label=label_by_code.get(code, code),
+                dc_name=dc_name.get(dc_id, dc_id[:6]),
+                lot_name=lot_name.get(lot_id, lot_id[:6]),
+                item_name=item.name if item else "",
+                tf_name=tf_name.get(tf_id, tf_id[:6]),
+                supplier_name=sup_disp,
+                incumbent_name=inc_disp,
+                is_incumbent=(sup_disp == inc_disp),
+                volume=cases,
+                volume_share=share_d,
+                price=price_d,
+                spend=spend,
+                baseline_price=baseline,
+                baseline_spend=baseline_spend,
+                savings_vs_baseline=baseline_spend - spend,
+                premium_vs_baseline_frac=premium,
+                price_score=scores[0],
+                coverage_score=scores[1],
+                hist_score=scores[2],
+                zrisk_score=scores[3],
+                continuity_score=scores[4],
+                rec_score=scores[5],
+                cap_breach=bool(breach),
+                is_fallback=bool(fallback),
+            )
+        )
+    details.sort(
+        key=lambda d: (d.scenario_code, d.dc_name, d.lot_name, d.tf_name, d.supplier_name)
+    )
+    return details
+
+
 def _write_summary_tab(
     wb: Workbook,
     seeded: SeededCycle,
@@ -1764,22 +1915,338 @@ def _write_summary_tab(
     )
 
 
+@dataclass(frozen=True)
+class _DcRollup:
+    """Per-DC roll-up of one scenario's awards (the level-1 drill row + its supplier children)."""
+
+    dc_name: str
+    spend: Decimal
+    volume: Decimal
+    savings_vs_baseline: Decimal
+    n_suppliers: int
+    suppliers: list[AwardDetail]  # the per-supplier (level-2) child lines, volume-desc
+
+
+def _rollup_scenario(rows: list[AwardDetail]) -> tuple[Decimal, Decimal, Decimal, list[_DcRollup]]:
+    """Roll one scenario's award rows into (total spend, total volume, total savings, per-DC rows).
+
+    Per-DC rows aggregate a DC's award lines to spend/volume/savings + a distinct-supplier count,
+    and carry the per-supplier child lines (each a real award line). Drives the expandable drill.
+    """
+
+    by_dc: dict[str, list[AwardDetail]] = defaultdict(list)
+    for d in rows:
+        by_dc[d.dc_name].append(d)
+    dc_rollups: list[_DcRollup] = []
+    tot_spend = tot_vol = tot_sav = Decimal("0")
+    for dcn in sorted(by_dc):
+        lines = by_dc[dcn]
+        spend = sum((x.spend for x in lines), Decimal("0"))
+        vol = sum((x.volume for x in lines), Decimal("0"))
+        sav = sum((x.savings_vs_baseline for x in lines), Decimal("0"))
+        tot_spend += spend
+        tot_vol += vol
+        tot_sav += sav
+        dc_rollups.append(
+            _DcRollup(
+                dc_name=dcn,
+                spend=spend,
+                volume=vol,
+                savings_vs_baseline=sav,
+                n_suppliers=len({x.supplier_name for x in lines}),
+                suppliers=sorted(lines, key=lambda x: (-float(x.volume), x.supplier_name)),
+            )
+        )
+    return tot_spend, tot_vol, tot_sav, dc_rollups
+
+
+# Drill columns: a fixed 8-wide grid shared by the total / DC / supplier rows.
+_DRILL_HEADERS = (
+    ("Scenario / DC / Supplier", None),
+    ("Spend", NUMFMT_MONEY),
+    ("Volume (cases)", NUMFMT_INT),
+    ("Savings vs Baseline ($)", NUMFMT_MONEY),
+    ("# Suppliers / $/case", NUMFMT_MONEY),
+    ("Volume share", NUMFMT_PCT),
+    ("Premium vs Baseline", NUMFMT_PCT),
+    ("Flags", None),
+)
+
+
+def _write_scenario_drill(
+    ws: Worksheet,
+    details: list[AwardDetail],
+    span: int,
+    start_row: int,
+) -> int:
+    """Write the EXPANDABLE scenario→DC→supplier drill region; return the next free row (D27).
+
+    Excel outline grouping: each scenario TOTAL row is level 0; its per-DC rows are level 1; each
+    DC's per-supplier rows are level 2. With `summaryBelow=False` the +/- buttons collapse the
+    detail UNDER each scenario total. Rows are written collapsed (hidden + collapsed flags set) so
+    the region OPENS as scenario totals only, expandable on demand.
+    """
+
+    # Section banner.
+    tcell = ws.cell(
+        row=start_row,
+        column=1,
+        value="DRILL-DOWN — expand a scenario (+) to per-DC, then to per-supplier (D27)",
+    )
+    tcell.font = _TITLE_FONT
+    tcell.fill = _TITLE_FILL
+    tcell.alignment = _LEFT
+    ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=span)
+    for col in range(1, span + 1):
+        ws.cell(row=start_row, column=col).fill = _TITLE_FILL
+
+    # Header row for the drill grid.
+    hrow = start_row + 1
+    for ci, (htext, _fmt) in enumerate(_DRILL_HEADERS, start=1):
+        hc = ws.cell(row=hrow, column=ci, value=htext)
+        hc.font = _HEADER_FONT
+        hc.fill = _HEADER_FILL
+        hc.alignment = _WRAP_CENTER
+        hc.border = _BORDER
+    ws.row_dimensions[hrow].height = 28
+
+    by_scen: dict[str, list[AwardDetail]] = defaultdict(list)
+    label_by: dict[str, str] = {}
+    for d in details:
+        by_scen[d.scenario_code].append(d)
+        label_by[d.scenario_code] = d.scenario_label
+
+    row = hrow + 1
+    for code in sorted(by_scen):
+        tot_spend, tot_vol, tot_sav, dc_rollups = _rollup_scenario(by_scen[code])
+        # --- Scenario TOTAL row (outline level 0; the collapse handle). ---
+        scen_label = f"Scenario {code} — {label_by[code]}"
+        _drill_cells(
+            ws,
+            row,
+            [scen_label, tot_spend, tot_vol, tot_sav, len({d.supplier_name for d in by_scen[code]}),
+             None, None, ""],
+            level=0,
+            bold=True,
+            fill=(_BENCH_FILL if code == "A" else _REC_FILL if code == "B" else _TOTAL_FILL),
+        )
+        # The total row carries the collapse control for the child block below it.
+        ws.row_dimensions[row].collapsed = True
+        row += 1
+        for dcr in dc_rollups:
+            # --- per-DC row (level 1; hidden+collapsed so detail opens closed). ---
+            _drill_cells(
+                ws,
+                row,
+                [f"   {dcr.dc_name}", dcr.spend, dcr.volume, dcr.savings_vs_baseline,
+                 dcr.n_suppliers, None, None, ""],
+                level=1,
+                bold=False,
+                hidden=True,
+                collapsed=True,
+            )
+            row += 1
+            for sup in dcr.suppliers:
+                # --- per-supplier row (level 2; hidden). $/case sits in the "# Suppliers" col. ---
+                flags = []
+                if sup.cap_breach:
+                    flags.append("CAP-BREACH")
+                if sup.is_fallback:
+                    flags.append("FALLBACK")
+                if sup.is_incumbent:
+                    flags.append("INCUMBENT")
+                _drill_cells(
+                    ws,
+                    row,
+                    [
+                        f"      {sup.supplier_name}",
+                        sup.spend,
+                        sup.volume,
+                        sup.savings_vs_baseline,
+                        sup.price,
+                        sup.volume_share,
+                        sup.premium_vs_baseline_frac,
+                        ", ".join(flags) if flags else "—",
+                    ],
+                    level=2,
+                    bold=False,
+                    hidden=True,
+                )
+                row += 1
+    return row
+
+
+def _drill_cells(
+    ws: Worksheet,
+    row: int,
+    values: list[object],
+    *,
+    level: int,
+    bold: bool,
+    hidden: bool = False,
+    collapsed: bool = False,
+    fill: PatternFill | None = None,
+) -> None:
+    """Write one drill row: 8 values with shared formats; set the outline level + hidden flag."""
+
+    for ci, (val, (_h, fmt)) in enumerate(zip(values, _DRILL_HEADERS, strict=True), start=1):
+        cell = ws.cell(row=row, column=ci)
+        cell.value = float(val) if isinstance(val, Decimal) else val
+        cell.border = _BORDER
+        if fmt and val is not None and not isinstance(val, str):
+            cell.number_format = fmt
+            cell.alignment = _CENTER
+        else:
+            cell.alignment = _LEFT
+        if bold:
+            cell.font = _TOTAL_FONT
+        if fill is not None:
+            cell.fill = fill
+    rd = ws.row_dimensions[row]
+    rd.outline_level = level
+    if hidden:
+        rd.hidden = True
+    if collapsed:
+        rd.collapsed = True
+
+
+# The Custom Scenario tab's fixed layout (mirrors `_write_custom_scenario_tab`) so the live Custom
+# column in Scenario Comparison can reference it by deterministic address. header_row=6 → body 7..,
+# columns: DC=A, Supplier=E, $/case=F, Volume=J, Line Spend=K, Cell Key=M; total row = body_end+1.
+_CUSTOM_SHEET = "Custom Scenario"
+_CUSTOM_HEADER_ROW = 6
+
+
+def _custom_refs(n_cells: int) -> dict[str, str]:
+    """Deterministic A1-style ranges into the Custom Scenario tab for the live Custom column."""
+
+    body_start = _CUSTOM_HEADER_ROW + 1
+    body_end = body_start + n_cells - 1
+    total_row = body_end + 1
+    q = f"'{_CUSTOM_SHEET}'"
+    return {
+        "total_spend": f"{q}!$K${total_row}",  # live total spend
+        "dc": f"{q}!$A${body_start}:$A${body_end}",  # DC name per row
+        "sup": f"{q}!$E${body_start}:$E${body_end}",  # chosen supplier per row
+        "spend": f"{q}!$K${body_start}:$K${body_end}",  # live line spend per row
+        "vol": f"{q}!$J${body_start}:$J${body_end}",  # volume per row
+        "price": f"{q}!$F${body_start}:$F${body_end}",  # live $/case per row
+        "baseline": f"{q}!$L${body_start}:$L${body_end}",  # baseline $/case per row
+    }
+
+
+def _write_custom_drill(
+    ws: Worksheet,
+    cells: list[CellInfo],
+    refs: dict[str, str],
+    start_row: int,
+) -> int:
+    """Write the LIVE Custom block in the same drill grid: total → per-DC → per-supplier (D27).
+
+    Every value is a SUMIFS/SUMPRODUCT against the Custom Scenario tab's live spend + chosen
+    supplier columns, so as the buyer changes picks there, the Custom total / per-DC / supplier rows
+    recompute and read side by side against A-G. Per-supplier rows list every supplier that COULD be
+    picked in that DC; each row's spend/volume is the live SUMIFS for that supplier (0 when not the
+    current pick). Same outline levels as A-G (DC=1, supplier=2), opens collapsed under the total.
+    """
+
+    dc_r, sup_r, spend_r, vol_r = refs["dc"], refs["sup"], refs["spend"], refs["vol"]
+    # Per-DC supplier universe (who could be picked in that DC) from the cells' eligible lists.
+    dc_universe: dict[str, set[str]] = defaultdict(set)
+    for c in cells:
+        dc_universe[c.dc_name].update(c.eligible_suppliers)
+
+    row = start_row
+    # --- Custom TOTAL row (level 0; the collapse handle for the live block). ---
+    _drill_cells(
+        ws,
+        row,
+        [
+            "Custom (LIVE — off Custom Scenario tab)",
+            f"={refs['total_spend']}",
+            f"=SUM({vol_r})",
+            f"=SUMPRODUCT(({refs['baseline']}-{refs['price']})*{vol_r})",
+            f'=SUMPRODUCT(({sup_r}<>"")/COUNTIF({sup_r},{sup_r}&""))',
+            None,
+            None,
+            "live",
+        ],
+        level=0,
+        bold=True,
+        fill=_REC_PICK_FILL,
+    )
+    ws.row_dimensions[row].collapsed = True
+    row += 1
+    for dcn in sorted(dc_universe):
+        # --- per-DC LIVE row (level 1): SUMIFS over the Custom tab restricted to this DC. ---
+        _drill_cells(
+            ws,
+            row,
+            [
+                f"   {dcn}",
+                f'=SUMIFS({spend_r},{dc_r},"{dcn}")',
+                f'=SUMIFS({vol_r},{dc_r},"{dcn}")',
+                None,
+                f'=SUMPRODUCT(({dc_r}="{dcn}")/COUNTIFS({dc_r},{dc_r},{sup_r},{sup_r}))',
+                None,
+                None,
+                "live",
+            ],
+            level=1,
+            bold=False,
+            hidden=True,
+            collapsed=True,
+        )
+        row += 1
+        for sup in sorted(dc_universe[dcn]):
+            # --- per-supplier LIVE row (level 2): this supplier's live spend/volume in this DC. ---
+            _drill_cells(
+                ws,
+                row,
+                [
+                    f"      {sup}",
+                    f'=SUMIFS({spend_r},{dc_r},"{dcn}",{sup_r},"{sup}")',
+                    f'=SUMIFS({vol_r},{dc_r},"{dcn}",{sup_r},"{sup}")',
+                    None,
+                    None,
+                    None,
+                    None,
+                    "live (0 if not picked)",
+                ],
+                level=2,
+                bold=False,
+                hidden=True,
+            )
+            row += 1
+    return row
+
+
 def _write_scenario_comparison_tab(
     wb: Workbook,
     rollups: list[ScenarioRollup],
     baseline_total: Decimal,
     stly_total: Decimal,
     dc_names: list[str],
+    details: list[AwardDetail],
+    cells: list[CellInfo],
 ) -> None:
-    """Scenario Comparison tab — the lenses SIDE BY SIDE + a per-DC matrix (D26 "which lens").
+    """Scenario Comparison tab — lenses side by side + LIVE Custom + an EXPANDABLE drill (D26/D27).
 
-    Top block: rows = scenarios A-G (+ a Custom row pointing at the Custom Scenario tab); columns =
-    Label, Total spend, Δ vs A (lowest-cost), Savings vs baseline %, Savings vs STLY %, # suppliers,
-    # cap-breaches, # cells. A (benchmark) and B (recommendation) rows are highlighted. Below it: a
-    per-DC matrix (DCs down, scenarios across → spend) so the team sees WHERE lenses differ.
+    Top block: rows = scenarios A-G + a LIVE Custom row (formulas off the Custom Scenario tab, so it
+    reads side by side against A-G and updates as the buyer changes picks). Below it: a DRILL-DOWN
+    region using Excel outline grouping — each scenario TOTAL (level 0) expands to per-DC rows
+    (level 1) which expand to per-supplier rows (level 2); opens COLLAPSED to the totals. Then the
+    per-DC matrix (DCs down, scenarios across → spend) so the team sees WHERE lenses differ (D26).
     """
 
+    n_cells = len(cells)
     ws = wb.create_sheet("Scenario Comparison")
+    # summaryBelow=False → the +/- outline buttons sit on the scenario TOTAL row and collapse the
+    # DC/supplier detail UNDER it (depth-on-demand, D27). The view opens collapsed to totals.
+    ws.sheet_properties.outlinePr.summaryBelow = False
+    ws.sheet_properties.outlinePr.applyStyles = True
+
+    custom_refs = _custom_refs(n_cells)
 
     columns = [
         Col("Lens", 7),
@@ -1795,6 +2262,7 @@ def _write_scenario_comparison_tab(
     header_row = 6
     body_start = header_row + 1
     row = body_start
+    a_spend_cell = f"$C${body_start}"  # Scenario A's Total Spend cell (Δ-vs-A anchor for Custom)
     for r in rollups:
         ws.cell(row=row, column=1, value=r.code)
         ws.cell(row=row, column=2, value=r.label)
@@ -1806,21 +2274,46 @@ def _write_scenario_comparison_tab(
         ws.cell(row=row, column=8, value=r.n_cap_breaches)
         ws.cell(row=row, column=9, value=r.n_cells)
         row += 1
-    # A "Custom" row — its live values live on the Custom Scenario tab (pointer, not a number).
+    # LIVE Custom row — formulas off the Custom Scenario tab so it reads side by side vs A-G and
+    # recomputes as the buyer changes any dropdown there (D27 live custom-vs-scenarios).
     custom_row = row
     ws.cell(row=custom_row, column=1, value="Cust")
-    ws.cell(row=custom_row, column=2, value="Custom build (see Custom Scenario tab — live)")
-    for col in range(3, 10):
-        ws.cell(row=custom_row, column=col, value="→ Custom Scenario")
+    ws.cell(row=custom_row, column=2, value="Custom build (LIVE — off Custom Scenario tab)")
+    # Total spend = the Custom tab's live total. Δ vs A and savings recompute off it.
+    ws.cell(row=custom_row, column=3, value=f"={custom_refs['total_spend']}")
+    ws.cell(row=custom_row, column=4, value=f"={custom_refs['total_spend']}-{a_spend_cell}")
+    ws.cell(
+        row=custom_row,
+        column=5,
+        value=f"=IF({baseline_total}=0,0,({baseline_total}-{custom_refs['total_spend']})/{baseline_total})",
+    )
+    ws.cell(
+        row=custom_row,
+        column=6,
+        value=f"=IF({stly_total}=0,0,({stly_total}-{custom_refs['total_spend']})/{stly_total})",
+    )
+    # # Suppliers = distinct chosen suppliers across the Custom tab's body (live).
+    ws.cell(
+        row=custom_row,
+        column=7,
+        value=(
+            f"=SUMPRODUCT(({custom_refs['sup']}<>\"\")/"
+            f"COUNTIF({custom_refs['sup']},{custom_refs['sup']}&\"\"))"
+        ),
+    )
+    ws.cell(row=custom_row, column=8, value="(see Custom tab)")
+    ws.cell(row=custom_row, column=9, value=n_cells)
     n_body = (custom_row - body_start) + 1
 
     format_table(
         ws,
-        title="SCENARIO COMPARISON — the lenses side by side (which lens do we align on?)",
+        title="SCENARIO COMPARISON — lenses side by side + LIVE Custom + drill (which lens?)",
         subtitle_lines=[
-            "Each row is a lens A-G. Compare spend, the Δ between lenses, savings vs baseline / "
-            "vs STLY, supplier count + cap-breaches. A = benchmark (peach), B = recommendation "
-            "(blue).",
+            "Rows A-G = the lenses; the Cust row is LIVE off the Custom Scenario tab (change a "
+            "pick there and Custom spend / Δ vs A / savings update here). A = benchmark (peach), "
+            "B = recommendation (blue).",
+            "▶ DRILL: below this table each scenario TOTAL expands (+ in the margin) to per-DC, "
+            "then to per-supplier — opens collapsed to totals, expand for depth on demand (D27).",
             "*Savings vs STLY uses a SYNTHESIZED prior-year baseline (no STLY feed in the demo: "
             f"prior-year actual-paid modeled ~{(_STLY_UPLIFT - 1) * 100:.0f}% over this year's "
             "incumbent routing). Clearly labelled synthetic.",
@@ -1841,8 +2334,14 @@ def _write_scenario_comparison_tab(
             for col in range(1, span + 1):
                 ws.cell(row=body_start + off, column=col).fill = fill
 
-    # --- Per-DC matrix below the top block: DCs down, scenarios across → spend (D26). ---
-    matrix_title_row = custom_row + 2
+    # --- EXPANDABLE DRILL: scenario total → per-DC → per-supplier (outline grouping, D27). ---
+    drill_next = _write_scenario_drill(ws, details, span, custom_row + 2)
+    # The LIVE Custom block sits in the same drill grid, side by side with A-G (total → per-DC →
+    # per-supplier, all SUMIFS off the Custom Scenario tab; recomputes as the buyer changes picks).
+    drill_next = _write_custom_drill(ws, cells, custom_refs, drill_next)
+
+    # --- Per-DC matrix below the drill: DCs down, scenarios across → spend (D26). ---
+    matrix_title_row = drill_next + 1
     tcell = ws.cell(
         row=matrix_title_row,
         column=1,
@@ -2406,6 +2905,111 @@ def _write_custom_scenario_tab(
     ws.cell(row=cap_title_row + 0, column=s_val_col, value="# suppliers").font = _SUBTITLE_FONT
 
 
+# ---------------------------------------------------------------------------
+# D27 — FLAT MANIPULABLE DATASET. `Data (pivot me)` — one row per
+# (scenario × DC × lot × item × TF × awarded-supplier), every metric, as a real
+# Excel Table (ListObject) with AutoFilter. The buyer drops their OWN native
+# PivotTable / filter / slicer on it to slice any way they like. Rich but neat:
+# the detail lives here for self-serve pivoting, not dumped on the headline tabs.
+# ---------------------------------------------------------------------------
+_DATA_COLUMNS: tuple[tuple[str, str | None], ...] = (
+    ("Scenario", None),
+    ("Scenario Label", None),
+    ("DC", None),
+    ("Lot", None),
+    ("Item", None),
+    ("Timeframe", None),
+    ("Awarded Supplier", None),
+    ("Incumbent", None),
+    ("Is Incumbent", None),
+    ("Volume (cases)", NUMFMT_INT),
+    ("Volume Share", NUMFMT_PCT),
+    ("$/case", NUMFMT_MONEY),
+    ("Spend", NUMFMT_MONEY),
+    ("Baseline $/case", NUMFMT_MONEY),
+    ("Baseline Spend", NUMFMT_MONEY),
+    ("Savings vs Baseline ($)", NUMFMT_MONEY),
+    ("Premium vs Baseline", NUMFMT_PCT),
+    ("Price Score", NUMFMT_INT),
+    ("Coverage Score", NUMFMT_INT),
+    ("Historical Score", NUMFMT_INT),
+    ("Z-Risk Score", NUMFMT_INT),
+    ("Continuity Score", NUMFMT_INT),
+    ("RecScore", NUMFMT_INT),
+    ("Cap-Breach", None),
+    ("Fallback", None),
+)
+
+
+def _write_data_pivot_tab(wb: Workbook, details: list[AwardDetail]) -> None:
+    """`Data (pivot me)` — the flat manipulable dataset as a real Excel Table (ListObject, D27).
+
+    One row per (scenario × DC × lot × item × TF × awarded-supplier) with all metrics. Registered as
+    an Excel Table with AutoFilter so the buyer can drop a native PivotTable / filter / slice on it
+    (we do NOT build a programmatic PivotTable — openpyxl support is unreliable; the Table is the
+    robust path). A one-line note tells the buyer how to pivot it.
+    """
+
+    ws = wb.create_sheet("Data (pivot me)")
+
+    # A one-line note above the table (row 1) — how to pivot. Table starts at row 2.
+    note = ws.cell(
+        row=1,
+        column=1,
+        value=(
+            "Insert > PivotTable on this table to slice any way you like "
+            "(by scenario, DC, supplier, lot…). SYNTHETIC data — names & prices invented."
+        ),
+    )
+    note.font = Font(italic=True, color="1F3864", size=10)
+
+    header_row = 2
+    for ci, (htext, _fmt) in enumerate(_DATA_COLUMNS, start=1):
+        hc = ws.cell(row=header_row, column=ci, value=htext)
+        hc.font = _HEADER_FONT
+        hc.fill = _HEADER_FILL
+        hc.alignment = _WRAP_CENTER
+
+    row = header_row + 1
+    for d in details:
+        vals: list[object] = [
+            d.scenario_code, d.scenario_label, d.dc_name, d.lot_name, d.item_name, d.tf_name,
+            d.supplier_name, d.incumbent_name, "Yes" if d.is_incumbent else "No",
+            float(d.volume), float(d.volume_share), float(d.price), float(d.spend),
+            float(d.baseline_price), float(d.baseline_spend), float(d.savings_vs_baseline),
+            float(d.premium_vs_baseline_frac), float(d.price_score), float(d.coverage_score),
+            float(d.hist_score), float(d.zrisk_score), float(d.continuity_score),
+            float(d.rec_score), "Yes" if d.cap_breach else "No",
+            "Yes" if d.is_fallback else "No",
+        ]
+        for ci, (val, (_h, fmt)) in enumerate(zip(vals, _DATA_COLUMNS, strict=True), start=1):
+            cell = ws.cell(row=row, column=ci, value=val)
+            if fmt:
+                cell.number_format = fmt
+        row += 1
+
+    n_rows = len(details)
+    last_col = get_column_letter(len(_DATA_COLUMNS))
+    body_end = header_row + n_rows
+    # Column widths for legibility.
+    for ci, (htext, _fmt) in enumerate(_DATA_COLUMNS, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = max(11, min(26, len(htext) + 2))
+
+    # Register the REAL Excel Table (ListObject) — gives the AutoFilter + the pivot-ready source.
+    if n_rows > 0:
+        ref = f"A{header_row}:{last_col}{body_end}"
+        table = Table(displayName="AwardData", ref=ref)
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showRowStripes=True,
+            showColumnStripes=False,
+            showFirstColumn=False,
+            showLastColumn=False,
+        )
+        ws.add_table(table)
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+
 def write_scenario_workbook_xlsx(
     session: Session,
     seeded: SeededCycle,
@@ -2414,12 +3018,14 @@ def write_scenario_workbook_xlsx(
     final_round_id: str,
     award: SelectedAward,
 ) -> Path:
-    """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26) from the sealed records.
+    """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26/D27) from the sealed records.
 
-    Tabs (D26): Summary (headline) · Scenario Comparison (lenses side by side + per-DC matrix) ·
-    Supplier Comparison (THE CENTERPIECE — every supplier per cell + min/impact) · Custom Scenario
-    (interactive, per-cell dropdowns + live spend/savings/cap-breach, D25) · Scored Bids ·
-    _Prices (hidden helper grid the live formulas reference).
+    Tabs: Summary (headline) · Scenario Comparison (lenses side by side + LIVE Custom column + an
+    EXPANDABLE scenario→DC→supplier drill via outline grouping + per-DC matrix, D26/D27) · Supplier
+    Comparison (THE CENTERPIECE — every supplier per cell + min/impact) · Custom Scenario
+    (interactive, per-cell dropdowns + live spend/savings/cap-breach, D25) · Data (pivot me) (a flat
+    Excel Table the buyer can drop a native PivotTable on, D27) · Scored Bids · _Prices (hidden
+    helper grid the live formulas reference).
     """
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -2434,16 +3040,21 @@ def write_scenario_workbook_xlsx(
     rollups, baseline_total, stly_total = _gather_scenario_rollups(
         session, seeded, scenarios, analysis_run_id
     )
+    details = _gather_award_details(session, seeded, scenarios, analysis_run_id)
     dc_names = [dc.name for dc in seeded.dcs]
 
     wb = Workbook()
+    # fullCalcOnLoad → Excel recomputes every live formula (the Custom column + Custom tab) on open,
+    # so the workbook opens with the live cross-tab values already resolved (D27).
+    wb.calculation.fullCalcOnLoad = True
     _write_summary_tab(wb, seeded, config, rollups)
     _write_scenario_comparison_tab(
-        wb, rollups, baseline_total, stly_total, dc_names
+        wb, rollups, baseline_total, stly_total, dc_names, details, cells
     )
     _write_supplier_comparison_tab(wb, config, cells, seeded)
     prices_sheet = _write_prices_helper(wb, cells)
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
+    _write_data_pivot_tab(wb, details)
     _write_scored_bids_tab(wb, seeded, session, analysis_run_id)
 
     path = OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx"
@@ -2540,9 +3151,10 @@ def main() -> None:
         print("[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
               "(one sheet per awarded supplier; presentation-formatted — D24)…")
         supplier_path = write_supplier_award_guides_xlsx(seeded, award)
-        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26): "
-              "Supplier Comparison (every supplier per cell + min/impact) + Scenario Comparison "
-              "(lenses side by side + per-DC matrix) + interactive Custom Scenario (D25)…")
+        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26/D27): "
+              "Scenario Comparison (lenses side by side + LIVE Custom column + EXPANDABLE "
+              "scenario→DC→supplier drill) + interactive Custom Scenario (D25) + a flat "
+              "Data (pivot me) Excel Table (D27)…")
         workbook_path = write_scenario_workbook_xlsx(
             session, seeded, config, run_result.analysis_run_id, final_round.id, award
         )
