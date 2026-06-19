@@ -133,6 +133,10 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Implication.** Output generators resolve keys → display attributes (via the ref/alias layer) before rendering; the synthetic seed must also carry readable names so demos are legible.
 **Linked:** D21, E-23, the output layer, ref/alias.
 
+### D24 — Generated outputs are presentation-quality, not data dumps · **RATIFIED 2026-06-19**
+**Requirement (sponsor).** Every generated human-facing artifact (booking guide, sign-off deck, per-supplier award guides, letters) must be a **formatted, presentation-ready** document a buyer/team/leadership can present — titled header block, styled/bold column headers, sensible column widths, borders/grouping, `$`/`%` number formats, freeze panes, and a summary. **NOT a raw CSV-like dump** (the first demo booking guide was unformatted). Quality bar for the Output Factory (E-23); applies to every xlsx and rendered doc.
+**Linked:** E-23, D22, D23.
+
 ---
 
 ## Dependencies (logistics blockers)
