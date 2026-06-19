@@ -6,10 +6,10 @@ outputs and frozen `awd.award` rows. `award_layer` is the only post-freeze write
 governed table grants DELETE. The DB-layer half (triggers + revoked grants) is owned by
 Platform & Data; two layers is a control, one is a convention.
 
-These are STUBS this phase: the registration plumbing and the refusal semantics are real, but
-the mapped classes they attach to (`analysis_run`, `award`) are not modelled yet (eng/awd ship
-as present-but-empty stubs). `register_immutability_guards()` is called by the app factory and
-is a no-op until those models exist; wiring it now fixes the seam.
+The mapped classes they attach to are wired when present: `eng.analysis_run` (modelled in 0008)
+and `awd.award` (modelled in 0010). `register_immutability_guards()` is called by the app factory;
+it imports each lazily and guards on Import/AttributeError so the seam stays wired even before a
+model lands.
 """
 
 from __future__ import annotations
@@ -67,9 +67,9 @@ def block_update_if_frozen(mapper: Any, connection: Any, target: Any) -> None:
 def register_immutability_guards() -> None:
     """Attach guard listeners to the governed mapped classes.
 
-    No-op until `eng.analysis_run` and `awd.award` are modelled (they ship as stubs this
-    phase). Importing them lazily and guarding on AttributeError keeps the seam wired without
-    forcing the models to exist yet.
+    Imports `eng.analysis_run` and `awd.award` lazily and guards on Import/AttributeError, so the
+    seam stays wired whether or not a given model has landed yet. Both are modelled now (0008/0010),
+    so the listeners attach: sealed runs + frozen awards refuse update/delete.
     """
 
     from sqlalchemy import event
@@ -83,7 +83,7 @@ def register_immutability_guards() -> None:
         pass
 
     try:
-        from app.domain.awd.models import Award  # type: ignore[attr-defined]
+        from app.domain.awd.models import Award
 
         event.listen(Award, "before_update", block_update_if_frozen)
         event.listen(Award, "before_delete", block_delete_governed)
