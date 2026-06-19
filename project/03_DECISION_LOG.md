@@ -137,6 +137,11 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 **Requirement (sponsor).** Every generated human-facing artifact (booking guide, sign-off deck, per-supplier award guides, letters) must be a **formatted, presentation-ready** document a buyer/team/leadership can present — titled header block, styled/bold column headers, sensible column widths, borders/grouping, `$`/`%` number formats, freeze panes, and a summary. **NOT a raw CSV-like dump** (the first demo booking guide was unformatted). Quality bar for the Output Factory (E-23); applies to every xlsx and rendered doc.
 **Linked:** E-23, D22, D23.
 
+### D25 — Live, interactive scenario the buyer can play on (not a flat render) · **RATIFIED 2026-06-19**
+**Requirement (sponsor).** The buyer must see the scenario as **interactive data tables they can play on** — the scored bids, the scenario comparison, and the per-cell allocation as tables, AND the ability to **override the awarded supplier per cell and watch all-in price / spend / savings / cap-breach recompute live** (the v3 `CUSTOM_SCENARIO` capability). A flat read-only `RECOMMENDATION.md` is only a *verification render*, not the deliverable.
+**Two homes.** (1) **Production = the web UI scenario-review screen** — live, on the governed store; the right home, and it avoids the Excel live-formula fragility D12/ADR-0013 warns about. (2) **Demo/interim = a generated interactive Scenario Workbook (xlsx)** — data tables (scored bids / scenario comparison / per-cell allocation) + a Custom Scenario tab with **per-cell supplier dropdowns and live formulas** (spend/savings/cap-breach), generated from our records so the buyer can play with it now.
+**Linked:** E-23, web UI scenario-review (Phase F), v3 CUSTOM_SCENARIO, ADR-0013 (live-formula caveat), D22/D24.
+
 ---
 
 ## Dependencies (logistics blockers)
