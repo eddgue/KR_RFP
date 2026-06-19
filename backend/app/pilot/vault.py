@@ -24,8 +24,10 @@ filesystem + git, never Postgres.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import uuid
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -267,3 +269,60 @@ def _git(vault_root: Path, *args: str) -> bool:
     except (OSError, ValueError):
         return False
     return result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# close-run: archive (zip the full normalized history) then purge (remove + commit)
+# ---------------------------------------------------------------------------
+# The full normalized history a close-out archives (PILOT_SYSTEM_DESIGN step 10): the inputs/
+# outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
+_ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
+_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, _CYCLE_ID_NAME)
+
+
+def archive_run(runpaths: RunPaths) -> Path:
+    """Zip the FULL normalized history of a run into a folder-set zip under the vault; return it.
+
+    Archives the complete run picture (step 10): every file under inputs/ + outputs/ + memory/ plus
+    NOTES.md, RUN.md and cycle_id.txt — each stored under the run slug inside the zip so the archive
+    is a faithful, self-describing folder set. The zip is written under `<vault>/archives/` (NOT
+    inside the run folder, so a subsequent purge of the run folder leaves the archive intact). This
+    is the present step of the present→confirm→purge close-out; `purge_run` does the removal after
+    the buyer confirms.
+    """
+
+    archives_dir = runpaths.root.parent.parent / "archives"
+    archives_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    zip_path = archives_dir / f"{runpaths.slug}-{stamp}.zip"
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for subdir in _ARCHIVE_SUBDIRS:
+            base = runpaths.root / subdir
+            if not base.is_dir():
+                continue
+            for item in sorted(base.rglob("*")):
+                if item.is_file() and item.name != ".gitkeep":
+                    arcname = Path(runpaths.slug) / item.relative_to(runpaths.root)
+                    zf.write(item, arcname.as_posix())
+        for filename in _ARCHIVE_FILES:
+            path = runpaths.root / filename
+            if path.is_file():
+                arcname = Path(runpaths.slug) / filename
+                zf.write(path, arcname.as_posix())
+    return zip_path
+
+
+def purge_run(vault_root: Path, slug: str) -> None:
+    """Remove the run folder from the vault and commit the removal (close-out, after confirm).
+
+    The governed Postgres records for the cycle REMAIN (only the vault's document folder is purged);
+    the archive zip made by `archive_run` already preserves the full history. Commits the removal so
+    the vault's git history records the close-out. Idempotent: a missing run folder is a no-op.
+    """
+
+    vault_root = Path(vault_root)
+    run_root = vault_root / _RUNS_DIR / slug
+    if run_root.is_dir():
+        shutil.rmtree(run_root)
+    git_init_and_commit(vault_root, f"[{slug}] run closed — folder purged (records retained)")

@@ -47,7 +47,7 @@ from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -71,13 +71,9 @@ from app.domain.eng.models import (
 )
 from app.domain.eng.runner import EngineRunner, IncumbentRow
 from app.engine.interface import EngineConfig, WeightPreset
-from app.output.formatting import (
-    DECISION_SUPPORT_STRAP,
-    NUMFMT_INT,
-    NUMFMT_MONEY,
-    NUMFMT_PCT,
-    Col,
-    format_table,
+from app.output.booking_guide import (
+    write_booking_guide_internal_xlsx,
+    write_supplier_award_guides_xlsx,
 )
 from app.output.scenario_workbook import write_scenario_workbook_xlsx
 from app.output.synthetic import (
@@ -1055,183 +1051,6 @@ def select_award_from_scenario(
     )
 
 
-def write_booking_guide_internal_xlsx(
-    seeded: SeededCycle,
-    award: SelectedAward,
-) -> Path:
-    """The buyers/pricing master booking guide (D22 internal version) — FROM THE AWARD.
-
-    One row per awarded DC x lot x item x TF: awarded supplier (NAME, D23), FOB/landed $/case,
-    awarded volume, routing baseline + savings — what pricing uses to update the system (D9).
-    """
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    dc_name = {dc.id: dc.name for dc in seeded.dcs}
-    lot_name = {lot.id: lot.name for lot in seeded.lots}
-    item_name = {item.id: item.name for item in seeded.items}
-    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
-    tf_name = {tf.id: tf.name for tf in seeded.tfs}
-    dc_code = {dc.id: dc.code for dc in seeded.dcs}
-    lot_code = {lot.id: lot.code for lot in seeded.lots}
-    sup_code = {sup.id: sup.code for sup in seeded.suppliers}
-
-    wb = Workbook()
-    ws = wb.active
-    assert ws is not None  # noqa: S101
-    ws.title = "Internal Booking Guide"
-
-    columns = [
-        Col("DC", 18),
-        Col("Lot", 22),
-        Col("Item", 26),
-        Col("Timeframe", 20),
-        Col("Awarded Supplier", 26),
-        Col("Volume Share", 13, NUMFMT_PCT),
-        Col("FOB $/case", 14, NUMFMT_MONEY),
-        Col("Landed $/case", 14, NUMFMT_MONEY),
-        Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
-        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
-        Col("Routing Baseline $/case", 20, NUMFMT_MONEY),
-        Col("Savings vs Baseline", 16, NUMFMT_PCT),
-        Col("Key ref (DC·lot·sup)", 22),  # traceability — names lead, keys trail (D23)
-    ]
-    header_row = 5  # title banner occupies rows 1-4
-    row = header_row + 1
-    n_rows = 0
-    for c in sorted(
-        award.cells, key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, ""))
-    ):
-        savings_frac = (
-            (c.routing_baseline - c.awarded_price) / c.routing_baseline
-            if c.routing_baseline > 0
-            else Decimal("0")
-        )
-        awarded_cases = c.period_cases * c.volume_share
-        key_ref = (
-            f"{dc_code.get(c.dc_id, c.dc_id[:6])}·{lot_code.get(c.lot_id, c.lot_id[:6])}·"
-            f"{sup_code.get(c.supplier_id, c.supplier_id[:6])}"
-        )
-        ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
-        ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
-        ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
-        ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
-        ws.cell(row=row, column=5, value=sup_name.get(c.supplier_id, c.supplier_id[:6]))
-        ws.cell(row=row, column=6, value=float(c.volume_share))  # fraction -> 0.0% fmt
-        # Demo economics use All-In as both the FOB and the landed basis (placeholders only).
-        ws.cell(row=row, column=7, value=float(c.awarded_price))
-        ws.cell(row=row, column=8, value=float(c.awarded_price))
-        ws.cell(row=row, column=9, value=float(awarded_cases))
-        ws.cell(row=row, column=10, value=float(c.awarded_price * awarded_cases))
-        ws.cell(row=row, column=11, value=float(c.routing_baseline))
-        ws.cell(row=row, column=12, value=float(savings_frac))  # fraction -> 0.0% fmt
-        ws.cell(row=row, column=13, value=key_ref)
-        row += 1
-        n_rows += 1
-
-    format_table(
-        ws,
-        title=f"INTERNAL BOOKING GUIDE — {seeded.cycle_name}",
-        subtitle_lines=[
-            f"Awarded from Scenario {award.scenario_code} ({award.scenario_label}) · "
-            f"post-award: selected → awarded → frozen → signed off (D22)",
-            f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
-            f"{DECISION_SUPPORT_STRAP}",
-        ],
-        columns=columns,
-        n_body_rows=n_rows,
-        header_row=header_row,
-    )
-    path = OUTPUT_DIR / "BOOKING_GUIDE_INTERNAL.xlsx"
-    wb.save(path)
-    return path
-
-
-def write_supplier_award_guides_xlsx(
-    seeded: SeededCycle,
-    award: SelectedAward,
-) -> Path:
-    """The per-supplier award guides (D22 per-supplier version) — one SHEET per awarded supplier.
-
-    Each sheet shows ONLY that supplier's awarded lots/DCs/volumes/prices — "here is what you've
-    been awarded." All NAMES (D23); no other supplier's data appears on a supplier's sheet.
-    """
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    dc_name = {dc.id: dc.name for dc in seeded.dcs}
-    lot_name = {lot.id: lot.name for lot in seeded.lots}
-    item_name = {item.id: item.name for item in seeded.items}
-    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
-    tf_name = {tf.id: tf.name for tf in seeded.tfs}
-
-    cells_by_sup: dict[str, list[AwardedCell]] = defaultdict(list)
-    for c in award.cells:
-        cells_by_sup[c.supplier_id].append(c)
-
-    wb = Workbook()
-    # Drop the default empty sheet once we add the first real one.
-    default_ws = wb.active
-
-    columns = [
-        Col("DC", 18),
-        Col("Lot", 22),
-        Col("Item", 26),
-        Col("Timeframe", 20),
-        Col("Volume Share", 13, NUMFMT_PCT),
-        Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
-        Col("Awarded $/case", 16, NUMFMT_MONEY),
-        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
-    ]
-    header_row = 5  # title banner occupies rows 1-4
-    # Stable, readable order: awarded suppliers by name.
-    for sup_id in sorted(cells_by_sup, key=lambda s: sup_name.get(s, s)):
-        sup_disp = sup_name.get(sup_id, sup_id[:6])
-        title = _sheet_title(sup_disp)
-        ws = wb.create_sheet(title=title)
-        row = header_row + 1
-        n_rows = 0
-        for c in sorted(
-            cells_by_sup[sup_id],
-            key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, "")),
-        ):
-            awarded_cases = c.period_cases * c.volume_share
-            ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
-            ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
-            ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
-            ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
-            ws.cell(row=row, column=5, value=float(c.volume_share))
-            ws.cell(row=row, column=6, value=float(awarded_cases))
-            ws.cell(row=row, column=7, value=float(c.awarded_price))
-            ws.cell(row=row, column=8, value=float(c.awarded_price * awarded_cases))
-            row += 1
-            n_rows += 1
-        format_table(
-            ws,
-            title=f"AWARD GUIDE — {sup_disp}",
-            subtitle_lines=[
-                f"{seeded.cycle_name}: here is what you've been awarded",
-                f"Generated {date.today():%Y-%m-%d} · SYNTHETIC · {DECISION_SUPPORT_STRAP}",
-            ],
-            columns=columns,
-            n_body_rows=n_rows,
-            header_row=header_row,
-        )
-
-    if default_ws is not None and len(wb.sheetnames) > 1:
-        wb.remove(default_ws)
-
-    path = OUTPUT_DIR / "SUPPLIER_AWARD_GUIDES.xlsx"
-    wb.save(path)
-    return path
-
-
-def _sheet_title(name: str) -> str:
-    """A safe (<=31 char, no forbidden chars) Excel sheet title from a supplier name."""
-
-    cleaned = "".join(ch for ch in name if ch not in "[]:*?/\\")
-    return cleaned[:31] or "Supplier"
-
 # ---------------------------------------------------------------------------
 # Orchestration — the whole loop
 # ---------------------------------------------------------------------------
@@ -1317,10 +1136,14 @@ def main() -> None:
 
         print("[7/9] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD "
               "(buyers/pricing; presentation-formatted — D24)…")
-        internal_path = write_booking_guide_internal_xlsx(seeded, award)
+        internal_path = write_booking_guide_internal_xlsx(
+            seeded, award, output_path=OUTPUT_DIR / "BOOKING_GUIDE_INTERNAL.xlsx"
+        )
         print("[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
               "(one sheet per awarded supplier; presentation-formatted — D24)…")
-        supplier_path = write_supplier_award_guides_xlsx(seeded, award)
+        supplier_path = write_supplier_award_guides_xlsx(
+            seeded, award, output_path=OUTPUT_DIR / "SUPPLIER_AWARD_GUIDES.xlsx"
+        )
         print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26/D27): "
               "Scenario Comparison (lenses side by side + LIVE Custom column + EXPANDABLE "
               "scenario→DC→supplier drill) + interactive Custom Scenario (D25) + a flat "
