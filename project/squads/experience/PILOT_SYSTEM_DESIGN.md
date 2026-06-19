@@ -86,6 +86,8 @@ file) → ingest → act → produce the versioned output → commit to the vaul
 6. **Select & freeze award** → `awd.award`; generate the booking guide.
 7. **Post-award adjustments** → each negotiation/reprice = a new **version** (`awd.award_adjustment`); generate **`post_award_v{N}.xlsx`** (clear "Version N · as of DATE" heading); commit.
 8. **History** → all versions in Postgres + the vault; any version's records/doc can be re-pulled.
+9. **Emails + mail merge** (any step, agent-assisted) → draft the email STRUCTURE → sponsor approves → generate a **mail-merge template + recipients data** from the sealed records (every value accurate, names not keys) into `outputs/`; supports **LEGALESE MODE**. See `EMAIL_STYLE_AND_MAILMERGE.md`.
+10. **Close run** → when the sponsor declares the run closed, the pilot **archives the full normalized history** — `inputs/`, `outputs/`, **`NOTES.md` + `memory/`** — into a zipped folder set, **presents the zip**, **confirms** with the sponsor, then **purges the run repo** (removes the run folder from the vault; the governed Postgres records remain). Archive-then-confirm-then-purge.
 
 ## 4. Flexible ingest — "take my file as-is, figure it out, parse it" (sponsor requirement)
 
@@ -125,8 +127,15 @@ time, no walls of text. Every request tells the buyer exactly **what to do and w
 `run_round(run_id, round) → alignment_v{n}` · `override_template/ingest_overrides` ·
 `select_award(run_id, run, scenario)` · `booking_guide(run_id)` ·
 `adjustment_template(run_id)` · `record_adjustment(run_id, file) → post_award_v{N}` ·
-`history(run_id)` · `schedule_nudge(run_id, when, message)`. Every tool: names not keys (D23),
-deterministic, writes the governed store + the run's vault folder, returns plain-language summaries.
+`history(run_id)` · `schedule_nudge(run_id, when, message)` ·
+`draft_email(run_id, kind, mode?)` · `generate_mail_merge(run_id, approved_draft) → template+recipients` ·
+`remember(run_id, note, file?)` · `close_run(run_id) → archive.zip` (then confirm → purge). Every
+tool: names not keys (D23), deterministic, writes the governed store + the run's vault folder,
+returns plain-language summaries.
+
+The pilot is also a **development feedback loop**: real runs leave a clean, normalized, governed
+trail (vault files + Postgres records) we can review to sharpen the engine/templates/analysis — the
+real DATA stays in the private vault (clean-room), the STRUCTURE + lessons drive the platform.
 
 ## 8. Build order (modules, prototype fidelity — D19)
 
