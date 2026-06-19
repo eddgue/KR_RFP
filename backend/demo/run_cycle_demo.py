@@ -170,21 +170,21 @@ def seed_cycle(session: Session) -> SeededCycle:
     subcommodity_id = _id()
     cycle_id = _id()
     cycle_code = f"CYC-{now:%Y%m%d}-{cycle_id[:4].upper()}"
-    cycle_name = "Synthetic Produce Sourcing Cycle (DEMO)"
+    cycle_name = "Field Tomatoes Sourcing Cycle — Spring/Summer 2026 (DEMO)"
 
     session.execute(
         text(
             "INSERT INTO ref.client (id, client_code, client_name, is_active) "
             "VALUES (gen_random_uuid(), :code, :name, true)"
         ),
-        {"code": f"CLIENT-{cycle_id[:6].upper()}", "name": "Demo Client (SYNTHETIC)"},
+        {"code": f"CLIENT-{cycle_id[:6].upper()}", "name": "Demo Sourcing Org (DEMO)"},
     )
     session.execute(
         text(
             "INSERT INTO ref.commodity (id, client_id, commodity_code, commodity_name) "
             "VALUES (:cid, NULL, :code, :name)"
         ),
-        {"cid": commodity_id, "code": "COMM-DEMO", "name": "Demo Commodity (SYNTHETIC)"},
+        {"cid": commodity_id, "code": "COMM-DEMO", "name": "Field Tomatoes (DEMO)"},
     )
     # ref.commodity.id is uuid; store a varchar mirror for the cyc FK chain (text commodity_id).
     commodity_text_id = commodity_id  # the cyc spine uses text commodity_id keys
@@ -198,7 +198,7 @@ def seed_cycle(session: Session) -> SeededCycle:
             "sid": subcommodity_id,
             "cid": commodity_text_id,
             "code": "SUBCOMM-DEMO",
-            "name": "Demo Subcommodity (SYNTHETIC)",
+            "name": "Field Tomatoes — Round/Vine (DEMO)",
         },
     )
 
@@ -273,11 +273,12 @@ def seed_cycle(session: Session) -> SeededCycle:
         )
         items.append(Entity(item_id, f"ITEM-{i:02d}", desc))
 
-    # Timeframes (cyc.cycle_timeframe) — TF-01, TF-02.
+    # Timeframes (cyc.cycle_timeframe) — readable season names ("Spring 2026 (P4-P6)").
     tfs: list[Entity] = []
     for i in range(1, N_TFS + 1):
         tf_id = _id()
         code = f"TF{i:02d}"
+        tf_name = TF_NAMES[(i - 1) % len(TF_NAMES)]
         start = date(now.year, 1 + (i - 1) * 3, 1)
         end = date(now.year, 3 + (i - 1) * 3, 28)
         session.execute(
@@ -289,15 +290,16 @@ def seed_cycle(session: Session) -> SeededCycle:
                 "id": tf_id,
                 "cyc": cycle_id,
                 "code": code,
-                "name": f"TF-{i:02d} (SYNTHETIC)",
+                "name": tf_name,
                 "s": start,
                 "e": end,
                 "w": WEEKS_PER_TF,
             },
         )
-        tfs.append(Entity(tf_id, code, f"TF-{i:02d}"))
+        # `name` holds the readable season; `code` keeps the TF key reference (TF01/TF02).
+        tfs.append(Entity(tf_id, code, tf_name))
 
-    # Rounds (cyc.cycle_round) — R1..R3, final = last.
+    # Rounds (cyc.cycle_round) — readable labels ("Round 3 — Final"); final = last.
     rounds: list[Entity] = []
     for i in range(1, N_ROUNDS + 1):
         round_id = _id()
@@ -308,20 +310,22 @@ def seed_cycle(session: Session) -> SeededCycle:
             ),
             {"id": round_id, "cyc": cycle_id, "n": i, "final": i == N_ROUNDS},
         )
-        rounds.append(Entity(round_id, f"R{i}", f"R{i}"))
+        # `code` is the R-token the runner/template use to JOIN; `name` is the readable label.
+        rounds.append(Entity(round_id, f"R{i}", ROUND_NAMES[(i - 1) % len(ROUND_NAMES)]))
 
     # Lots (cyc.cycle_lot) + item scope + lot<->item link (one item per lot).
     lots: list[Entity] = []
     for i in range(1, N_LOTS + 1):
         lot_id = _id()
         code = f"LOT-{i:02d}"
+        lot_name = LOT_NAMES[(i - 1) % len(LOT_NAMES)]
         item = items[i - 1]
         session.execute(
             text(
                 "INSERT INTO cyc.cycle_lot (lot_id, cycle_id, lot_code, lot_name, active_flag) "
                 "VALUES (:id, :cyc, :code, :name, true)"
             ),
-            {"id": lot_id, "cyc": cycle_id, "code": code, "name": f"LOT-{i:02d} (SYNTHETIC)"},
+            {"id": lot_id, "cyc": cycle_id, "code": code, "name": lot_name},
         )
         session.execute(
             text(
@@ -344,7 +348,7 @@ def seed_cycle(session: Session) -> SeededCycle:
             ),
             {"lid": _id(), "cyc": cycle_id, "lot": lot_id, "item": item.id, "so": i},
         )
-        lots.append(Entity(lot_id, code, f"LOT-{i:02d}"))
+        lots.append(Entity(lot_id, code, lot_name))
 
     # Invited suppliers (the submitted-vs-missing denominator).
     for sup in suppliers:
@@ -683,11 +687,18 @@ def write_recommendation_md(
     run = session.get(AnalysisRun, analysis_run_id)
     assert run is not None  # noqa: S101
 
-    # Display maps (id -> placeholder label).
+    # Display maps (id -> RESOLVED READABLE NAME — D23; the readable columns lead).
     dc_name = {dc.id: dc.name for dc in seeded.dcs}
     lot_name = {lot.id: lot.name for lot in seeded.lots}
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
-    tf_name = {tf.id: tf.code for tf in seeded.tfs}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    item_name_for_lot = {
+        seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))
+    }
+    # Compact KEY-reference codes (id -> short code) — a trailing traceability column, not the lead.
+    dc_code = {dc.id: dc.code for dc in seeded.dcs}
+    lot_code = {lot.id: lot.code for lot in seeded.lots}
+    sup_code = {sup.id: sup.code for sup in seeded.suppliers}
     lot_routing_avg = {
         lot.id: (
             sum(
@@ -732,9 +743,12 @@ def write_recommendation_md(
     lines: list[str] = []
     lines.append("# Sourcing Recommendation (DECISION-SUPPORT)\n")
     lines.append(
-        "> This report **recommends**; it does not assert an award. A human reviewer selects a "
-        "scenario before any award is booked (ADR-0006). All names and prices below are "
-        "**SYNTHETIC placeholders** (SUP-* / DC-* / LOT-*).\n"
+        "> This is the **pre-award** decision-support view. It **recommends**; it does not assert "
+        "an award. A human reviewer selects a scenario, which is then promoted to an award, frozen "
+        "and signed off before any booking output is generated (ADR-0006, D22). Every supplier / "
+        "DC / lot / item / timeframe below is shown by its **resolved NAME** (D23 — keys join, "
+        "names display). All names and prices are **clearly-fictional SYNTHETIC placeholders** "
+        '(e.g. "Green Valley Farms (DEMO)", "Atlanta DC (ATL)") — no real suppliers/prices.\n'
     )
     lines.append("## Cycle\n")
     lines.append(f"- **Cycle:** {seeded.cycle_code} — {seeded.cycle_name}")
@@ -786,10 +800,10 @@ def write_recommendation_md(
         "savings are vs. the incumbent routing baseline. Flags surface (they never auto-reject).\n"
     )
     lines.append(
-        "| DC | Lot | TF | Recommended supplier(s) | Volume share | Awarded $/case | "
-        "Savings vs baseline | Flags |"
+        "| DC | Lot | Item | TF | Recommended supplier(s) | Volume share | Awarded $/case | "
+        "Savings vs baseline | Flags | Key ref (DC·lot·sup) |"
     )
-    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     b_awards = awards_for("B")
     # Group by cell to show the split shares together.
     by_cell: dict[tuple[str, str, str], list[AnalysisScenarioAward]] = defaultdict(list)
@@ -809,12 +823,17 @@ def write_recommendation_md(
             if a.is_fallback:
                 flags.append("FALLBACK")
             flag_text = ", ".join(flags) if flags else "—"
+            # NAMES lead (D23); a compact code reference trails for traceability.
             sup_disp = sup_name.get(a.supplier_id, a.supplier_id[:6])
+            key_ref = (
+                f"{dc_code.get(dc_id, dc_id[:6])}·{lot_code.get(lot_id, lot_id[:6])}·"
+                f"{sup_code.get(a.supplier_id, a.supplier_id[:6])}"
+            )
             lines.append(
                 f"| {dc_name.get(dc_id, dc_id[:6])} | {lot_name.get(lot_id, lot_id[:6])} | "
-                f"{tf_name.get(tf_id, tf_id[:6])} | {sup_disp} | "
-                f"{a.volume_share * 100:.0f}% | ${a.awarded_price:,.2f} | {savings:+.1f}% | "
-                f"{flag_text} |"
+                f"{item_name_for_lot.get(lot_id, '')} | {tf_name.get(tf_id, tf_id[:6])} | "
+                f"{sup_disp} | {a.volume_share * 100:.0f}% | ${a.awarded_price:,.2f} | "
+                f"{savings:+.1f}% | {flag_text} | {key_ref} |"
             )
     lines.append("")
 
@@ -911,31 +930,71 @@ def _dc_supplier_split(
     }
 
 
-def write_booking_guide_xlsx(
+# ---------------------------------------------------------------------------
+# 7) AWARD SELECTION (D22) — simulate the human selecting Scenario B and promoting it to an
+#    award. The real flow routes scenario -> human selects -> awd.award -> FREEZE -> SIGN-OFF
+#    -> booking guide. The `awd.*` tables are a later phase, so the demo promotes the selected
+#    scenario's award rows into a simple in-memory AwardedCell set here (clearly noting where the
+#    freeze/sign-off gates would sit) and generates the booking outputs FROM THIS AWARD — never
+#    straight off the scenario.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class AwardedCell:
+    """One frozen award line: a supplier's awarded share of a (dc, lot, item, tf) cell.
+
+    The in-memory stand-in for an `awd.award` row (the demo defers the `awd.*` spine). Carries the
+    JOIN keys AND the resolved display names (D23) so both booking guides render names off one
+    award, not the raw scenario keys.
+    """
+
+    dc_id: str
+    lot_id: str
+    item_id: str
+    tf_id: str
+    supplier_id: str
+    volume_share: Decimal
+    awarded_price: Decimal
+    period_cases: Decimal
+    routing_baseline: Decimal
+
+
+@dataclass(frozen=True)
+class SelectedAward:
+    """The promoted award: the selected scenario + its frozen awarded cells (the booking basis)."""
+
+    scenario_code: str
+    scenario_label: str
+    cells: tuple[AwardedCell, ...]
+
+
+def select_award_from_scenario(
     session: Session,
     seeded: SeededCycle,
     analysis_run_id: str,
-) -> Path:
-    """Render demo/output/BOOKING_GUIDE.xlsx from the records: awarded supplier per DC x item."""
+    selected_scenario_code: str = "B",
+) -> SelectedAward:
+    """Simulate the human selecting a scenario and promoting it to a (frozen) award.
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    Real sequence (D22): the engine writes decision-support scenarios; a human SELECTS one
+    (here: Scenario B, the risk-adjusted recommendation); selection promotes it to `awd.award`;
+    the award is then FROZEN and SIGNED OFF; only then are the booking outputs generated. The
+    `awd.*` spine lands in a later phase, so this returns an in-memory frozen award assembled from
+    the selected scenario's `eng.analysis_scenario_award` rows, with the keys resolved to the
+    seeded item + routing baseline. >>> FREEZE + SIGN-OFF GATES WOULD SIT HERE <<< before any
+    output is generated; the demo notes the gate rather than enforcing it.
+    """
 
-    dc_name = {dc.id: dc.name for dc in seeded.dcs}
-    lot_name = {lot.id: lot.name for lot in seeded.lots}
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
-    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
-    tf_name = {tf.id: tf.code for tf in seeded.tfs}
 
-    # The recommended (Scenario B) awards are the booking basis.
     scen = (
         session.query(AnalysisScenario)
         .filter(
             AnalysisScenario.analysis_run_id == analysis_run_id,
-            AnalysisScenario.scenario_code == "B",
+            AnalysisScenario.scenario_code == selected_scenario_code,
         )
         .one()
     )
-    awards = (
+    award_rows = (
         session.query(AnalysisScenarioAward)
         .filter(AnalysisScenarioAward.analysis_scenario_id == scen.analysis_scenario_id)
         .order_by(
@@ -946,46 +1005,207 @@ def write_booking_guide_xlsx(
         .all()
     )
 
+    cells: list[AwardedCell] = []
+    for a in award_rows:
+        item = item_for_lot.get(a.lot_id)
+        cells.append(
+            AwardedCell(
+                dc_id=a.dc_id,
+                lot_id=a.lot_id,
+                item_id=item.id if item else a.lot_id,
+                tf_id=a.tf_id,
+                supplier_id=a.supplier_id,
+                volume_share=a.volume_share,
+                awarded_price=a.awarded_price,
+                period_cases=seeded.period_cases_by_cell.get(
+                    (a.dc_id, a.lot_id, a.tf_id), Decimal("0")
+                ),
+                routing_baseline=seeded.incumbent_routing.get(
+                    (a.dc_id, a.lot_id), Decimal("0")
+                ),
+            )
+        )
+    return SelectedAward(
+        scenario_code=scen.scenario_code,
+        scenario_label=scen.label,
+        cells=tuple(cells),
+    )
+
+
+def write_booking_guide_internal_xlsx(
+    seeded: SeededCycle,
+    award: SelectedAward,
+) -> Path:
+    """The buyers/pricing master booking guide (D22 internal version) — FROM THE AWARD.
+
+    One row per awarded DC x lot x item x TF: awarded supplier (NAME, D23), FOB/landed $/case,
+    awarded volume, routing baseline + savings — what pricing uses to update the system (D9).
+    """
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    item_name = {item.id: item.name for item in seeded.items}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    dc_code = {dc.id: dc.code for dc in seeded.dcs}
+    lot_code = {lot.id: lot.code for lot in seeded.lots}
+    sup_code = {sup.id: sup.code for sup in seeded.suppliers}
+
     wb = Workbook()
     ws = wb.active
     assert ws is not None  # noqa: S101
-    ws.title = "Booking Guide"
-    ws.cell(row=1, column=1, value="BOOKING GUIDE (SYNTHETIC — generated from records)")
+    ws.title = "Internal Booking Guide"
+    ws.cell(
+        row=1,
+        column=1,
+        value=(
+            f"INTERNAL BOOKING GUIDE (SYNTHETIC) — {seeded.cycle_name} — "
+            f"awarded from Scenario {award.scenario_code} ({award.scenario_label}); "
+            "post-award (selected -> awarded -> frozen -> signed off)"
+        ),
+    )
     headers = [
         "DC",
-        "Item",
         "Lot",
-        "TF",
+        "Item",
+        "Timeframe",
         "Awarded Supplier",
         "Volume Share %",
-        "Awarded $/case (landed)",
-        "FOB basis",
-        "Period Cases",
-        "Recommended?",
+        "FOB $/case",
+        "Landed $/case",
+        "Awarded Period Cases",
+        "Routing Baseline $/case",
+        "Savings vs Baseline %",
+        "Key ref (DC·lot·sup)",  # traceability column — names lead, keys trail (D23)
     ]
     for ci, h in enumerate(headers, start=1):
         ws.cell(row=2, column=ci, value=h)
 
     row = 3
-    for a in awards:
-        item = item_for_lot.get(a.lot_id)
-        period = seeded.period_cases_by_cell.get((a.dc_id, a.lot_id, a.tf_id), Decimal("0"))
-        ws.cell(row=row, column=1, value=dc_name.get(a.dc_id, a.dc_id[:6]))
-        ws.cell(row=row, column=2, value=item.name if item else "")
-        ws.cell(row=row, column=3, value=lot_name.get(a.lot_id, a.lot_id[:6]))
-        ws.cell(row=row, column=4, value=tf_name.get(a.tf_id, a.tf_id[:6]))
-        ws.cell(row=row, column=5, value=sup_name.get(a.supplier_id, a.supplier_id[:6]))
-        ws.cell(row=row, column=6, value=float(a.volume_share * Decimal("100")))
-        ws.cell(row=row, column=7, value=float(a.awarded_price))
-        # Demo economics use All-In as the landed basis; show it as the FOB/landed basis figure.
-        ws.cell(row=row, column=8, value=float(a.awarded_price))
-        ws.cell(row=row, column=9, value=float(period * a.volume_share))
-        ws.cell(row=row, column=10, value="YES" if a.is_recommended else "")
+    for c in sorted(
+        award.cells, key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, ""))
+    ):
+        savings = (
+            (c.routing_baseline - c.awarded_price) / c.routing_baseline * Decimal("100")
+            if c.routing_baseline > 0
+            else Decimal("0")
+        )
+        key_ref = (
+            f"{dc_code.get(c.dc_id, c.dc_id[:6])}·{lot_code.get(c.lot_id, c.lot_id[:6])}·"
+            f"{sup_code.get(c.supplier_id, c.supplier_id[:6])}"
+        )
+        ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
+        ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
+        ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
+        ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
+        ws.cell(row=row, column=5, value=sup_name.get(c.supplier_id, c.supplier_id[:6]))
+        ws.cell(row=row, column=6, value=float(c.volume_share * Decimal("100")))
+        # Demo economics use All-In as both the FOB and the landed basis (placeholders only).
+        ws.cell(row=row, column=7, value=float(c.awarded_price))
+        ws.cell(row=row, column=8, value=float(c.awarded_price))
+        ws.cell(row=row, column=9, value=float(c.period_cases * c.volume_share))
+        ws.cell(row=row, column=10, value=float(c.routing_baseline))
+        ws.cell(row=row, column=11, value=float(savings))
+        ws.cell(row=row, column=12, value=key_ref)
         row += 1
 
-    path = OUTPUT_DIR / "BOOKING_GUIDE.xlsx"
+    _autosize(ws)
+    path = OUTPUT_DIR / "BOOKING_GUIDE_INTERNAL.xlsx"
     wb.save(path)
     return path
+
+
+def write_supplier_award_guides_xlsx(
+    seeded: SeededCycle,
+    award: SelectedAward,
+) -> Path:
+    """The per-supplier award guides (D22 per-supplier version) — one SHEET per awarded supplier.
+
+    Each sheet shows ONLY that supplier's awarded lots/DCs/volumes/prices — "here is what you've
+    been awarded." All NAMES (D23); no other supplier's data appears on a supplier's sheet.
+    """
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    item_name = {item.id: item.name for item in seeded.items}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+
+    cells_by_sup: dict[str, list[AwardedCell]] = defaultdict(list)
+    for c in award.cells:
+        cells_by_sup[c.supplier_id].append(c)
+
+    wb = Workbook()
+    # Drop the default empty sheet once we add the first real one.
+    default_ws = wb.active
+
+    headers = [
+        "DC",
+        "Lot",
+        "Item",
+        "Timeframe",
+        "Volume Share %",
+        "Awarded Period Cases",
+        "Awarded $/case",
+    ]
+    # Stable, readable order: awarded suppliers by name.
+    for sup_id in sorted(cells_by_sup, key=lambda s: sup_name.get(s, s)):
+        title = _sheet_title(sup_name.get(sup_id, sup_id[:6]))
+        ws = wb.create_sheet(title=title)
+        ws.cell(
+            row=1,
+            column=1,
+            value=(
+                f"AWARD GUIDE (SYNTHETIC) — {sup_name.get(sup_id, sup_id[:6])} — "
+                f"{seeded.cycle_name}: here is what you've been awarded"
+            ),
+        )
+        for ci, h in enumerate(headers, start=1):
+            ws.cell(row=2, column=ci, value=h)
+        row = 3
+        for c in sorted(
+            cells_by_sup[sup_id],
+            key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, "")),
+        ):
+            ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
+            ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
+            ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
+            ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
+            ws.cell(row=row, column=5, value=float(c.volume_share * Decimal("100")))
+            ws.cell(row=row, column=6, value=float(c.period_cases * c.volume_share))
+            ws.cell(row=row, column=7, value=float(c.awarded_price))
+            row += 1
+        _autosize(ws)
+
+    if default_ws is not None and len(wb.sheetnames) > 1:
+        wb.remove(default_ws)
+
+    path = OUTPUT_DIR / "SUPPLIER_AWARD_GUIDES.xlsx"
+    wb.save(path)
+    return path
+
+
+def _sheet_title(name: str) -> str:
+    """A safe (<=31 char, no forbidden chars) Excel sheet title from a supplier name."""
+
+    cleaned = "".join(ch for ch in name if ch not in "[]:*?/\\")
+    return cleaned[:31] or "Supplier"
+
+
+def _autosize(ws: Worksheet) -> None:
+    """Widen each column to its longest cell (legibility — names, not truncated keys)."""
+
+    for col_cells in ws.columns:
+        width = max(
+            (len(str(cell.value)) for cell in col_cells if cell.value is not None),
+            default=10,
+        )
+        letter = col_cells[0].column_letter
+        ws.column_dimensions[letter].width = min(max(width + 2, 12), 60)
 
 
 # ---------------------------------------------------------------------------
@@ -1007,8 +1227,8 @@ def main() -> None:
     )
 
     with unit_of_work() as session:
-        print("[1/6] Seeding synthetic cycle (client/commodity, DCs, lots, items, TFs, rounds, "
-              "suppliers, volumes, incumbents)…")
+        print("[1/8] Seeding synthetic cycle (client/commodity, DCs, lots, items, TFs, rounds, "
+              "suppliers, volumes, incumbents — readable DEMO names, D23)…")
         seeded = seed_cycle(session)
         print(
             f"   cycle {seeded.cycle_code}: {len(seeded.dcs)} DCs, {len(seeded.lots)} lots, "
@@ -1020,12 +1240,12 @@ def main() -> None:
             scope = build_scope(seeded, round_entity)
             template_bytes = generate_template_bytes(scope)
             if round_idx == 0:
-                print(f"[2/6] Generated owned bid template for {round_entity.code} "
+                print(f"[2/8] Generated owned bid template for {round_entity.code} "
                       f"({len(scope.rows)} scope rows, keys embedded — D21)")
             filled = fill_template(template_bytes, seeded, round_idx)
             n = ingest_and_persist(session, filled, scope, seeded, round_entity)
             total_lines += n
-            print(f"[3/6] {round_entity.code}: ingested (key-validated) -> {n} bid.bid_line rows")
+            print(f"[3/8] {round_entity.code}: ingested (key-validated) -> {n} bid.bid_line rows")
         print(f"   total bid_line rows across {len(seeded.rounds)} rounds: {total_lines}")
 
         final_round = seeded.rounds[-1]
@@ -1039,7 +1259,7 @@ def main() -> None:
             for (dc_id, lot_id), sup_id in seeded.incumbent_by_dc_lot.items()
         )
 
-        print(f"[4/6] Running engine runner on final round {final_round.code} "
+        print(f"[4/8] Running engine runner on final round {final_round.code} "
               f"(read-by-key -> assemble -> V3Engine.run -> seal)…")
         runner = EngineRunner(session)
         run_result = runner.run_analysis(
@@ -1056,14 +1276,31 @@ def main() -> None:
         print(f"   input  manifest sha256: {run_result.input_hash[:24]}…")
         print(f"   output manifest sha256: {run_result.output_hash[:24]}…")
 
-        print("[5/6] Generating RECOMMENDATION.md from the sealed records…")
+        print("[5/8] Generating RECOMMENDATION.md (pre-award decision-support, names not keys)…")
         rec_path = write_recommendation_md(session, seeded, run_result.analysis_run_id, config)
-        print("[6/6] Generating BOOKING_GUIDE.xlsx from the records…")
-        booking_path = write_booking_guide_xlsx(session, seeded, run_result.analysis_run_id)
+
+        print("[6/8] Simulating the human selecting Scenario B -> promote to award "
+              "(real flow gates this through award -> FREEZE -> SIGN-OFF before any output, D22)…")
+        award = select_award_from_scenario(
+            session, seeded, run_result.analysis_run_id, selected_scenario_code="B"
+        )
+        awarded_suppliers = {c.supplier_id for c in award.cells}
+        print(
+            f"   selected Scenario {award.scenario_code} ({award.scenario_label}) -> award of "
+            f"{len(award.cells)} cells across {len(awarded_suppliers)} suppliers "
+            "[freeze + sign-off gates noted, deferred to the awd.* phase]"
+        )
+
+        print("[7/8] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD (buyers/pricing)…")
+        internal_path = write_booking_guide_internal_xlsx(seeded, award)
+        print("[8/8] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
+              "(one sheet per awarded supplier)…")
+        supplier_path = write_supplier_award_guides_xlsx(seeded, award)
 
     print("=== DONE ===")
     print(f"   {rec_path}  ({rec_path.stat().st_size} bytes)")
-    print(f"   {booking_path}  ({booking_path.stat().st_size} bytes)")
+    print(f"   {internal_path}  ({internal_path.stat().st_size} bytes)")
+    print(f"   {supplier_path}  ({supplier_path.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
