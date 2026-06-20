@@ -48,6 +48,39 @@ to read what comes back.
 - **Delivery as a guided walk-through.** Surface this as a template-builder wizard / walk-through:
   step the buyer through choosing columns, grouping them, and saving the preset.
 
+## 1a. The period model — capture per fiscal period, define periods by PRESET, roll up by grouping
+
+The load-bearing pricing-intake decision (sponsor 2026-06-20). Chosen for **error-protection**:
+ONE mechanism covers flat / monthly / quarterly / custom, and the finest grain can always roll UP
+but a coarse grain can never be disaggregated — so we capture fine and aggregate for view.
+
+- **One unit: the timeframe (period).** A cycle's horizon is divided into N timeframes
+  (`cyc.cycle_timeframe`, already in the schema). Everything is per-timeframe; "flat" is just N=1.
+- **Periods are defined by a PRESET, not hand-typed dates.** The buyer picks the calendar and the
+  preset GENERATES the timeframes, so boundaries are encoded once and consistent across cycles:
+  - **Kroger fiscal period** — the 4-5-4 retail period (~monthly, ~12–13/yr). The finest standard
+    grain; pick this when pricing is volatile and you want monthly resolution.
+  - **Kroger fiscal quarter** — 13 weeks, 4/yr.
+  - **Fiscal trimester** — 3/yr.
+  - **Custom** — explicit start/end dates (the escape hatch).
+  - **Flat** — a single timeframe spanning the whole horizon (N=1).
+- **Cost components are collected PER timeframe** (D12 period-grain — already the bid grain: one row
+  per DC × lot × item × **TF** × supplier). Each period carries its OWN component set
+  (FOB / Delivery / VegCool / − Lot Discount / All-In). NOT flat-only; NOT hardcoded-monthly —
+  "monthly", "quarterly", and "flat" are all the same per-period mechanism with a different N.
+- **Grouping rolls periods UP for visualization (increment 2).** Excel row-outline compact/expand
+  over the period rows (periods → quarter/trimester → year), per §1 grouping above — the captured
+  per-period grain never changes, only how much is shown.
+- **Buyer trades precision vs supplier-input burden by choosing the preset.** Per-period pricing is
+  more cells for a supplier to fill; a stable category picks flat/quarterly, a volatile one picks
+  fiscal period. The platform supports all; the cycle's preset decides — and the supplier form's
+  readiness traffic light (§2) makes a denser per-period template tractable to complete.
+
+**Why this is the safest:** a single per-period code path (no flat/monthly/quarterly special cases to
+drift), named fiscal-calendar presets (fewer date-boundary errors than free-form entry), capture-fine
+/ roll-up-for-view (future "we need it monthly after all" never forces a re-collect), and it extends
+the existing `cyc.cycle_timeframe` model rather than rebuilding it.
+
 ## 2. Supplier-side: the sent template is a governed FORM
 
 The template a supplier receives must behave like a true form, not an editable spreadsheet.
