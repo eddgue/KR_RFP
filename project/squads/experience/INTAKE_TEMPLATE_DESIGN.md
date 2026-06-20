@@ -29,9 +29,17 @@ to read what comes back.
   realised for `Transit Days`; this generalises it.)
 - **Natural column selection.** The buyer selects which columns this cycle's template carries in a
   natural way (pick from the set), rather than hand-editing a spreadsheet.
-- **Grouping.** Related columns can be grouped (e.g. the cost stack: FOB + Delivery + VegCool − Lot
-  Discount; the volume block; the lane/transit block) so the template reads as labelled sections, not
-  a flat column run.
+- **Grouping — including along the PERIOD axis, compact/expand.** Two kinds of grouping:
+  - *Column grouping:* related columns read as labelled sections (cost stack: FOB + Delivery +
+    VegCool − Lot Discount; the volume block; the lane/transit block) rather than a flat column run.
+  - *Period grouping (the important one, sponsor 2026-06-20):* the platform records **every pricing
+    component for EACH period (timeframe) in the fiscal year** — the granular per-period grain
+    (already the bid grain: one row per DC × lot × item × **TF** × supplier, D12). The template must
+    **compact and expand** over that period detail: expanded = every per-period entry visible;
+    compact = the per-period rows rolled up / grouped by timeframe (e.g. periods → quarters → year).
+    Realise this with **Excel row outline grouping** (the +/- collapse handles) keyed on the period
+    dimension, so the buyer/supplier toggles between full per-period breakdown and a grouped summary
+    without changing the underlying per-period data.
 - **Saved presets → schema mapping.** The selection + grouping is saved as a reusable PRESET. The
   preset is what lets the system map a received file back to the canonical schema on ingest — the
   mapping is REMEMBERED per template/preset, not re-inferred on every upload. (Contrast the pilot's
@@ -55,6 +63,22 @@ The template a supplier receives must behave like a true form, not an editable s
   This is the supplier-facing, live mirror of the ingester's completeness classes
   (`NO_BID` / `INCOMPLETE` / `BID`), so what the supplier sees as "complete" is exactly what ingests
   cleanly — fewer quarantines, less back-and-forth.
+
+## Build status (graduating from notes to code)
+
+- **§2 supplier governed form — DONE (2026-06-20).** The generated bid template is now a true
+  locked form: raw key IDs hidden, only the price/volume entry cells unlocked (highlighted),
+  password-protected sheets, and a per-row **Bid Status** traffic light (Not bid / Incomplete /
+  Complete) — `app/domain/bid/template_generator.py`.
+- **§1 column selection — DONE (increment 1).** `BidTemplatePreset`
+  (`app/domain/bid/template_preset.py`) selects which entry columns a cycle's template carries from
+  the superset; the generator emits exactly those, and a reduced preset still round-trips through
+  ingest (test: `test_preset_reduces_columns_and_still_round_trips`). Built-in presets: full /
+  all_in_simple / components.
+- **§1 period grouping (compact/expand) — NEXT (increment 2).** Excel row-outline grouping along the
+  timeframe axis, per the sponsor clarification above. Needs a multi-TF scope to be meaningful (the
+  pilot's synthetic scope is single-TF).
+- **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
 

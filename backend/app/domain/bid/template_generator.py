@@ -21,15 +21,14 @@ from openpyxl.styles import Font, PatternFill, Protection
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from app.domain.bid.template_preset import FULL_PRESET, BidTemplatePreset
 from app.domain.bid.template_schema import (
-    BID_HEADERS,
     BID_STATUS_HEADER,
     BODY_START_ROW,
     CAPACITY_ENTRY_COLUMNS,
     CAPACITY_HEADERS,
     HEADER_ROW,
     KEY_ID_COLUMNS,
-    PRICE_COLUMNS,
     SHEET_BIDS,
     SHEET_CAPACITY,
     SHEET_INSTRUCTIONS,
@@ -160,27 +159,47 @@ def _scope_cell_values(row: ScopeRow, cycle_id: str) -> dict[BidColumn, str]:
     }
 
 
-def _add_bid_status_column(ws: Worksheet, status_col: int, n_rows: int) -> None:
+def _add_bid_status_column(
+    ws: Worksheet, status_col: int, n_rows: int, preset: BidTemplatePreset
+) -> None:
     """Append the per-row readiness traffic light (Not bid / Incomplete / Complete), locked.
 
     A LOCKED formula column (generator-owned, NOT ingested): Not bid when no price/volume is
     entered; Complete when there is a usable price (All-In or FOB) AND a volume (Weekly or Total);
-    otherwise Incomplete. Coloured by state via conditional formatting so the supplier sees
-    readiness at a glance. References the entry columns by letter (price components O:S, volume
-    V:W) — fixed by BID_HEADERS order.
+    otherwise Incomplete. Built from whatever price/volume columns the PRESET carries (the preset
+    guarantees at least one usable price and one volume), referenced by their letters in the
+    preset's header order. Coloured by state via conditional formatting.
     """
 
-    h = {c.value: get_column_letter(BID_HEADERS.index(c.value) + 1) for c in PRICE_COLUMNS}
-    all_in, fob = h[BidColumn.ALL_IN.value], h[BidColumn.FOB.value]
-    lot_disc = h[BidColumn.LOT_DISCOUNT.value]
-    weekly, total = h[BidColumn.WEEKLY_VOL_OFFERED.value], h[BidColumn.TOTAL_VOL_OFFERED.value]
+    headers = preset.bid_headers()
+
+    def col(c: BidColumn) -> str:
+        return str(get_column_letter(headers.index(c.value) + 1))
+
+    price_components = [
+        c
+        for c in (
+            BidColumn.ALL_IN,
+            BidColumn.FOB,
+            BidColumn.DELIVERY_SURCHARGE,
+            BidColumn.VEGCOOL_SURCHARGE,
+            BidColumn.LOT_DISCOUNT,
+        )
+        if c in preset.entry_columns
+    ]
+    usable_price = [c for c in (BidColumn.ALL_IN, BidColumn.FOB) if c in preset.entry_columns]
+    vols = [
+        c
+        for c in (BidColumn.WEEKLY_VOL_OFFERED, BidColumn.TOTAL_VOL_OFFERED)
+        if c in preset.entry_columns
+    ]
     letter = get_column_letter(status_col)
     ws.cell(row=HEADER_ROW, column=status_col, value=BID_STATUS_HEADER)
     for r in range(BODY_START_ROW, BODY_START_ROW + n_rows):
-        any_price = f'COUNTA({all_in}{r}:{lot_disc}{r})>0'
-        any_vol = f'COUNTA({weekly}{r}:{total}{r})>0'
-        has_price = f'OR({all_in}{r}<>"",{fob}{r}<>"")'
-        has_vol = f'OR({weekly}{r}<>"",{total}{r}<>"")'
+        any_price = "COUNTA(" + ",".join(f"{col(c)}{r}" for c in price_components) + ")>0"
+        any_vol = "COUNTA(" + ",".join(f"{col(c)}{r}" for c in vols) + ")>0"
+        has_price = "OR(" + ",".join(f'{col(c)}{r}<>""' for c in usable_price) + ")"
+        has_vol = "OR(" + ",".join(f'{col(c)}{r}<>""' for c in vols) + ")"
         ws.cell(row=r, column=status_col).value = (
             f'=IF(AND(NOT({any_price}),NOT({any_vol})),"Not bid",'
             f'IF(AND({has_price},{has_vol}),"Complete","Incomplete"))'
@@ -198,19 +217,20 @@ def _add_bid_status_column(ws: Worksheet, status_col: int, n_rows: int) -> None:
         )
 
 
-def _build_bids(ws: Worksheet, scope: CycleScope) -> None:
-    _write_headers(ws, f"Bids — {scope.cycle_name}", BID_HEADERS)
-    header_index = {header: i for i, header in enumerate(BID_HEADERS, start=1)}
+def _build_bids(ws: Worksheet, scope: CycleScope, preset: BidTemplatePreset) -> None:
+    headers = preset.bid_headers()
+    _write_headers(ws, f"Bids — {scope.cycle_name}", headers)
+    header_index = {header: i for i, header in enumerate(headers, start=1)}
     for offset, scope_row in enumerate(scope.rows, start=BODY_START_ROW):
         for column, value in _scope_cell_values(scope_row, scope.cycle_id).items():
             ws.cell(row=offset, column=header_index[column.value], value=value)
         # Price/volume cells are intentionally left blank for the supplier to fill.
     n_rows = len(scope.rows)
-    # Form treatment: unlock + highlight only the price/volume entry cells; hide the raw key IDs so
-    # the supplier reads names not UUIDs; add the traffic light; protect the sheet (D21/D23).
-    _unlock_entry_cells(ws, header_index, tuple(c.value for c in PRICE_COLUMNS), n_rows)
+    # Form treatment: unlock + highlight only this preset's price/volume entry cells; hide the raw
+    # key IDs so the supplier reads names not UUIDs; add the traffic light; protect the sheet.
+    _unlock_entry_cells(ws, header_index, tuple(c.value for c in preset.entry_columns), n_rows)
     _hide_columns(ws, header_index, tuple(c.value for c in KEY_ID_COLUMNS))
-    _add_bid_status_column(ws, len(BID_HEADERS) + 1, n_rows)
+    _add_bid_status_column(ws, len(headers) + 1, n_rows, preset)
     ws.freeze_panes = ws.cell(row=BODY_START_ROW, column=1)
     _protect_form(ws)
 
@@ -243,8 +263,14 @@ def _build_capacity(ws: Worksheet, scope: CycleScope) -> None:
     _protect_form(ws)
 
 
-def build_template_workbook(scope: CycleScope) -> Workbook:
-    """Build the in-memory multi-sheet template workbook for a cycle scope."""
+def build_template_workbook(
+    scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET
+) -> Workbook:
+    """Build the in-memory multi-sheet template workbook for a cycle scope.
+
+    `preset` selects which supplier-entry columns the Bids sheet carries (default = the full column
+    superset, so existing behaviour is unchanged); scope columns are always included.
+    """
 
     wb = Workbook()
     # openpyxl seeds a default sheet; repurpose it as Instructions.
@@ -255,7 +281,7 @@ def build_template_workbook(scope: CycleScope) -> Workbook:
     _protect_form(instructions)  # read-only cover sheet (no entry cells)
 
     bids = wb.create_sheet(SHEET_BIDS)
-    _build_bids(bids, scope)
+    _build_bids(bids, scope, preset)
 
     capacity = wb.create_sheet(SHEET_CAPACITY)
     _build_capacity(capacity, scope)
@@ -263,10 +289,12 @@ def build_template_workbook(scope: CycleScope) -> Workbook:
     return wb
 
 
-def generate_template_bytes(scope: CycleScope) -> bytes:
+def generate_template_bytes(
+    scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET
+) -> bytes:
     """Generate the template and return it as xlsx bytes (the artifact the system releases)."""
 
-    wb = build_template_workbook(scope)
+    wb = build_template_workbook(scope, preset)
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()

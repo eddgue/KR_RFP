@@ -85,6 +85,42 @@ def test_generated_template_has_owned_sheets_and_grain() -> None:
     assert ws.max_row - HEADER_ROW == len(scope.rows)
 
 
+def test_preset_reduces_columns_and_still_round_trips() -> None:
+    """A reduced preset (All-In only) emits fewer entry columns yet round-trips by key (§1).
+
+    The buyer composes a leaner template from the column superset; the omitted component columns are
+    simply absent, and the ingester (read-by-name, tolerant) still loads the grain. Proves
+    column-selection presets don't break the D20/D21 round-trip.
+    """
+
+    from app.domain.bid.template_preset import ALL_IN_PRESET
+
+    scope = build_scope()
+    headers = ALL_IN_PRESET.bid_headers()
+    wb = build_template_workbook(scope, ALL_IN_PRESET)
+    ws = wb[SHEET_BIDS]
+    emitted = [ws.cell(row=HEADER_ROW, column=c).value for c in range(1, ws.max_column + 1)]
+    assert BidColumn.ALL_IN.value in emitted
+    assert BidColumn.FOB.value not in emitted  # component columns not selected by this preset
+    assert BidColumn.DELIVERY_SURCHARGE.value not in emitted
+
+    template_bytes = generate_template_bytes(scope, ALL_IN_PRESET)
+    wb2 = load_workbook(BytesIO(template_bytes))
+    ws2 = wb2[SHEET_BIDS]
+    col = {h: i for i, h in enumerate(headers, start=1)}
+    for row in range(HEADER_ROW + 1, ws2.max_row + 1):
+        ws2.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
+        ws2.cell(row=row, column=col[BidColumn.TOTAL_VOL_OFFERED.value], value="200")
+    buf = BytesIO()
+    wb2.save(buf)
+
+    result = ingest_template(buf.getvalue(), scope)
+    assert result.quarantined == []
+    assert len(result.lines) == len(scope.rows)
+    assert all(line.components.all_in == _D("100.00") for line in result.lines)
+    assert all(line.components.fob is None for line in result.lines)  # column wasn't on the form
+
+
 def test_round_trip_grain_and_components_exact() -> None:
     scope = build_scope()
 
