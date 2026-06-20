@@ -47,6 +47,9 @@ class BidLine(BidBaseT):
     lot_id: Mapped[str] = mapped_column(String(36), nullable=False)
     item_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tf_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    # Added by migration 0015 — the flat-13 fiscal period this line records against (INTAKE §1a).
+    # Nullable: NULL on pre-fan-out (pilot/timeframe-only) rows. Logical reference, like tf_id.
+    fiscal_period_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
     price_basis: Mapped[str] = mapped_column(Text, nullable=False)
