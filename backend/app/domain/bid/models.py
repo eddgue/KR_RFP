@@ -61,6 +61,9 @@ class BidLine(BidBaseT):
     vegcool_surcharge_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)
     lot_discount_case: Mapped[Decimal | None] = mapped_column(_Money, nullable=True)
     price_basis_resolved: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Added by migration 0011 — supplier-stated lane transit days (origin→DC). Part of the standard
+    # bid column set; nullable — not every cycle/supplier provides it (blank -> no proxy shown).
+    transit_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     commercial_conditions_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     exclusivity_required_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

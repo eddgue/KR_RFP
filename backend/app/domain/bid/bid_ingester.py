@@ -184,6 +184,7 @@ class ParsedBidLine:
     total_vol_offered: Decimal | None
     invested_r1: bool | None
     pricing_comments: str | None
+    transit_days: int | None  # supplier-stated lane transit (origin→DC); None when not provided
     completeness: Completeness
     source_row_number: int
 
@@ -439,6 +440,7 @@ def _parse_pricing_and_build(
         )
         weekly = _to_decimal(raw.get(BidColumn.WEEKLY_VOL_OFFERED.value))
         total = _to_decimal(raw.get(BidColumn.TOTAL_VOL_OFFERED.value))
+        transit = _to_decimal(raw.get(BidColumn.TRANSIT_DAYS.value))
     except ValueError as exc:
         return QuarantinedRow(row_number, QuarantineReason.BAD_NUMERIC, str(exc), raw)
 
@@ -459,6 +461,7 @@ def _parse_pricing_and_build(
         total_vol_offered=total,
         invested_r1=_to_bool(raw.get(BidColumn.INVESTED_R1.value)),
         pricing_comments=comments,
+        transit_days=int(transit) if transit is not None else None,
         completeness=completeness,
         source_row_number=row_number,
     )

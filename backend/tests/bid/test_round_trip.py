@@ -57,6 +57,7 @@ def _fill_bids(template_bytes: bytes) -> bytes:
             put(row, BidColumn.TOTAL_VOL_OFFERED, "500")
             put(row, BidColumn.WEEKLY_VOL_OFFERED, "50")
             put(row, BidColumn.PRICING_COMMENTS, "firm")
+            put(row, BidColumn.TRANSIT_DAYS, "3")  # supplier-stated lane transit (optional column)
         elif offset == 1:
             # Component-fallback bid: FOB 90 + Delivery 5 + VegCool 3 - LotDisc 2 = 96.00.
             put(row, BidColumn.FOB, "90.00")
@@ -98,6 +99,13 @@ def test_round_trip_grain_and_components_exact() -> None:
     assert result.name_warnings == []
     # Same number of lines as scope rows (grain count round-trips).
     assert len(result.lines) == len(scope.rows)
+
+    # Transit days is an optional standard column: it round-trips where filled, None where blank.
+    transit_vals = sorted(
+        (line.transit_days for line in result.lines), key=lambda v: (v is None, v)
+    )
+    assert 3 in transit_vals  # the one row we filled
+    assert any(v is None for v in transit_vals)  # the rows we left blank stay None (no proxy)
 
     # The ingested identity grain matches the scope's identity grain EXACTLY (the D20 proof).
     ingested_grain = {

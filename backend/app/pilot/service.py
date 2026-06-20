@@ -1075,6 +1075,7 @@ class PilotService:
                     vegcool_surcharge_case=line.components.vegcool_surcharge or None,
                     lot_discount_case=line.components.lot_discount or None,
                     price_basis_resolved=line.price_basis or None,
+                    transit_days=line.transit_days,
                     volume_minimum_cases=line.total_vol_offered,
                     exclusivity_required_flag=False,
                     validity_status="VALID",

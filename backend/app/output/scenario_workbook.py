@@ -69,7 +69,6 @@ from app.output.synthetic import (
     LOT_PRODUCT_TYPE,
     WEEKS_PER_TF,
     _dc_region,
-    _transit_days,
 )
 from app.output.types import CycleView
 
@@ -182,8 +181,26 @@ class CellInfo:
     rec_score: Decimal  # the recommended pick's RecScore (0-100)
     price_by_supplier: dict[str, Decimal]  # supplier NAME -> $/case for this cell
     score_by_supplier: dict[str, Decimal]  # supplier NAME -> RecScore for this cell
-    transit_by_supplier: dict[str, int]  # supplier NAME -> lane transit days (hidden cost)
+    transit_by_supplier: dict[str, int | None]  # supplier NAME -> real lane transit (None=absent)
     rec_type: str  # the engine's authoritative B reason for this cell (§5; "" if none)
+
+
+def _transit_by_lane(session: Session, cycle_id: str) -> dict[tuple[str, str], int]:
+    """Real supplier→DC transit days from the bids (a stable lane property, round-independent).
+
+    Reads the `transit_days` column suppliers fill on the bid template. Returns ONLY lanes that
+    carry a value — a lane with no submitted transit is absent here, so the analysis shows no
+    transit for it (no synthetic proxy; transit is surfaced only when it is real data).
+    """
+
+    rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, MAX(transit_days) FROM bid.bid_line "
+            "WHERE cycle_id = :cyc AND transit_days IS NOT NULL GROUP BY supplier_id, dc_id"
+        ),
+        {"cyc": cycle_id},
+    ).all()
+    return {(s, d): int(t) for s, d, t in rows if t is not None}
 
 
 def _gather_cells(
@@ -208,8 +225,6 @@ def _gather_cells(
     dc_code = {dc.id: dc.code for dc in seeded.dcs}
     lot_code = {lot.id: lot.code for lot in seeded.lots}
     tf_code = {tf.id: tf.code for tf in seeded.tfs}
-    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
-    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
 
     # Final-round prices per (supplier, dc, lot, tf) from the persisted bid lines.
@@ -264,13 +279,15 @@ def _gather_cells(
         for (dc_id, lot_id), sup_id in seeded.incumbent_by_dc_lot.items()
     }
 
+    transit_lane = _transit_by_lane(session, seeded.cycle_id)
+
     cells: list[CellInfo] = []
     for c in award.cells:
         key_t = (c.dc_id, c.lot_id, c.tf_id)
         # Suppliers that BOTH priced this cell AND scored eligible -> the valid dropdown.
         price_map: dict[str, Decimal] = {}
         score_map: dict[str, Decimal] = {}
-        transit_map: dict[str, int] = {}
+        transit_map: dict[str, int | None] = {}
         eligible_names: list[str] = []
         for sup in seeded.suppliers:
             p = price_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
@@ -278,7 +295,7 @@ def _gather_cells(
                 continue
             name = sup_name.get(sup.id, sup.id[:6])
             price_map[name] = p
-            transit_map[name] = _transit_days(sup_index[sup.id], dc_index[c.dc_id])
+            transit_map[name] = transit_lane.get((sup.id, c.dc_id))
             sc = recscore_by.get((sup.id, c.dc_id, c.lot_id, c.tf_id))
             if sc is not None:
                 score_map[name] = sc
@@ -478,7 +495,7 @@ class AwardDetail:
     rec_score: Decimal
     cap_breach: bool
     is_fallback: bool
-    transit_days: int  # lane transit supplier→DC (hidden cost: freshness/lead-time)
+    transit_days: int | None  # real lane transit supplier→DC (None if not supplied)
     relationship: str  # "Preserve" (incumbent kept) | "Create" (new supplier won)
 
 
@@ -501,8 +518,6 @@ def _gather_award_details(
     lot_name = {lot.id: lot.name for lot in seeded.lots}
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     tf_name = {tf.id: tf.name for tf in seeded.tfs}
-    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
-    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
     incumbent_name_by = {
         (dc_id, lot_id): sup_name.get(sup_id, sup_id[:6])
@@ -537,6 +552,8 @@ def _gather_award_details(
         {"run": analysis_run_id},
     ).all()
 
+    transit_lane = _transit_by_lane(session, seeded.cycle_id)
+
     details: list[AwardDetail] = []
     for code, dc_id, lot_id, tf_id, sup_id, share, price, breach, fallback in award_rows:
         share_d = Decimal(str(share))
@@ -551,7 +568,7 @@ def _gather_award_details(
         sup_disp = sup_name.get(sup_id, sup_id[:6])
         inc_disp = incumbent_name_by.get((dc_id, lot_id), "")
         is_inc = sup_disp == inc_disp
-        transit = _transit_days(sup_index.get(sup_id, 0), dc_index.get(dc_id, 0))
+        transit = transit_lane.get((sup_id, dc_id))
         details.append(
             AwardDetail(
                 scenario_code=code,
@@ -2757,7 +2774,7 @@ class FobRow:
     delivery: Decimal
     vegcool: Decimal
     all_in: Decimal
-    transit_days: int  # lane transit (hidden cost: freshness/lead-time)
+    transit_days: int | None  # real lane transit (None if not supplied)
 
 
 def _gather_fob(
@@ -2775,8 +2792,7 @@ def _gather_fob(
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     dc_name = {dc.id: dc.name for dc in seeded.dcs}
     dc_region = {dc.id: _dc_region(i) for i, dc in enumerate(seeded.dcs)}
-    dc_index = {dc.id: i for i, dc in enumerate(seeded.dcs)}
-    sup_index = {sup.id: i for i, sup in enumerate(seeded.suppliers)}
+    transit_lane = _transit_by_lane(session, seeded.cycle_id)
 
     rows = session.execute(
         text(
@@ -2804,7 +2820,7 @@ def _gather_fob(
                 delivery=Decimal(str(deliv)) if deliv is not None else Decimal("0"),
                 vegcool=Decimal(str(veg)) if veg is not None else Decimal("0"),
                 all_in=Decimal(str(allin)),
-                transit_days=_transit_days(sup_index.get(sup_id, 0), dc_index.get(dc_id, 0)),
+                transit_days=transit_lane.get((sup_id, dc_id)),
             )
         )
     out.sort(key=lambda x: (x.lot_name, x.dc_name, x.all_in, x.supplier_name))
@@ -2858,13 +2874,14 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
         ws.cell(row=r, column=7, value=float(x.vegcool))
         ws.cell(row=r, column=8, value=float(x.all_in))
         ws.cell(row=r, column=9, value=float(freight_pct))
-        ws.cell(row=r, column=10, value=x.transit_days)
+        ws.cell(row=r, column=10, value=x.transit_days if x.transit_days is not None else "—")
+        watch = x.transit_days is not None and x.transit_days > FRESHNESS_WATCH_DAYS
         fresh = ws.cell(
             row=r,
             column=11,
-            value="⚠ watch" if x.transit_days > FRESHNESS_WATCH_DAYS else "ok",
+            value="⚠ watch" if watch else ("ok" if x.transit_days is not None else "—"),
         )
-        if x.transit_days > FRESHNESS_WATCH_DAYS:
+        if watch:
             fresh.fill = _INCUMBENT_FILL
             fresh.font = Font(bold=True, color="7F6000")
         if x.all_in == min_by_group[(x.lot_name, x.dc_name)]:
@@ -3446,9 +3463,9 @@ def _compute_kpis(
 
     savings = baseline_total - rec_spend
     savings_pct = savings / baseline_total if baseline_total > 0 else Decimal("0")
-    transit_vals = [d.transit_days for d in rec_details]
-    avg_transit = (sum(transit_vals) / len(transit_vals)) if transit_vals else 0.0
-    fresh = sum(1 for d in rec_details if d.transit_days > FRESHNESS_WATCH_DAYS)
+    t_vals = [d.transit_days for d in rec_details if d.transit_days is not None]
+    avg_transit = (sum(t_vals) / len(t_vals)) if t_vals else 0.0
+    fresh = sum(1 for t in t_vals if t > FRESHNESS_WATCH_DAYS)
     preserved = len({d.supplier_name for d in rec_details if d.relationship == "Preserve"})
     created = len({d.supplier_name for d in rec_details if d.relationship == "Create"})
     gap = inc_move - chal_move
@@ -3909,12 +3926,12 @@ def write_scenario_workbook_xlsx(
     _write_custom_scenario_tab(wb, config, cells, prices_sheet)
     # The Custom Dashboard recomputes the lenses LIVE off the builder (not the automated B).
     # Volume-weighted transit (matches the live SUMPRODUCT) so Δ-vs-rec reads 0 on the B pre-fill.
-    rec_vol = sum((d.volume for d in rec_details), Decimal("0"))
+    t_pairs = [(d.transit_days, d.volume) for d in rec_details if d.transit_days is not None]
+    t_vol = sum((vol for _t, vol in t_pairs), Decimal("0"))
     rec_avg_transit = (
-        float(sum((d.transit_days * d.volume for d in rec_details), Decimal("0")) / rec_vol)
-        if rec_vol > 0 else 0.0
+        float(sum((t * vol for t, vol in t_pairs), Decimal("0")) / t_vol) if t_vol > 0 else 0.0
     )
-    rec_fresh = sum(1 for d in rec_details if d.transit_days > FRESHNESS_WATCH_DAYS)
+    rec_fresh = sum(1 for t, _vol in t_pairs if t > FRESHNESS_WATCH_DAYS)
     rec_n_suppliers = len({d.supplier_name for d in rec_details})
     _write_custom_dashboard_tab(
         wb, len(cells), seeded, config, baseline_total, rec_spend,

@@ -85,6 +85,9 @@ class BidColumn(StrEnum):
     DELIVERY_SURCHARGE = "Delivery Surcharge"
     VEGCOOL_SURCHARGE = "VegCool Surcharge"
     LOT_DISCOUNT = "Lot Discount"
+    # Supplier-stated lane transit (origin→DC), a hidden cost surfaced in the analysis. Always part
+    # of the column SET; not every cycle/process populates it (blank -> no transit shown, no proxy).
+    TRANSIT_DAYS = "Transit Days"
     PRICING_COMMENTS = "Pricing Comments"
     # --- Volume offered (supplier-owned; drives coverage). ---
     WEEKLY_VOL_OFFERED = "Weekly Vol Offered"
@@ -126,6 +129,7 @@ PRICE_COLUMNS: tuple[BidColumn, ...] = (
     BidColumn.DELIVERY_SURCHARGE,
     BidColumn.VEGCOOL_SURCHARGE,
     BidColumn.LOT_DISCOUNT,
+    BidColumn.TRANSIT_DAYS,
     BidColumn.PRICING_COMMENTS,
     BidColumn.WEEKLY_VOL_OFFERED,
     BidColumn.TOTAL_VOL_OFFERED,
