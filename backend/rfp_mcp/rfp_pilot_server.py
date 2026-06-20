@@ -3,8 +3,9 @@
 A thin `FastMCP` server (PILOT_SYSTEM_DESIGN §7) wrapping `app.pilot.PilotService`. Every tool:
 
   * reads the run's vault folder from `PILOT_VAULT_ROOT` (the cloned RFP_PILOT_VAULT),
-  * opens a `unit_of_work()` ONLY where the governed Postgres store is touched (the unit of work
-    owns the commit; the service add+flushes, PLAN §7),
+  * opens a `run_unit_of_work(run_slug)` ONLY where the governed Postgres store is touched — a
+    session bound to THIS run's OWN isolated database (D30), so no run can see another's data and a
+    run never touches demo data (the unit of work owns the commit; the service add+flushes),
   * calls `PilotService` (ALL logic lives there — handlers stay thin), and
   * returns a PLAIN-LANGUAGE summary in the buyer's vocabulary: lots, DCs, rounds, awards — NAMES,
     never raw keys (D23).
@@ -28,9 +29,9 @@ from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
 
-from app.core.db.session import unit_of_work
 from app.cycle.loader import load_cycle
 from app.output.types import CycleView
+from app.pilot.run_db import run_unit_of_work
 from app.pilot.service import PilotService
 from app.pilot.vault import RunPaths
 
@@ -200,7 +201,7 @@ def run_status(run_slug: str) -> str:
     """The kanban for a run — Done · Doing · Next · Waiting on you — in plain language."""
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         board = _service().status(session, paths)
     return f"Where {run_slug} stands:\n" + _render_board(board)
 
@@ -230,7 +231,7 @@ def setup_ingest(run_slug: str, uploaded_filename: str) -> str:
 
     paths = _paths(run_slug)
     uploaded = paths.inputs / uploaded_filename
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         svc = _service()
         svc.ingest_setup(session, paths, uploaded)
         cycle = load_cycle(session, paths.cycle_id_file.read_text(encoding="utf-8").strip())
@@ -249,7 +250,7 @@ def bid_template(run_slug: str, round_no: int) -> str:
     """Generate the owned bid template for a round into inputs/ (suppliers fill it, by line)."""
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         path = _service().generate_bid_template(session, paths, round_no)
     return (
         f"Round {round_no} bid template is ready at `inputs/{path.name}` for {run_slug}. "
@@ -264,7 +265,7 @@ def ingest_bids(run_slug: str, round_no: int, uploaded_filename: str) -> str:
 
     paths = _paths(run_slug)
     uploaded = paths.inputs / uploaded_filename
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         count = _service().ingest_bids(session, paths, round_no, uploaded)
     return (
         f"Loaded {count} priced bid line(s) for Round {round_no} of {run_slug}. "
@@ -284,7 +285,7 @@ def ingest_any(run_slug: str, round_no: int, uploaded_filename: str, confirm: bo
 
     paths = _paths(run_slug)
     uploaded = paths.inputs / uploaded_filename
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         result = _service().ingest_any(session, paths, round_no, uploaded, confirm=confirm)
 
     if confirm:
@@ -316,7 +317,7 @@ def run_round(run_slug: str, round_no: int) -> str:
     """
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         out_path = _service().run_round(session, paths, round_no)
     version = out_path.stem.rsplit("_v", 1)[-1]
     return (
@@ -341,7 +342,7 @@ def select_award(
     """
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         history = _service().history(session, paths)
         analysis_run_id = _resolve_analysis_run(history, analysis_run_ref)
         _service().freeze_award(
@@ -377,7 +378,7 @@ def record_adjustment(
     """
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         history = _service().history(session, paths)
         award = _resolve_award(history, award_ref)
         cycle = load_cycle(session, str(history["cycle_id"]))
@@ -407,7 +408,7 @@ def history(run_slug: str) -> str:
     """The run's full version history: sealed alignment versions + the award's versions."""
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         hist = _service().history(session, paths)
 
     runs = cast(list[dict[str, Any]], hist["analysis_runs"])
@@ -447,7 +448,7 @@ def feedback(run_slug: str) -> str:
     """
 
     paths = _paths(run_slug)
-    with unit_of_work() as session:
+    with run_unit_of_work(run_slug) as session:
         path = _service().feedback_file(session, paths)
     return (
         f"Wrote the development-feedback file for {run_slug} to {path}. It distils this run's "
