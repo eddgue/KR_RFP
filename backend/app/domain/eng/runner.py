@@ -127,7 +127,10 @@ class EngineRunner:
         lot_by_item = self._lot_by_item(cycle_id)
 
         bid_lines = self._read_bid_lines(cycle_id, round_id)
-        bids = self._assemble_bids(bid_lines, tf_code_by_id, lot_by_item)
+        # The incumbent's bid (matched by dc × lot × supplier) carries is_incumbent=True so the
+        # §2.5 continuity factor can reward it — without this the continuity weight is inert.
+        incumbent_keys = {(inc.dc_id, inc.lot_id, inc.supplier_id) for inc in incumbents}
+        bids = self._assemble_bids(bid_lines, tf_code_by_id, lot_by_item, incumbent_keys)
         volumes = self._assemble_volumes(cycle_id, tf_code_by_id, lot_by_item)
         incumbent_inputs = self._assemble_incumbents(incumbents)
 
@@ -245,8 +248,13 @@ class EngineRunner:
         bid_lines: list[BidLine],
         tf_code_by_id: dict[str, str],
         lot_by_item: dict[str, str],
+        incumbent_keys: frozenset[tuple[str, str, str]] | set[tuple[str, str, str]] = frozenset(),
     ) -> list[BidInput]:
-        """Map keyed bid lines to the engine's frozen BidInput (lot-level cell grain)."""
+        """Map keyed bid lines to the engine's frozen BidInput (lot-level cell grain).
+
+        A bid is flagged `is_incumbent` when its (dc, lot, supplier) is the cycle's incumbent for
+        that cell, so the §2.5 continuity factor (incumbent -> 100) actually fires.
+        """
 
         bids: list[BidInput] = []
         for line in bid_lines:
@@ -269,7 +277,7 @@ class EngineRunner:
                     tf_code=tf_code,
                     landed_cost_per_case=landed,
                     eligible=line.is_scoreable,
-                    is_incumbent=False,
+                    is_incumbent=(line.dc_id, lot_id, line.supplier_id) in incumbent_keys,
                     components=components,
                     total_vol_offered=line.volume_minimum_cases,
                 )
