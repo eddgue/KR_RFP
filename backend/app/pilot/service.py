@@ -384,11 +384,16 @@ class PilotService:
             for (dc_id, lot_id), sup_id in cycle.incumbent_by_dc_lot.items()
         )
 
+        # Honour the per-RFP engine safeties the buyer set at kickoff (premium ceiling, coverage
+        # floor, concentration threshold, max suppliers/DC) over the strategy-preset default —
+        # blank fields fall back to the preset. EngineConfig is frozen, so layer via model_copy.
+        effective_config = self._apply_cycle_safeties(config or _DEFAULT_CONFIG, cycle)
+
         runner = EngineRunner(session)
         run_result = runner.run_analysis(
             cycle_id=cycle.cycle_id,
             round_id=round_id,
-            config=config or _DEFAULT_CONFIG,
+            config=effective_config,
             incumbents=incumbents,
             run_by="pilot-runner",
         )
@@ -408,7 +413,7 @@ class PilotService:
         write_scenario_workbook_xlsx(
             session,
             cycle,
-            config or _DEFAULT_CONFIG,
+            effective_config,
             run_result.analysis_run_id,
             round_id,
             award,
@@ -429,6 +434,26 @@ class PilotService:
             f"round {round_no} alignment analysis v{version_seq} sealed",
         )
         return out_path
+
+    @staticmethod
+    def _apply_cycle_safeties(config: EngineConfig, cycle: CycleView) -> EngineConfig:
+        """Layer the cycle's per-RFP engine safeties over `config` (blank fields keep the preset).
+
+        The buyer sets these at kickoff (setup workbook); they are authoritative for the run, so a
+        value present on the cycle overrides the strategy-preset default. EngineConfig is frozen, so
+        the override is applied via `model_copy`.
+        """
+
+        overrides: dict[str, object] = {}
+        if cycle.premium_ceiling is not None:
+            overrides["global_premium_threshold"] = cycle.premium_ceiling
+        if cycle.coverage_floor is not None:
+            overrides["coverage_floor"] = cycle.coverage_floor
+        if cycle.conc_thresh is not None:
+            overrides["conc_thresh"] = cycle.conc_thresh
+        if cycle.max_sup_dc is not None:
+            overrides["max_sup_dc"] = cycle.max_sup_dc
+        return config.model_copy(update=overrides) if overrides else config
 
     def freeze_award(
         self,

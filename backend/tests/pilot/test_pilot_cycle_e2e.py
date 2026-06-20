@@ -38,7 +38,7 @@ from app.pilot.flex_ingest import (
     FIELD_VOLUME,
     infer_bid_mapping,
 )
-from app.pilot.service import PilotService
+from app.pilot.service import _DEFAULT_CONFIG, PilotService
 from app.pilot.setup_template import (
     EXAMPLE_START_ROW,
     TAB_CYCLE,
@@ -77,8 +77,12 @@ def _write_setup_rows(ws: Worksheet, rows: list[dict[str, object]]) -> None:
             ws.cell(row=excel_row, column=col, value=None)
 
 
-def _build_filled_setup() -> bytes:
-    """A synthetic setup: 2 DCs, 2 lots, 2 suppliers, 1 TF, 2 rounds, volumes, incumbents."""
+def _build_filled_setup(premium_ceiling: float = 0.12) -> bytes:
+    """A synthetic setup: 2 DCs, 2 lots, 2 suppliers, 1 TF, 2 rounds, volumes, incumbents.
+
+    `premium_ceiling` is the buyer-adjustable engine safety written to the Cycle tab (default 0.12,
+    the preset value); tests pass a distinctive value to prove it flows through to the engine.
+    """
 
     wb = load_workbook(BytesIO(build_setup_workbook()))
     _write_setup_rows(
@@ -93,7 +97,7 @@ def _build_filled_setup() -> bytes:
                 "Target Effective Date": "2026-12-31",
                 "Weight Preset": "balanced",
                 "Max Suppliers / DC": 2,
-                "Premium Ceiling": 0.12,
+                "Premium Ceiling": premium_ceiling,
                 "Concentration Threshold": 0.40,
                 "Coverage Floor": 0.80,
             }
@@ -537,6 +541,48 @@ def test_rehearsal_run_stamps_synthetic_provenance(tmp_path: Path, db_session) -
     zip_path = service.close_run(paths)
     with zipfile.ZipFile(zip_path) as zf:
         assert f"{paths.slug}/.rehearsal" in zf.namelist()
+
+
+def test_apply_cycle_safeties_layers_over_preset() -> None:
+    """The cycle's per-RFP safeties override the preset; blank fields leave the preset untouched."""
+
+    base = _DEFAULT_CONFIG
+    cv = _fake_cycle_view()  # no safeties set → all None
+    assert PilotService._apply_cycle_safeties(base, cv) is base  # nothing to override
+
+    cv.premium_ceiling = Decimal("0.15")
+    cv.max_sup_dc = 3
+    out = PilotService._apply_cycle_safeties(base, cv)
+    assert out.global_premium_threshold == Decimal("0.15")  # buyer value wins
+    assert out.max_sup_dc == 3
+    assert out.coverage_floor == base.coverage_floor  # left blank → preset kept
+    assert out.conc_thresh == base.conc_thresh
+
+
+@pytest.mark.integration
+def test_setup_engine_safeties_flow_to_engine_config(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """A buyer-set Premium Ceiling on the setup workbook reaches the engine (finding: was dropped).
+
+    The setup ingester used to ignore the Cycle-tab safeties, so the engine silently ran the preset
+    default (0.12) no matter what the buyer entered. They now persist on cyc.cycle, load into the
+    CycleView, and run_round layers them over the preset.
+    """
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="Safeties")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup(premium_ceiling=0.15))  # NOT the 0.12 preset
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+
+    view = load_cycle(db_session, cycle_id)
+    assert view.premium_ceiling == Decimal("0.15")
+    assert view.coverage_floor == Decimal("0.80")
+    assert view.conc_thresh == Decimal("0.40")
+    assert view.max_sup_dc == 2
+
+    # The buyer's 0.15 ceiling overrides the preset default (0.12) in the effective engine config.
+    cfg = PilotService._apply_cycle_safeties(_DEFAULT_CONFIG, view)
+    assert cfg.global_premium_threshold == Decimal("0.15")
 
 
 def test_failed_start_leaves_no_orphan_run(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

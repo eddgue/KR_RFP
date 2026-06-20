@@ -199,6 +199,14 @@ def ingest_setup_workbook(
     ted_raw = _cell(cyc_ws, crow, cyc_hdr.get("Target Effective Date", 0))
     target_effective = _parse_date(ted_raw) if ted_raw else None
 
+    # Per-RFP ENGINE safeties (buyer-adjustable at kickoff; blank = use the strategy-preset).
+    # These are scoring/allocation knobs the engine consumes (distinct from cyc.cycle_safety, the
+    # pricing CONTRACT terms the engine ignores). run_round honours them over the preset.
+    premium_ceiling = _to_decimal(_cell(cyc_ws, crow, cyc_hdr.get("Premium Ceiling", 0)))
+    coverage_floor = _to_decimal(_cell(cyc_ws, crow, cyc_hdr.get("Coverage Floor", 0)))
+    conc_thresh = _to_decimal(_cell(cyc_ws, crow, cyc_hdr.get("Concentration Threshold", 0)))
+    max_sup_dc = _to_int(_cell(cyc_ws, crow, cyc_hdr.get("Max Suppliers / DC", 0)))
+
     # --- DCs ---
     dcs = _parse_named_tab(wb[TAB_DCS], "DC Name", TAB_DCS, problems)
     # --- Suppliers ---
@@ -302,6 +310,10 @@ def ingest_setup_workbook(
         subcommodity_name=subcommodity_name,
         rounds=rounds,
         target_effective=target_effective,
+        premium_ceiling=premium_ceiling,
+        coverage_floor=coverage_floor,
+        conc_thresh=conc_thresh,
+        max_sup_dc=max_sup_dc,
         dcs=dcs,
         suppliers=suppliers,
         timeframes=timeframes,
@@ -358,6 +370,10 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
     subcommodity_name: str,
     rounds: int,
     target_effective: date | None,
+    premium_ceiling: Decimal | None,
+    coverage_floor: Decimal | None,
+    conc_thresh: Decimal | None,
+    max_sup_dc: int | None,
     dcs: dict[str, _Named],
     suppliers: dict[str, _Named],
     timeframes: dict[str, _Named],
@@ -409,8 +425,9 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
         text(
             "INSERT INTO cyc.cycle (cycle_id, cycle_code, cycle_name, commodity_id, "
             "subcommodity_id, status, why_now, target_effective_date, round_count, "
-            "created_at, created_by) VALUES (:cyc, :code, :name, :cid, :sid, 'OPEN', "
-            "'Pilot setup ingest', :ted, :rc, :now, :by)"
+            "engine_premium_ceiling, engine_coverage_floor, engine_conc_thresh, "
+            "engine_max_sup_dc, created_at, created_by) VALUES (:cyc, :code, :name, :cid, :sid, "
+            "'OPEN', 'Pilot setup ingest', :ted, :rc, :prem, :cov, :conc, :maxsup, :now, :by)"
         ),
         {
             "cyc": cycle_id,
@@ -420,6 +437,10 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
             "sid": subcommodity_id,
             "ted": effective,
             "rc": rounds,
+            "prem": premium_ceiling,
+            "cov": coverage_floor,
+            "conc": conc_thresh,
+            "maxsup": max_sup_dc,
             "now": now,
             "by": created_by,
         },

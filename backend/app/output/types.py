@@ -46,6 +46,11 @@ class CycleView:
     period_cases_by_cell: dict[tuple[str, str, str], Decimal]  # (dc_id, lot_id, tf_id) -> cases
     commodity_name: str = ""  # resolved commodity display name (ref.commodity); "" if unresolved
     horizon_weeks: int = 0  # sum of the cycle's timeframe week counts (the real horizon)
+    # Per-RFP engine safeties the buyer set at kickoff (None = use the strategy-preset default).
+    premium_ceiling: Decimal | None = None  # eligibility ceiling (vs lowest)
+    coverage_floor: Decimal | None = None  # eligibility coverage floor
+    conc_thresh: Decimal | None = None  # category-concentration flag threshold
+    max_sup_dc: int | None = None  # split cap (max suppliers per DC)
 
 
 # Back-compat alias: the demo seeded this view, so the historical name is kept.
