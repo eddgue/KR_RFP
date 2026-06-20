@@ -158,6 +158,31 @@ def test_cap_breach_surfaces() -> None:
     assert all(a.cap_breach_flag is True for a in breach_awards)
 
 
+def test_cap_breach_consistent_across_scenarios() -> None:
+    """Cap-breach is a property of the AWARD, not the lens: identical splits flag identically.
+
+    Regression for the rehearsal finding — the breach was computed only on Scenario B, so another
+    lens (e.g. C) with the SAME >max_sup_dc split showed 0 breaches. For every _mk-built scenario,
+    a (dc, tf) group seating more than max_sup_dc distinct suppliers must flag ALL its awards, and a
+    group within the cap must flag none.
+    """
+
+    inputs = build_inputs()
+    res = V3Engine().run(inputs)
+    cap = inputs.config.max_sup_dc
+    groups: dict[tuple[str, str, str], list[ScenarioAward]] = {}
+    for a in res.awards:
+        if a.scenario_code.value == "D":  # D runs its own split allocator (separate path)
+            continue
+        groups.setdefault((a.scenario_code.value, a.dc_no, a.tf_code), []).append(a)
+    for (code, dc, tf), aws in groups.items():
+        breached = len({a.supplier_id for a in aws}) > cap
+        assert all(a.cap_breach_flag is breached for a in aws), (
+            f"scenario {code} {dc}/{tf}: {len({a.supplier_id for a in aws})} suppliers vs "
+            f"cap {cap}, flags={[a.cap_breach_flag for a in aws]}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # 3.4 Scenarios A-G
 # ---------------------------------------------------------------------------

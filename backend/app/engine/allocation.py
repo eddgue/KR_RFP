@@ -279,21 +279,10 @@ def scenario_d(eligible: list[ScoredBid], config: EngineConfig) -> list[Scenario
 
 
 # ---------------------------------------------------------------------------
-# §4.4 cap-breach + §4.5 concentration flags (computed on Scenario B)
+# §4.5 concentration flags (computed on Scenario B, the recommendation)
 # ---------------------------------------------------------------------------
-def cap_breach_cells(
-    b_pick: dict[Cell, ScoredBid], config: EngineConfig
-) -> set[tuple[str, str]]:
-    """Per (dc, tf): >max_sup_dc distinct suppliers across B's lot awards -> breach (§4.4)."""
-
-    sups_by_dctf: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for (dc, _lot, tf), sb in b_pick.items():
-        sups_by_dctf[(dc, tf)].add(sb.bid.supplier_id)
-    return {
-        dctf for dctf, sups in sups_by_dctf.items() if len(sups) > config.max_sup_dc
-    }
-
-
+# NB §4.4 cap-breach is computed PER SCENARIO from each scenario's own awards (engine
+# `_breach_set`), not off Scenario B — the breach is a property of the award, not the lens.
 def concentration_flags(
     b_pick: dict[Cell, ScoredBid],
     volumes_by_cell: dict[Cell, Decimal | None],

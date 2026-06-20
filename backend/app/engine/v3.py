@@ -22,10 +22,10 @@ Pure: stdlib + the interface (pydantic) only. No db/http/clock/random.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import Decimal
 
 from app.engine.allocation import (
-    cap_breach_cells,
     concentration_flags,
     rec_type,
     scenario_a,
@@ -198,22 +198,30 @@ class V3Engine(Engine):
         lenses = set(config.lenses)
         awards: list[ScenarioAward] = []
 
-        # B is the reference for C/E/F/G and the cap-breach computation.
+        # B is the reference C/E/F/G build their picks from.
         b_pick = scenario_b(eligible)
-        breach = cap_breach_cells(b_pick, config)
 
         if ScenarioCode.A in lenses:
-            for sb in scenario_a(eligible):
-                awards.append(self._mk(sb, ScenarioCode.A))
+            a_picks = scenario_a(eligible)
+            breach_a = self._breach_set(a_picks, config)
+            for sb in a_picks:
+                awards.append(
+                    self._mk(
+                        sb,
+                        ScenarioCode.A,
+                        cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_a,
+                    )
+                )
 
         if ScenarioCode.B in lenses:
+            breach_b = self._breach_set(b_pick.values(), config)
             for sb in b_pick.values():
                 awards.append(
                     self._mk(
                         sb,
                         ScenarioCode.B,
                         is_recommended=True,
-                        cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach,
+                        cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_b,
                         # §5 — the authoritative per-cell reason the recommendation rests on
                         # (single source of truth; the output renders it, never re-derives it).
                         rec_type_label=rec_type(sb, config),
@@ -221,29 +229,69 @@ class V3Engine(Engine):
                 )
 
         if ScenarioCode.C in lenses:
-            for sb in scenario_c(eligible, b_pick, config).values():
-                awards.append(self._mk(sb, ScenarioCode.C))
+            c_picks = scenario_c(eligible, b_pick, config)
+            breach_c = self._breach_set(c_picks.values(), config)
+            for sb in c_picks.values():
+                awards.append(
+                    self._mk(
+                        sb, ScenarioCode.C, cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_c
+                    )
+                )
 
         if ScenarioCode.D in lenses:
             for award in scenario_d(eligible, config):
                 awards.append(award)  # D builds its own ScenarioAward (split + fallback)
 
         if ScenarioCode.E in lenses:
-            for sb in scenario_e(eligible, config).values():
-                awards.append(self._mk(sb, ScenarioCode.E))
+            e_picks = scenario_e(eligible, config)
+            breach_e = self._breach_set(e_picks.values(), config)
+            for sb in e_picks.values():
+                awards.append(
+                    self._mk(
+                        sb, ScenarioCode.E, cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_e
+                    )
+                )
 
         if ScenarioCode.F in lenses:
-            for sb in scenario_f(eligible, b_pick, config).values():
-                awards.append(self._mk(sb, ScenarioCode.F))
+            f_picks = scenario_f(eligible, b_pick, config)
+            breach_f = self._breach_set(f_picks.values(), config)
+            for sb in f_picks.values():
+                awards.append(
+                    self._mk(
+                        sb, ScenarioCode.F, cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_f
+                    )
+                )
 
         if ScenarioCode.G in lenses:
-            for sb in scenario_g(eligible, b_pick, config).values():
-                awards.append(self._mk(sb, ScenarioCode.G))
+            g_picks = scenario_g(eligible, b_pick, config)
+            breach_g = self._breach_set(g_picks.values(), config)
+            for sb in g_picks.values():
+                awards.append(
+                    self._mk(
+                        sb, ScenarioCode.G, cap_breach=(sb.bid.dc_no, sb.bid.tf_code) in breach_g
+                    )
+                )
 
         awards.sort(
             key=lambda a: (a.scenario_code.value, a.dc_no, a.lot_id, a.tf_code, a.supplier_id)
         )
         return tuple(awards)
+
+    @staticmethod
+    def _breach_set(
+        bids: Iterable[ScoredBid], config: EngineConfig
+    ) -> set[tuple[str, str]]:
+        """Per (dc, tf): an award seating >max_sup_dc distinct suppliers is a cap-breach (§4.4).
+
+        Computed from EACH scenario's own awards (not just B), so the flag is a property of the
+        award, not of the lens that produced it — two scenarios with the identical split carry the
+        identical breach flags.
+        """
+
+        by_dctf: dict[tuple[str, str], set[str]] = {}
+        for sb in bids:
+            by_dctf.setdefault((sb.bid.dc_no, sb.bid.tf_code), set()).add(sb.bid.supplier_id)
+        return {k for k, sups in by_dctf.items() if len(sups) > config.max_sup_dc}
 
     @staticmethod
     def _mk(
