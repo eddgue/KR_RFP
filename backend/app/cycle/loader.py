@@ -27,12 +27,14 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
 
     cycle_row = session.execute(
         text(
-            "SELECT cycle_code, cycle_name, commodity_id "
-            "FROM cyc.cycle WHERE cycle_id = :cyc"
+            "SELECT c.cycle_code, c.cycle_name, c.commodity_id, m.commodity_name "
+            "FROM cyc.cycle c "
+            "LEFT JOIN ref.commodity m ON m.id::text = c.commodity_id "
+            "WHERE c.cycle_id = :cyc"
         ),
         {"cyc": cycle_id},
     ).one()
-    cycle_code, cycle_name, commodity_id = cycle_row
+    cycle_code, cycle_name, commodity_id, commodity_name = cycle_row
 
     # DCs in scope — the DCs the cycle carries projected volume for (ref.dc display names, D23).
     dc_rows = session.execute(
@@ -70,12 +72,13 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
     # Timeframes (cyc.cycle_timeframe display season names), ordered by tf_code.
     tf_rows = session.execute(
         text(
-            "SELECT tf_id, tf_code, tf_name FROM cyc.cycle_timeframe "
+            "SELECT tf_id, tf_code, tf_name, week_count FROM cyc.cycle_timeframe "
             "WHERE cycle_id = :cyc ORDER BY tf_code"
         ),
         {"cyc": cycle_id},
     ).all()
-    tfs = [Entity(tf_id, tf_code, tf_name) for tf_id, tf_code, tf_name in tf_rows]
+    tfs = [Entity(tf_id, tf_code, tf_name) for tf_id, tf_code, tf_name, _wc in tf_rows]
+    horizon_weeks = sum(int(wc) for *_rest, wc in tf_rows if wc is not None)
 
     # Rounds (cyc.cycle_round), ordered by round_number; round name synthesized (no name column).
     round_rows = session.execute(
@@ -164,4 +167,6 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
         incumbent_by_dc_lot=incumbent_by_dc_lot,
         incumbent_routing=incumbent_routing,
         period_cases_by_cell=period_cases_by_cell,
+        commodity_name=commodity_name or "",
+        horizon_weeks=horizon_weeks,
     )

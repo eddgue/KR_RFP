@@ -333,6 +333,8 @@ class PilotService:
         runpaths: RunPaths,
         round_no: int,
         config: EngineConfig | None = None,
+        *,
+        synthetic: bool = False,
     ) -> Path:
         """Run the engine on a round -> sealed eng.* + the VERSIONED alignment workbook (step 2).
 
@@ -384,6 +386,7 @@ class PilotService:
             round_id,
             award,
             output_path=out_path,
+            synthetic=synthetic,
         )
 
         self._render_kanban(

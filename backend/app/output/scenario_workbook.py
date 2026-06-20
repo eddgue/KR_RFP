@@ -1095,9 +1095,9 @@ def _write_scenario_comparison_tab(
             "B = recommendation (blue).",
             "▶ DRILL: below this table each scenario TOTAL expands (+ in the margin) to per-DC, "
             "then to per-supplier — opens collapsed to totals, expand for depth on demand (D27).",
-            "*Savings vs STLY uses a SYNTHESIZED prior-year baseline (no STLY feed in the demo: "
+            "*Savings vs STLY uses a MODELED prior-year baseline (no live STLY feed yet: "
             f"prior-year actual-paid modeled ~{(_STLY_UPLIFT - 1) * 100:.0f}% over this year's "
-            "incumbent routing). Clearly labelled synthetic.",
+            "incumbent routing). Clearly labelled an estimate.",
             f"SYNTHETIC · baseline ${baseline_total:,.0f} · STLY* ${stly_total:,.0f} · "
             f"{DECISION_SUPPORT_STRAP}",
         ],
@@ -2521,12 +2521,14 @@ def _write_controls_tab(
     )
 
     total_cases = sum(seeded.period_cases_by_cell.values(), Decimal("0"))
-    total_weeks = len(seeded.tfs) * WEEKS_PER_TF
+    # Real horizon = sum of the cycle's timeframe week counts (falls back to the legacy estimate
+    # only if the loader could not resolve week counts).
+    total_weeks = seeded.horizon_weeks or (len(seeded.tfs) * WEEKS_PER_TF)
     rec_savings = baseline_total - rec_spend
 
     # (section | label | value | numfmt)  — numfmt None => text.
     rows: list[tuple[str, str, object, str | None]] = [
-        ("Cycle", "Commodity", "Field Tomatoes (DEMO)", None),
+        ("Cycle", "Commodity", seeded.commodity_name or seeded.cycle_name, None),
         ("Cycle", "Cycle code", seeded.cycle_code, None),
         ("Cycle", "Horizon (weeks)", total_weeks, NUMFMT_INT),
         ("Cycle", "Timeframes (seasons)", len(seeded.tfs), NUMFMT_INT),
@@ -2536,7 +2538,7 @@ def _write_controls_tab(
         ("Scope", "Suppliers invited", len(seeded.suppliers), NUMFMT_INT),
         ("Scope", "Total projected cases (period)", total_cases, NUMFMT_INT),
         ("Baselines", "Incumbent baseline spend (iTrade routing)", baseline_total, NUMFMT_MONEY),
-        ("Baselines", "STLY baseline spend (synthetic — DEMO)", stly_total, NUMFMT_MONEY),
+        ("Baselines", "STLY baseline (modeled — iTrade pending)", stly_total, NUMFMT_MONEY),
         ("Baselines", "Recommended (Scenario B) spend", rec_spend, NUMFMT_MONEY),
         ("Baselines", "Savings vs incumbent (period $)", rec_savings, NUMFMT_MONEY),
         ("Baselines", "Negotiation savings R1→Final (period $)", negotiation_savings, NUMFMT_MONEY),
@@ -2582,7 +2584,7 @@ def _write_controls_tab(
         row=r + 1,
         column=1,
         value="Schema-backed: incumbent baseline, savings, weights, rules, rounds. "
-        "DEMO-illustrative: STLY uplift, product type — clearly labelled where shown.",
+        "Modeled (pending real feeds): STLY uplift (iTrade), product type — labelled where shown.",
     )
     note.font = Font(italic=True, color="808080", size=9)
     note.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
@@ -3756,6 +3758,31 @@ def _run_version(
     )
 
 
+def _stamp_real_provenance(wb: Workbook) -> None:
+    """Restamp the demo's SYNTHETIC provenance tokens to LIVE/real for a real cycle run.
+
+    The tab straps are written with the literal 'SYNTHETIC' / 'SYNTHESIZED' (the generator's demo
+    lineage). On a real run those mislabel real supplier names and prices, so replace the provenance
+    tokens in every string cell. 'SYNTHETIC' appears ONLY in these straps, so the replacement is
+    safe; the specific phrases are ordered before the bare token.
+    """
+
+    repls = [
+        ("SYNTHETIC data — names & prices invented.", "LIVE CYCLE DATA — real names & prices."),
+        ("SYNTHETIC names & prices", "LIVE CYCLE DATA — real names & prices"),
+        ("SYNTHETIC", "LIVE CYCLE DATA"),
+        ("SYNTHESIZED", "MODELED"),
+    ]
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                v = cell.value
+                if isinstance(v, str) and ("SYNTHETIC" in v or "SYNTHESIZED" in v):
+                    for a, b in repls:
+                        v = v.replace(a, b)
+                    cell.value = v
+
+
 def write_scenario_workbook_xlsx(
     session: Session,
     cycle: CycleView,
@@ -3765,6 +3792,7 @@ def write_scenario_workbook_xlsx(
     award: AwardView,
     *,
     output_path: Path | None = None,
+    synthetic: bool = False,
 ) -> Path:
     """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26/D27) from the sealed records.
 
@@ -3950,6 +3978,11 @@ def write_scenario_workbook_xlsx(
 
     # Front door: the banded tab index on the Overview/Summary tab.
     _augment_summary_index(wb, tab_index)
+
+    # Provenance: the generator writes the SYNTHETIC placeholder strap (demo lineage). On a REAL
+    # cycle run, restamp the provenance tokens so the file never mislabels real names & prices.
+    if not synthetic:
+        _stamp_real_provenance(wb)
 
     wb.save(out_path)
     return out_path
