@@ -19,6 +19,9 @@ BACKEND="${ROOT}/backend"
 PY="${BACKEND}/.venv/bin/python"
 PORT="${RFP_MCP_PORT:-8765}"
 export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg://app:app@localhost:5432/kr_rfp}"
+# In the web runtime the local vault clone is discarded between sessions, so vault commits must be
+# PUSHED to persist (D34). Default on here; override by setting RFP_VAULT_AUTOPUSH=0 in the env.
+export RFP_VAULT_AUTOPUSH="${RFP_VAULT_AUTOPUSH:-1}"
 
 log() { echo "[session-start] $*" >&2; }
 
@@ -69,6 +72,7 @@ else
   log "starting HTTP MCP server on 127.0.0.1:${PORT}..."
   ( cd "$BACKEND" && RFP_MCP_TRANSPORT=streamable-http RFP_MCP_HOST=127.0.0.1 RFP_MCP_PORT="$PORT" \
       DATABASE_URL="$DATABASE_URL" PILOT_VAULT_ROOT="${PILOT_VAULT_ROOT:-}" \
+      RFP_VAULT_AUTOPUSH="$RFP_VAULT_AUTOPUSH" \
       setsid nohup "$PY" -m rfp_mcp.rfp_pilot_server >/tmp/rfp_mcp.log 2>&1 & ) || true
   for _ in $(seq 1 40); do curl -s "http://127.0.0.1:${PORT}/mcp" >/dev/null 2>&1 && break; sleep 0.5; done
   curl -s "http://127.0.0.1:${PORT}/mcp" >/dev/null 2>&1 \

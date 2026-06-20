@@ -46,19 +46,21 @@ Do these once when you create the environment at claude.ai/code (environment set
    (`python -m rfp_mcp.rehydrate`), and starts the HTTP MCP server — then returns so Claude Code
    connects to it. It is a no-op outside the web runtime, so local sessions are unaffected.
 
-## The vault in the container — OPEN, needs your decision
+## The vault in the container
 
 The harness reads/writes the vault at `PILOT_VAULT_ROOT` and **commits** every governed change to it
 locally (including the DB snapshot). For that state to survive the ephemeral container it must reach
-the vault's **git remote**. Two things still need wiring and a decision from you:
+the vault's **git remote**.
 
-- **Getting the vault into the container.** Either (a) make RFP_PILOT_VAULT the session's repo and
-  KR_RFP a secondary repo, or (b) have the setup/session-start script `git clone` the vault to a
-  fixed path and set `PILOT_VAULT_ROOT` to it. Cloning needs credentials (a deploy token / the git
-  proxy) — that is the decision.
-- **Pushing the vault back.** The service commits to the vault locally but does **not push**. For
-  ephemeral persistence the vault clone's commits must be pushed to the remote (at session end or on
-  a cadence). This push step is not yet wired — flag for the next increment.
+- **Pushing the vault back — BUILT.** Vault commits are pushed to the remote when
+  `RFP_VAULT_AUTOPUSH` is set (every commit path goes through it). The session-start hook defaults it
+  **on** in the web runtime, so each governed write that commits a DB snapshot also pushes it. It is
+  off for local/tests, and a push failure is swallowed (git is a convenience layer, never a blocker).
+- **Getting the vault into the container — your decision.** The clone itself, with **push
+  credentials**, still needs wiring: either (a) make RFP_PILOT_VAULT the session's repo and KR_RFP a
+  secondary repo so Claude Code's own git flow carries it, or (b) have the setup/session-start script
+  `git clone` the vault to a fixed path (and set `PILOT_VAULT_ROOT` to it) using a deploy token / the
+  git proxy. The clone needs an upstream tracking branch for the bare `git push` to have a target.
 
 ## Scheduled nudges (Routines)
 
@@ -72,6 +74,8 @@ configured in the web console only.
 **Built + tested locally (in this repo):**
 - DB snapshot/restore round-trip — `dump → drop → restore` keeps the data intact
   (`tests/pilot/test_run_persistence.py`), wired after every governed write + a `rehydrate` entry.
+- Vault auto-push — a commit reaches a real (bare) remote when `RFP_VAULT_AUTOPUSH` is on and does
+  not when off (`tests/pilot/test_vault_autopush.py`).
 - The MCP server serves over HTTP (`RFP_MCP_TRANSPORT=streamable-http`), verified responding on a
   loopback port.
 - `scripts/web_session_start.sh` end to end against a local Postgres: starts/locates Postgres,

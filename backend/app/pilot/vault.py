@@ -24,6 +24,7 @@ filesystem + git, never Postgres.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -298,7 +299,19 @@ def git_commit_run(vault_root: Path, slug: str, message: str) -> None:
 def _commit(vault_root: Path, message: str) -> None:
     _git(vault_root, "add", "-A")
     # `git commit` exits non-zero when there's nothing staged; that's fine, swallow it.
-    _git(vault_root, "commit", "-m", message)
+    committed = _git(vault_root, "commit", "-m", message)
+    # In the ephemeral web runtime the local clone is discarded between sessions, so a commit only
+    # PERSISTS if it is pushed to the vault's remote (D34). RFP_VAULT_AUTOPUSH turns that on; it
+    # stays OFF for local/tests (the default), and a push failure is swallowed like every other git
+    # convenience here — it must never break the file scaffold the pilot depends on.
+    if committed and _autopush_enabled():
+        _git(vault_root, "push")
+
+
+def _autopush_enabled() -> bool:
+    """Whether vault commits should be pushed to the remote (RFP_VAULT_AUTOPUSH — web runtime)."""
+
+    return os.environ.get("RFP_VAULT_AUTOPUSH", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _git(vault_root: Path, *args: str) -> bool:
