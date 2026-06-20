@@ -25,7 +25,7 @@ import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -526,9 +526,24 @@ def purge_run(run_slug: str) -> str:
 
 
 def main() -> None:
-    """Run the stdio MCP server (the entry point `python -m mcp.rfp_pilot_server` invokes)."""
+    """Run the MCP server (the entry point `python -m rfp_mcp.rfp_pilot_server` invokes).
 
-    app.run()
+    Transport is selectable so the SAME server drives both runtimes:
+      * local Claude Code (terminal) — **stdio** (the default).
+      * Claude Code on the web — **streamable-http**, because the cloud environment does not run
+        stdio MCP servers; set `RFP_MCP_TRANSPORT=streamable-http` and the SessionStart hook starts
+        this on a loopback port that `.mcp.json` points at (`RFP_MCP_HOST`/`RFP_MCP_PORT` tune it).
+    """
+
+    mode = os.environ.get("RFP_MCP_TRANSPORT", "stdio")
+    transport: Literal["stdio", "sse", "streamable-http"]
+    if mode in ("streamable-http", "sse"):
+        app.settings.host = os.environ.get("RFP_MCP_HOST", "127.0.0.1")
+        app.settings.port = int(os.environ.get("RFP_MCP_PORT", "8765"))
+        transport = "streamable-http" if mode == "streamable-http" else "sse"
+    else:
+        transport = "stdio"
+    app.run(transport=transport)
 
 
 if __name__ == "__main__":
