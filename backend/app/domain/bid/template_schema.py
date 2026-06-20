@@ -42,6 +42,16 @@ from enum import StrEnum
 # header/grain change so an old file ingested against a new reader is caught, not silently mapped.
 TEMPLATE_VERSION = "kr-bid-template/v1"
 
+# Soft "form" protection password for the supplier-facing sheets. Only the entry cells are unlocked;
+# everything else is locked so a supplier fills a TRUE FORM, not a free spreadsheet. Excel sheet
+# protection is a usability guard (not security) — the keyed re-ingest remains the real check (D21).
+TEMPLATE_PROTECT_PASSWORD = "kr-rfp-bid"
+
+# Header text of the generator-added per-row readiness traffic light (Not bid / Incomplete /
+# Complete). It is a LOCKED, generator-owned formula column — NOT part of the ingested contract, so
+# it is appended after BID_HEADERS and the ingester never reads it.
+BID_STATUS_HEADER = "Bid Status"
+
 # Sheet names (our design — D17). Stable identifiers the generator writes and the ingester reads.
 SHEET_INSTRUCTIONS = "Instructions"
 SHEET_BIDS = "Bids"
@@ -153,6 +163,13 @@ class CapacityColumn(StrEnum):
 
 
 CAPACITY_HEADERS: tuple[str, ...] = tuple(c.value for c in CapacityColumn)
+
+# The supplier-owned entry columns on the Capacity sheet (the only cells unlocked on the form).
+CAPACITY_ENTRY_COLUMNS: tuple[CapacityColumn, ...] = (
+    CapacityColumn.MAX_WEEKLY_CASES,
+    CapacityColumn.MAX_TOTAL_CASES,
+    CapacityColumn.CAPACITY_NOTES,
+)
 
 
 # --- The scope contract: what the generator needs from a cycle to build the template. ---
