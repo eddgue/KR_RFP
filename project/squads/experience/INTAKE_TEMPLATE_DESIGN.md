@@ -122,12 +122,22 @@ The template a supplier receives must behave like a true form, not an editable s
   gives **Period 13 a 5th week**, so a period is **not always 28 days** — always read the span from
   the table, never assume a length. Stored authoritatively (data, not a date rule) so a future
   calendar quirk is a CSV update, not a code change ("protects us from future errors").
-- **§1 period model (flat-13 STORAGE + fan-out on ingest + compact/expand view) — NEXT (increment
-  2b), per §1a.** With the calendar in place, the remaining data-layer work: (a) store bids flat at
-  the 13 fiscal periods (a `ref.fiscal_period` table seeded from the same CSV, and the bid grain
-  carrying a period FK) and have intake call `expand_to_periods` to fan a timeframe's price out to
-  each period; (b) the compact/expand VIEW rolls the 13 periods up into the template's timeframes.
-  This is the schema work (the pilot's bid grain is currently one row per TF, single-period scope).
+- **§1 period model — DB DIMENSION DONE (increment 2b-i, 2026-06-20).** `ref.fiscal_period`
+  (migration `0014`) lands the calendar in the governed store, seeded from the same CSV (273 rows,
+  FY16..FY36); other grains can FK to it. Tested: `tests/ref/test_fiscal_period_table.py`.
+- **§1 period model — STORAGE COLUMN + fan-out logic DONE (increment 2b-ii, 2026-06-20),
+  backward-compatible.** `bid.bid_line` gains a **nullable** `fiscal_period_id` (migration `0015`,
+  no constraint change — pilot rows stay NULL and behave as before), and `app/domain/bid/
+  period_fanout.py` is the PURE fan-out (`fan_out` / `fan_out_all` on `expand_to_periods`, payload
+  copied per period, rejects double-covered periods). Tested: `tests/bid/test_period_fanout.py` (5).
+  NOT yet wired into the live ingest/engine path — intentionally inert so it cannot affect a live
+  cutover.
+- **§1 period model — ACTIVATION (wire fan-out into ingest + engine read-path + compact/expand view)
+  — DEFERRED until after the first live run, per §1a.** Remaining: call the fan-out in the intake
+  unit of work; add the ~5-line `runner._assemble_bids` fallback that prefers the period grain when
+  present (engine logic unchanged); flip the bid uniqueness to a *filtered* unique index on the
+  period grain (so NULL pilot rows never conflict); and the compact/expand VIEW. Deferred on purpose
+  — it touches the engine read-path, the wrong risk to take right before going live.
 - **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
