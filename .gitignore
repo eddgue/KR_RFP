@@ -52,3 +52,6 @@ backend/demo/output/
 # ---- claude code transient agent worktrees (auto-cleaned; never commit) ----
 .claude/worktrees/
 .claude/settings.local.json
+
+# Option (b) vault clone target (web session-start); never commit the vault into this repo
+.rfp_pilot_vault/

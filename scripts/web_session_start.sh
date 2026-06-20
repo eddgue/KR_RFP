@@ -30,6 +30,30 @@ if [ ! -x "$PY" ]; then
   exit 0
 fi
 
+# --- Resolve the vault location (RFP_PILOT_VAULT = the run store that carries state across boxes) - #
+# Option (a, recommended): attach eddgue/RFP_PILOT_VAULT as a SECOND repo and point PILOT_VAULT_ROOT
+#   at its checkout — push works natively via the attached repo's credentials.
+# Option (b): set RFP_PILOT_VAULT_REMOTE and this clones it here (the clone needs push credentials).
+if [ -z "${PILOT_VAULT_ROOT:-}" ]; then
+  for cand in "$(dirname "$ROOT")/RFP_PILOT_VAULT" "$(dirname "$ROOT")/rfp_pilot_vault"; do
+    [ -d "$cand/.git" ] && { PILOT_VAULT_ROOT="$(cd "$cand" && pwd)"; log "found vault clone at $cand."; break; }
+  done
+fi
+if [ -z "${PILOT_VAULT_ROOT:-}" ] && [ -n "${RFP_PILOT_VAULT_REMOTE:-}" ]; then
+  PILOT_VAULT_ROOT="${ROOT%/}/.rfp_pilot_vault"
+  if [ ! -d "$PILOT_VAULT_ROOT/.git" ]; then
+    log "cloning the vault from RFP_PILOT_VAULT_REMOTE..."
+    git clone "$RFP_PILOT_VAULT_REMOTE" "$PILOT_VAULT_ROOT" 2>&1 | sed 's/^/[session-start] /' >&2 || true
+  fi
+fi
+export PILOT_VAULT_ROOT="${PILOT_VAULT_ROOT:-}"
+
+# Autopush needs an upstream branch to push to; warn early if there is none (push would no-op).
+if [ -n "$PILOT_VAULT_ROOT" ] && [ -d "$PILOT_VAULT_ROOT/.git" ] && [ "$RFP_VAULT_AUTOPUSH" != "0" ]; then
+  git -C "$PILOT_VAULT_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 \
+    || log "WARNING: vault has no upstream branch — autopush has no target (run 'git -C <vault> push -u origin <branch>' once)."
+fi
+
 # --- run a psql command as a Postgres SUPERUSER, trying the usual local auth strategies ---------- #
 super_psql() {
   if command -v sudo >/dev/null 2>&1 && sudo -n -u postgres psql -v ON_ERROR_STOP=1 "$@" 2>/dev/null; then return 0; fi

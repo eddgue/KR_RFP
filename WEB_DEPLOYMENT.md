@@ -33,9 +33,13 @@ Do these once when you create the environment at claude.ai/code (environment set
    backend + dev extras (which include the MCP SDK). Keep slow installs here; anything that must run
    every session is in the SessionStart hook below.
 2. **Environment variables** (no quotes):
-   - `PILOT_VAULT_ROOT` — absolute path to the cloned vault in the container (see "The vault" below).
+   - `PILOT_VAULT_ROOT` — absolute path to the cloned vault in the container. Optional if you use
+     option (a) or (b) below (the session-start hook resolves it); set it explicitly to be sure.
+   - `RFP_PILOT_VAULT_REMOTE` — optional; the vault's git URL. If set (and the vault isn't already
+     present), the hook clones it for you — option (b).
    - `DATABASE_URL` — optional; defaults to `postgresql+psycopg://app:app@localhost:5432/kr_rfp`.
    - `RFP_MCP_PORT` — optional; defaults to `8765` (must match `.mcp.json`).
+   - `RFP_VAULT_AUTOPUSH` — optional; defaults to `1` in the web runtime (set `0` to disable push).
 3. **Network policy** — **Trusted** is enough (package installs + GitHub over the proxy; the MCP
    server and Postgres are loopback). Use **Custom** only if you point at an *external* Postgres.
 4. **SessionStart hook** — copy [`.claude/settings.web.json.sample`](.claude/settings.web.json.sample)
@@ -48,19 +52,25 @@ Do these once when you create the environment at claude.ai/code (environment set
 
 ## The vault in the container
 
-The harness reads/writes the vault at `PILOT_VAULT_ROOT` and **commits** every governed change to it
-locally (including the DB snapshot). For that state to survive the ephemeral container it must reach
-the vault's **git remote**.
+The harness reads/writes the vault (**`eddgue/RFP_PILOT_VAULT`**, private) at `PILOT_VAULT_ROOT` and
+**commits** every governed change to it locally (including the DB snapshot). For that state to
+survive the ephemeral container it must reach the vault's **git remote**. Both the push and the clone
+are now wired; you pick how the clone gets its credentials:
 
 - **Pushing the vault back — BUILT.** Vault commits are pushed to the remote when
   `RFP_VAULT_AUTOPUSH` is set (every commit path goes through it). The session-start hook defaults it
   **on** in the web runtime, so each governed write that commits a DB snapshot also pushes it. It is
   off for local/tests, and a push failure is swallowed (git is a convenience layer, never a blocker).
-- **Getting the vault into the container — your decision.** The clone itself, with **push
-  credentials**, still needs wiring: either (a) make RFP_PILOT_VAULT the session's repo and KR_RFP a
-  secondary repo so Claude Code's own git flow carries it, or (b) have the setup/session-start script
-  `git clone` the vault to a fixed path (and set `PILOT_VAULT_ROOT` to it) using a deploy token / the
-  git proxy. The clone needs an upstream tracking branch for the bare `git push` to have a target.
+- **Getting the vault into the container — BUILT, pick the credential path:**
+  - **Option (a), recommended — attach the vault as a SECOND repo.** Add `eddgue/RFP_PILOT_VAULT` to
+    the environment alongside KR_RFP; push then uses the attached repo's own credentials (no token to
+    manage). Point `PILOT_VAULT_ROOT` at its checkout (the hook also auto-detects a sibling
+    `RFP_PILOT_VAULT` clone).
+  - **Option (b) — clone from a URL.** Set `RFP_PILOT_VAULT_REMOTE` to the vault's git URL; the hook
+    clones it (to `.rfp_pilot_vault`, gitignored) using the env's git credentials / proxy.
+  - Either way the hook checks the clone has an **upstream branch** (so `git push` has a target) and
+    warns if not — set one once with `git -C <vault> push -u origin main`. Verified end to end via
+    option (b) against a local remote: clone → rehydrate → server up, upstream present.
 
 ## Scheduled nudges (Routines)
 
@@ -79,14 +89,16 @@ configured in the web console only.
 - The MCP server serves over HTTP (`RFP_MCP_TRANSPORT=streamable-http`), verified responding on a
   loopback port.
 - `scripts/web_session_start.sh` end to end against a local Postgres: starts/locates Postgres,
-  ensures the role/DB, rehydrates, and brings the HTTP server up.
+  ensures the role/DB, resolves + clones the vault (option b), rehydrates, and brings the HTTP server
+  up — with the vault's upstream branch present so autopush has a target.
 
 **Needs validation in an actual web session (cannot be tested from here):**
 - That the web runtime loads `.claude/settings.json` hooks and runs the SessionStart hook **before**
   connecting to `.mcp.json` servers, and that it reaches the loopback HTTP MCP server.
 - The exact Postgres start command for the web image (the script tries `service postgresql start`
   then `pg_ctlcluster 16 main start`, with and without `sudo`) — adjust if the image differs.
-- The vault clone + push wiring above.
+- The credential path for the vault: that an attached second repo (option a) pushes, or that the
+  env's git proxy authorizes the clone/push for a URL (option b).
 
 First web session: run `bash scripts/web_session_start.sh` by hand (or check `/tmp/rfp_mcp.log`) and
 confirm `rfp-pilot` shows connected via `/mcp` before relying on the routine.
