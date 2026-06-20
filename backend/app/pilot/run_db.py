@@ -29,6 +29,10 @@ from app.core.config.settings import get_settings
 _NAME_RE = re.compile(r"[^a-z0-9]+")
 _DB_PREFIX = "kr_rfp_run_"
 _ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
+# alembic.ini declares `script_location = alembic` (relative), which Alembic resolves against the
+# process CWD — so provisioning would only work when CWD is backend/. The MCP server runs from
+# elsewhere, so pin the scripts dir to an absolute path next to alembic.ini (CWD-independent).
+_ALEMBIC_SCRIPTS = _ALEMBIC_INI.parent / "alembic"
 
 # One engine per run database URL (connection pools are reused across a run's calls).
 _engines: dict[str, Engine] = {}
@@ -62,6 +66,7 @@ def _migrate_to_head(url: str) -> None:
     from alembic.config import Config
 
     cfg = Config(str(_ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(_ALEMBIC_SCRIPTS))  # CWD-independent (D30)
     cfg.set_main_option("sqlalchemy.url", url)  # env.py respects a pre-set URL (D30)
     command.upgrade(cfg, "head")
 
