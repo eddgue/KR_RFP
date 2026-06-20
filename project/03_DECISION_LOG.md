@@ -199,6 +199,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D33 — The recommendation (Scenario B) MAY breach the max-suppliers-per-DC cap, FLAGGED; Scenario D is the hard-enforced lens · **NOTE 2026-06-20**
+**Decision.** The buyer-set **max suppliers per DC** is a *permit-not-force* split control. The **risk-adjusted recommendation (Scenario B)** optimizes per cell and **may seat more than the cap** when that is the best split (e.g. retaining a price-eligible incumbent on one lot needs a 3rd supplier in a max-2 DC). When it does, **every affected award cell is flagged `cap_breach_flag`** — surfaced, never silent. A buyer who wants the cap **hard-enforced** uses **Scenario D (Max-N per DC)**, which the engine already produces. Rationale: decision-support surfaces the optimum + the constraint tension rather than silently constraining; the two lenses (B flagged, D enforced) give the buyer the choice.
+**Mechanism / correctness.** Cap-breach is computed **per scenario from each lens's own award** (`V3Engine._breach_set`), so it is a property of the *award*, not the lens — two scenarios with the identical split carry identical flags (fixes the rehearsal finding where B flagged 9 and C flagged 0 for the same award). Breach count shows per lens in **Scenario Comparison**; the per-cell flag in the drill-downs.
+**Reversible.** If a buyer wants B itself to honor the cap, that is a future per-RFP toggle (consolidate-to-cap vs breach-and-flag) on the same `max_sup_dc` knob — not implemented now; the default is breach-and-flag.
+**Surfaced by the dress rehearsal (Test Greens):** Delta retained on Spinach forced a 3rd supplier per DC under B → cap-breach flagged; the decision ratifies that as correct.
+**Linked:** ADR-0006 (decision-support, recommends-not-asserts), D28 (engine-derived), the v3 split allocator (§4.4), Scenario D.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
