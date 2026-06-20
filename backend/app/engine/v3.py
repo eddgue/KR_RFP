@@ -278,9 +278,7 @@ class V3Engine(Engine):
         return tuple(awards)
 
     @staticmethod
-    def _breach_set(
-        bids: Iterable[ScoredBid], config: EngineConfig
-    ) -> set[tuple[str, str]]:
+    def _breach_set(bids: Iterable[ScoredBid], config: EngineConfig) -> set[tuple[str, str]]:
         """Per (dc, tf): an award seating >max_sup_dc distinct suppliers is a cap-breach (§4.4).
 
         Computed from EACH scenario's own awards (not just B), so the flag is a property of the

@@ -115,9 +115,7 @@ def test_unknown_supplier_name_warns_not_quarantined_d21() -> None:
 
     def filler(ws, col, body_rows):  # type: ignore[no-untyped-def]
         # Corrupt one row's supplier display NAME to an unknown label (keys left intact), price all.
-        ws.cell(
-            row=body_rows[0], column=col[BidColumn.SUPPLIER.value], value="Unknown Vendor LLC"
-        )
+        ws.cell(row=body_rows[0], column=col[BidColumn.SUPPLIER.value], value="Unknown Vendor LLC")
         for row in body_rows:
             ws.cell(row=row, column=col[BidColumn.ALL_IN.value], value="100.00")
 

@@ -320,15 +320,11 @@ def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # t
 
     # The engine must see only ONE submission's worth of scoreable lines for the round.
     scoreable = db_session.execute(
-        text(
-            "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = true"
-        ),
+        text("SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = true"),
         {"c": cycle_id},
     ).scalar_one()
     superseded = db_session.execute(
-        text(
-            "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = false"
-        ),
+        text("SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = false"),
         {"c": cycle_id},
     ).scalar_one()
     assert scoreable == 8, "only the latest submission's lines stay scoreable"
@@ -384,9 +380,7 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     # The Summary banner carries the mid-cycle "Analysis v1" version heading.
     wb_align = load_workbook(alignment_path)
     summary = wb_align["Summary"]
-    banner = "\n".join(
-        str(summary.cell(row=r, column=1).value or "") for r in range(1, 6)
-    )
+    banner = "\n".join(str(summary.cell(row=r, column=1).value or "") for r in range(1, 6))
     assert "Analysis v1" in banner
     assert "Round 1" in banner
     # A live (non-rehearsal) run is stamped LIVE — never the demo's SYNTHETIC placeholder.

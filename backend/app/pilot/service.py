@@ -74,9 +74,14 @@ from app.pilot.vault import (
 # category the engine should prefer the incumbent on a near-tie. It only retains a *price-eligible*
 # incumbent — one over the premium ceiling is still gated, and that premium is surfaced for the
 # human to decide (Incumbent Retention tab), never silently paid.
+_BALANCED_WEIGHTS = PRESET_WEIGHTS[WeightPreset.BALANCED]  # single source of truth for the weights
 _DEFAULT_CONFIG = EngineConfig(
     preset=WeightPreset.BALANCED,
-    **PRESET_WEIGHTS[WeightPreset.BALANCED],  # single source of truth for the balanced weights
+    weight_price=_BALANCED_WEIGHTS["weight_price"],
+    weight_coverage=_BALANCED_WEIGHTS["weight_coverage"],
+    weight_historical=_BALANCED_WEIGHTS["weight_historical"],
+    weight_zrisk=_BALANCED_WEIGHTS["weight_zrisk"],
+    weight_continuity=_BALANCED_WEIGHTS["weight_continuity"],
     max_sup_dc=2,
     conc_thresh=Decimal("0.40"),
     global_premium_threshold=Decimal("0.12"),
@@ -120,9 +125,7 @@ class PilotService:
     # ------------------------------------------------------------------ #
     # step 0 — start run + setup
     # ------------------------------------------------------------------ #
-    def start_run(
-        self, *, commodity: str, label: str, rehearsal: bool = False
-    ) -> RunPaths:
+    def start_run(self, *, commodity: str, label: str, rehearsal: bool = False) -> RunPaths:
         """Create the run scaffold + its OWN blank database, write the Setup/Kickoff workbook.
 
         D30: when `isolate_db` is on, the run is born with a freshly created + migrated database of
@@ -134,9 +137,7 @@ class PilotService:
         run is torn down (folder removed + DB dropped) so a failed start never leaves an orphan.
         """
 
-        paths = create_run(
-            self.vault_root, commodity=commodity, label=label, rehearsal=rehearsal
-        )
+        paths = create_run(self.vault_root, commodity=commodity, label=label, rehearsal=rehearsal)
         try:
             if self.isolate_db:
                 provision_run_database(paths.slug)
@@ -174,17 +175,13 @@ class PilotService:
     # ------------------------------------------------------------------ #
     # notes + memory
     # ------------------------------------------------------------------ #
-    def remember(
-        self, runpaths: RunPaths, note: str, *, related_file: str | None = None
-    ) -> None:
+    def remember(self, runpaths: RunPaths, note: str, *, related_file: str | None = None) -> None:
         """Append a dated entry to NOTES.md; if `related_file` given, record it lives in memory/."""
 
         self._append_note(runpaths, note, related_file=related_file)
         git_commit_run(self.vault_root, runpaths.slug, "note added")
 
-    def add_memory(
-        self, runpaths: RunPaths, filename: str, data: bytes, note: str
-    ) -> Path:
+    def add_memory(self, runpaths: RunPaths, filename: str, data: bytes, note: str) -> Path:
         """Write `data` into memory/, append the linked NOTES.md entry, commit; return the path."""
 
         path = write_to_run(runpaths, SUBDIR_MEMORY, filename, data)
@@ -192,21 +189,15 @@ class PilotService:
         git_commit_run(self.vault_root, runpaths.slug, f"memory file added: {filename}")
         return path
 
-    def _append_note(
-        self, runpaths: RunPaths, note: str, *, related_file: str | None
-    ) -> None:
+    def _append_note(self, runpaths: RunPaths, note: str, *, related_file: str | None) -> None:
         today = datetime.now(UTC).date().isoformat()
         entry = f"- {today}: {note}"
         if related_file:
             entry += f" (file: `{related_file}` in memory/)"
         existing = (
-            runpaths.notes_md.read_text(encoding="utf-8")
-            if runpaths.notes_md.exists()
-            else ""
+            runpaths.notes_md.read_text(encoding="utf-8") if runpaths.notes_md.exists() else ""
         )
-        runpaths.notes_md.write_text(
-            existing.rstrip() + "\n" + entry + "\n", encoding="utf-8"
-        )
+        runpaths.notes_md.write_text(existing.rstrip() + "\n" + entry + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------ #
     # status + listing
@@ -236,9 +227,7 @@ class PilotService:
     # ================================================================== #
     # PART B — the rest of the cycle loop
     # ================================================================== #
-    def generate_bid_template(
-        self, session: Session, runpaths: RunPaths, round_no: int
-    ) -> Path:
+    def generate_bid_template(self, session: Session, runpaths: RunPaths, round_no: int) -> Path:
         """Generate the owned bid template for a round into inputs/ (step 1, D21 key-validated).
 
         Loads the persisted cycle (`load_cycle`), builds the round's `CycleScope`
@@ -261,9 +250,7 @@ class PilotService:
             runpaths,
             extra_waiting=[f"Fill in and upload the Round {round_no} bids (file `{filename}`)"],
         )
-        git_commit_run(
-            self.vault_root, runpaths.slug, f"round {round_no} bid template generated"
-        )
+        git_commit_run(self.vault_root, runpaths.slug, f"round {round_no} bid template generated")
         return path
 
     def ingest_bids(
@@ -504,9 +491,7 @@ class PilotService:
 
         booking = self._frozen_award_view(session, cycle, award_id, scenario_code)
         internal_name = stage_filename(self._stage("booking_guide"), "award_booking_guide")
-        supplier_name = stage_filename(
-            self._stage("booking_guide"), "award_supplier_guides"
-        )
+        supplier_name = stage_filename(self._stage("booking_guide"), "award_supplier_guides")
         synthetic = is_rehearsal(runpaths)
         write_booking_guide_internal_xlsx(
             cycle, booking, output_path=runpaths.outputs / internal_name, synthetic=synthetic
@@ -554,9 +539,7 @@ class PilotService:
             line_changes=line_changes,
         )
 
-        filename = stage_filename(
-            self._stage("post_award"), "post_award", version=version_no
-        )
+        filename = stage_filename(self._stage("post_award"), "post_award", version=version_no)
         out_path = runpaths.outputs / filename
         write_post_award_adjustments_xlsx(
             session, award_id=award_id, as_of_version=version_no, output_path=out_path
@@ -598,8 +581,7 @@ class PilotService:
                 row[0]: int(row[1])
                 for row in session.execute(
                     text(
-                        "SELECT round_id, round_number FROM cyc.cycle_round "
-                        "WHERE cycle_id = :cyc"
+                        "SELECT round_id, round_number FROM cyc.cycle_round WHERE cycle_id = :cyc"
                     ),
                     {"cyc": cycle_id},
                 ).all()
@@ -617,9 +599,7 @@ class PilotService:
 
             award_rows = list(
                 session.execute(
-                    select(Award)
-                    .where(Award.cycle_id == cycle_id)
-                    .order_by(Award.frozen_at)
+                    select(Award).where(Award.cycle_id == cycle_id).order_by(Award.frozen_at)
                 )
                 .scalars()
                 .all()
@@ -630,15 +610,11 @@ class PilotService:
                         "award_id": award.award_id,
                         "award_code": award.award_code,
                         "scenario_code": award.scenario_code,
-                        "versions": awd_service.award_versions(
-                            session, award_id=award.award_id
-                        ),
+                        "versions": awd_service.award_versions(session, award_id=award.award_id),
                     }
                 )
 
-        output_files = sorted(
-            p.name for p in runpaths.outputs.glob("*.xlsx") if p.is_file()
-        )
+        output_files = sorted(p.name for p in runpaths.outputs.glob("*.xlsx") if p.is_file())
         return {
             "cycle_id": cycle_id,
             "analysis_runs": analysis_runs,
@@ -675,9 +651,7 @@ class PilotService:
         round_number_by_id = {
             row[0]: int(row[1])
             for row in session.execute(
-                text(
-                    "SELECT round_id, round_number FROM cyc.cycle_round WHERE cycle_id = :cyc"
-                ),
+                text("SELECT round_id, round_number FROM cyc.cycle_round WHERE cycle_id = :cyc"),
                 {"cyc": cycle_id},
             ).all()
         }
@@ -718,9 +692,7 @@ class PilotService:
                 {
                     "award_code": award["award_code"],
                     "scenario": award["scenario_code"],
-                    "lines": self._award_lines_by_name(
-                        session, str(award["award_id"]), name_by_id
-                    ),
+                    "lines": self._award_lines_by_name(session, str(award["award_id"]), name_by_id),
                     "versions": [
                         {
                             "version": v["version_no"],
@@ -803,8 +775,10 @@ class PilotService:
         lines: list[str] = [f"# Development feedback — {runpaths.slug}", ""]
         lines.append(f"_Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC from the sealed records._")
         lines.append("")
-        lines.append(f"**Cycle:** {cycle.cycle_name} — {len(cycle.dcs)} DCs, {len(cycle.lots)} "
-                     f"lots, {len(cycle.suppliers)} suppliers, {len(cycle.rounds)} rounds.")
+        lines.append(
+            f"**Cycle:** {cycle.cycle_name} — {len(cycle.dcs)} DCs, {len(cycle.lots)} "
+            f"lots, {len(cycle.suppliers)} suppliers, {len(cycle.rounds)} rounds."
+        )
         lines.append("")
 
         # --- Data quality & competition (the signals that improve the engine/invite list) ---
@@ -850,10 +824,14 @@ class PilotService:
                 ).all()
             }
             no_bid = scope_cells - covered
-            lines.append(f"- **No-bid lots:** {len(no_bid)} of {len(scope_cells)} (DC × lot) had "
-                         f"no priced bid in Round {scored_round_no} — coverage gaps to chase.")
-            lines.append(f"- **Thin competition (<3 bidders):** {len(thin)} (DC × lot) — consider "
-                         "widening the invite list there; Z-scores are less reliable.")
+            lines.append(
+                f"- **No-bid lots:** {len(no_bid)} of {len(scope_cells)} (DC × lot) had "
+                f"no priced bid in Round {scored_round_no} — coverage gaps to chase."
+            )
+            lines.append(
+                f"- **Thin competition (<3 bidders):** {len(thin)} (DC × lot) — consider "
+                "widening the invite list there; Z-scores are less reliable."
+            )
             if flag_tally:
                 lines.append(f"- **Eligibility/gate flags raised (Round {scored_round_no}):**")
                 for reason, n in sorted(flag_tally.items(), key=lambda kv: -kv[1]):
@@ -875,8 +853,10 @@ class PilotService:
                 ),
                 {"run": latest_run},
             ).scalar_one()
-            lines.append(f"- Recommended (Scenario B) cap-breach cells: {int(breaches)} "
-                         "(a DC carrying more than the max suppliers).")
+            lines.append(
+                f"- Recommended (Scenario B) cap-breach cells: {int(breaches)} "
+                "(a DC carrying more than the max suppliers)."
+            )
         else:
             lines.append("- No recommendation yet.")
         lines.append("")
@@ -885,8 +865,10 @@ class PilotService:
         normalized = sorted(p.name for p in runpaths.inputs.glob("*bids_normalized*"))
         lines.append("## Template fit")
         if normalized:
-            lines.append(f"- Flexible ingest was used {len(normalized)} time(s) — a supplier file "
-                         "didn't match the owned template and had to be re-mapped:")
+            lines.append(
+                f"- Flexible ingest was used {len(normalized)} time(s) — a supplier file "
+                "didn't match the owned template and had to be re-mapped:"
+            )
             for nm in normalized:
                 lines.append(f"    - `{nm}`")
             lines.append("  → recurring re-mappings signal a template/guidance gap worth closing.")
@@ -900,10 +882,13 @@ class PilotService:
         hist_awards = cast(list[dict[str, object]], hist["awards"])
         n_adj = sum(len(cast(list[object], a["versions"])) - 1 for a in hist_awards)
         lines.append("## Process")
-        lines.append(f"- Alignment runs sealed: {len(hist_runs)} "
-                     f"(re-runs beyond one per round = mid-cycle iterations).")
-        lines.append(f"- Awards frozen: {len(hist_awards)}; post-award renegotiation versions: "
-                     f"{n_adj}.")
+        lines.append(
+            f"- Alignment runs sealed: {len(hist_runs)} "
+            f"(re-runs beyond one per round = mid-cycle iterations)."
+        )
+        lines.append(
+            f"- Awards frozen: {len(hist_awards)}; post-award renegotiation versions: {n_adj}."
+        )
         lines.append("")
 
         # --- Sponsor notes (their own feedback captured during the run) ---
@@ -917,8 +902,10 @@ class PilotService:
         else:
             lines.append("- (none recorded)")
         lines.append("")
-        lines.append("_Data stays in the private vault (clean-room); the platform team reviews "
-                     "STRUCTURE + these signals to adapt the engine, templates, and analysis._")
+        lines.append(
+            "_Data stays in the private vault (clean-room); the platform team reviews "
+            "STRUCTURE + these signals to adapt the engine, templates, and analysis._"
+        )
 
         runpaths.feedback_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return runpaths.feedback_file
@@ -1248,9 +1235,7 @@ class PilotService:
     ) -> tuple[_BookingCell, ...]:
         """Build booking cells from (dc, lot, tf, supplier, share, price) + the cycle economics."""
 
-        item_for_lot = {
-            cycle.lots[i].id: cycle.items[i].id for i in range(len(cycle.lots))
-        }
+        item_for_lot = {cycle.lots[i].id: cycle.items[i].id for i in range(len(cycle.lots))}
         cells: list[_BookingCell] = []
         for dc_id, lot_id, tf_id, supplier_id, volume_share, awarded_price in rows:
             cells.append(
@@ -1265,9 +1250,7 @@ class PilotService:
                     period_cases=cycle.period_cases_by_cell.get(
                         (dc_id, lot_id, tf_id), Decimal("0")
                     ),
-                    routing_baseline=cycle.incumbent_routing.get(
-                        (dc_id, lot_id), Decimal("0")
-                    ),
+                    routing_baseline=cycle.incumbent_routing.get((dc_id, lot_id), Decimal("0")),
                 )
             )
         return tuple(cells)
@@ -1277,9 +1260,7 @@ class PilotService:
         """The 1-based ordinal of THIS sealed run among the cycle's runs (matches the doc)."""
 
         this_run = session.execute(
-            select(AnalysisRun.run_started_at).where(
-                AnalysisRun.analysis_run_id == analysis_run_id
-            )
+            select(AnalysisRun.run_started_at).where(AnalysisRun.analysis_run_id == analysis_run_id)
         ).scalar_one()
         return int(
             session.execute(

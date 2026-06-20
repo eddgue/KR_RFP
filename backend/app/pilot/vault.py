@@ -112,9 +112,7 @@ def run_paths(vault_root: Path, slug: str) -> RunPaths:
 # ---------------------------------------------------------------------------
 # normalized workflow-stage file naming (§2)
 # ---------------------------------------------------------------------------
-def stage_filename(
-    stage: int, label: str, *, version: int | None = None, ext: str = "xlsx"
-) -> str:
+def stage_filename(stage: int, label: str, *, version: int | None = None, ext: str = "xlsx") -> str:
     """Normalized, zero-padded, workflow-stage filename so files sort by the step that made them.
 
     >>> stage_filename(1, "setup_kickoff")
@@ -198,9 +196,7 @@ def create_run(
     paths = _build_run_paths(vault_root, slug)
     for subdir in (paths.inputs, paths.outputs, paths.memory):
         subdir.mkdir(parents=True, exist_ok=False)
-    paths.run_md.write_text(
-        _seed_run_md(slug, commodity=commodity, label=label), encoding="utf-8"
-    )
+    paths.run_md.write_text(_seed_run_md(slug, commodity=commodity, label=label), encoding="utf-8")
     paths.notes_md.write_text(_seed_notes_md(slug, label=label), encoding="utf-8")
     # cycle_id.txt is created empty (the link is written on setup ingest); keeps the scaffold
     # structurally identical from the first commit.
@@ -261,9 +257,7 @@ def write_to_run(runpaths: RunPaths, subdir: str, filename: str, data: bytes) ->
     """Write `data` to `runs/<slug>/<subdir>/<filename>` and return the path (no commit here)."""
 
     if subdir not in _SUBDIRS:
-        raise ValueError(
-            f"unknown run subdir {subdir!r}; expected one of {', '.join(_SUBDIRS)}"
-        )
+        raise ValueError(f"unknown run subdir {subdir!r}; expected one of {', '.join(_SUBDIRS)}")
     target_dir = runpaths.root / subdir
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / filename
@@ -332,7 +326,12 @@ def _git(vault_root: Path, *args: str) -> bool:
 # outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
 _ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
 _ARCHIVE_FILES = (
-    _NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, FEEDBACK_NAME, _CYCLE_ID_NAME, REHEARSAL_NAME
+    _NOTES_NAME,
+    _RUN_NAME,
+    RUN_DATA_NAME,
+    FEEDBACK_NAME,
+    _CYCLE_ID_NAME,
+    REHEARSAL_NAME,
 )
 
 

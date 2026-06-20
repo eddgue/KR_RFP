@@ -577,9 +577,7 @@ def _parse_resolved_row(
 
     supplier_id = resolver.resolve_supplier(supplier_label)
     if supplier_id is None:
-        return QuarantinedRow(
-            row_number, QuarantineReason.UNRESOLVED_SUPPLIER, supplier_label, raw
-        )
+        return QuarantinedRow(row_number, QuarantineReason.UNRESOLVED_SUPPLIER, supplier_label, raw)
     dc_id = resolver.resolve_dc(dc_label)
     if dc_id is None:
         return QuarantinedRow(row_number, QuarantineReason.UNRESOLVED_DC, dc_label, raw)

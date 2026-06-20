@@ -68,8 +68,12 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
             "(:i1, :c1, :n1, true), (:i2, :c2, :n2, true)"
         ),
         {
-            "i1": dc1, "c1": "DC01", "n1": "Atlanta DC",
-            "i2": dc2, "c2": "DC02", "n2": "Denver DC",
+            "i1": dc1,
+            "c1": "DC01",
+            "n1": "Atlanta DC",
+            "i2": dc2,
+            "c2": "DC02",
+            "n2": "Denver DC",
         },
     )
     session.execute(
@@ -88,8 +92,12 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
             "(:cid, :code, :name, :com, 'OPEN', 'synthetic test', :ted, 3, :ts, 'tester')"
         ),
         {
-            "cid": cycle_id, "code": f"CYC-{cycle_id[:8]}", "name": "Test Berries Cycle",
-            "com": commodity_id, "ted": date(2026, 9, 1), "ts": now,
+            "cid": cycle_id,
+            "code": f"CYC-{cycle_id[:8]}",
+            "name": "Test Berries Cycle",
+            "com": commodity_id,
+            "ted": date(2026, 9, 1),
+            "ts": now,
         },
     )
     session.execute(
@@ -125,8 +133,12 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
             "'tester')"
         ),
         {
-            "rid": run_id, "cid": cycle_id, "rnd": round_id,
-            "ih": "hash" + "0" * 8, "oh": "hash" + "1" * 8, "ts": now,
+            "rid": run_id,
+            "cid": cycle_id,
+            "rnd": round_id,
+            "ih": "hash" + "0" * 8,
+            "oh": "hash" + "1" * 8,
+            "ts": now,
         },
     )
     session.execute(
@@ -144,18 +156,34 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
             "(:a2, :sid, :dc2, :lot, :tf, :s2, 0.4, 120.00, true)"
         ),
         {
-            "a1": _id(), "a2": _id(), "sid": scenario_id, "lot": lot1, "tf": tf1,
-            "dc1": dc1, "dc2": dc2, "s1": sup1, "s2": sup2,
+            "a1": _id(),
+            "a2": _id(),
+            "sid": scenario_id,
+            "lot": lot1,
+            "tf": tf1,
+            "dc1": dc1,
+            "dc2": dc2,
+            "s1": sup1,
+            "s2": sup2,
         },
     )
     session.flush()
 
     return {
-        "cycle_id": cycle_id, "run_id": run_id,
-        "dc1": dc1, "dc2": dc2, "sup1": sup1, "sup2": sup2, "lot1": lot1, "tf1": tf1,
-        "dc1_name": "Atlanta DC", "dc2_name": "Denver DC",
-        "sup1_name": "Fresh Valley Farms", "sup2_name": "Sunrise Produce Co",
-        "lot_name": "Strawberries Lot", "tf_name": "Spring Period",
+        "cycle_id": cycle_id,
+        "run_id": run_id,
+        "dc1": dc1,
+        "dc2": dc2,
+        "sup1": sup1,
+        "sup2": sup2,
+        "lot1": lot1,
+        "tf1": tf1,
+        "dc1_name": "Atlanta DC",
+        "dc2_name": "Denver DC",
+        "sup1_name": "Fresh Valley Farms",
+        "sup2_name": "Sunrise Produce Co",
+        "lot_name": "Strawberries Lot",
+        "tf_name": "Spring Period",
     }
 
 
@@ -255,9 +283,7 @@ def test_freeze_then_versioned_adjustments(db_session: Session, tmp_path: Path) 
 
     # ---- The versioned doc: explicit Version heading + names not keys. ----
     out_v2 = tmp_path / "post_award_v2.xlsx"
-    write_post_award_adjustments_xlsx(
-        db_session, award_id=award_id, output_path=out_v2
-    )
+    write_post_award_adjustments_xlsx(db_session, award_id=award_id, output_path=out_v2)
     wb = load_workbook(out_v2)
 
     # The Version heading: banner title + the bold "Version N · as of <date>" subtitle (v2).

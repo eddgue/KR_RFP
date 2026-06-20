@@ -53,7 +53,10 @@ jobs:
       - name: Install backend (dev extras)
         run: pip install -e "backend/[dev]"
       - name: mypy
-        run: mypy backend/app
+        # Run from backend/ so mypy finds its config (pydantic plugin + 3rd-party import
+        # overrides in backend/pyproject.toml); from the repo root that config isn't picked up.
+        working-directory: backend
+        run: mypy app
 
   # 3. reference-guard — the clean-room invariant (ADR-0001). Runs the test that fails if
   #    backend/ imports from reference/. This gate is a program non-negotiable, not a lint nicety.

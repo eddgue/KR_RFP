@@ -314,9 +314,7 @@ class EngineRunner:
             for (dc, lot, tf), total in by_cell.items()
         ]
 
-    def _assemble_incumbents(
-        self, incumbents: tuple[IncumbentRow, ...]
-    ) -> list[IncumbentBaseline]:
+    def _assemble_incumbents(self, incumbents: tuple[IncumbentRow, ...]) -> list[IncumbentBaseline]:
         return [
             IncumbentBaseline(
                 dc_no=inc.dc_id,
@@ -473,9 +471,7 @@ def _outputs_manifest(result: EngineResult) -> dict[str, object]:
 
     return {
         "engine_version": result.engine_version,
-        "scores": sorted(
-            [[s.bid_id, str(s.rec_score), s.eligible] for s in result.scores]
-        ),
+        "scores": sorted([[s.bid_id, str(s.rec_score), s.eligible] for s in result.scores]),
         "scenarios": sorted([[s.code.value, s.label] for s in result.scenarios]),
         "awards": sorted(
             [
@@ -497,9 +493,7 @@ def _outputs_manifest(result: EngineResult) -> dict[str, object]:
     }
 
 
-def _scenario_spend(
-    result: EngineResult, inputs: EngineInputs
-) -> dict[ScenarioCode, Decimal]:
+def _scenario_spend(result: EngineResult, inputs: EngineInputs) -> dict[ScenarioCode, Decimal]:
     """Per-lens objective spend: sum over the lens's awards of price * cell volume * share.
 
     A decision-support comparison figure (e.g. Scenario A lowest-cost benchmark vs Scenario B),

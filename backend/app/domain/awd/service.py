@@ -114,8 +114,7 @@ def freeze_award(
         )
         .join(
             AnalysisScenario,
-            AnalysisScenario.analysis_scenario_id
-            == AnalysisScenarioAward.analysis_scenario_id,
+            AnalysisScenario.analysis_scenario_id == AnalysisScenarioAward.analysis_scenario_id,
         )
         .where(
             AnalysisScenario.analysis_run_id == analysis_run_id,
@@ -264,19 +263,13 @@ def award_versions(session: Session, *, award_id: str) -> list[VersionRow]:
     reason, who/when, and the count of cells it changed.
     """
 
-    award = session.execute(
-        select(Award).where(Award.award_id == award_id)
-    ).scalar_one_or_none()
+    award = session.execute(select(Award).where(Award.award_id == award_id)).scalar_one_or_none()
     if award is None:
         return []
 
-    baseline_cells = (
-        session.execute(
-            select(func.count())
-            .select_from(AwardLine)
-            .where(AwardLine.award_id == award_id)
-        ).scalar_one()
-    )
+    baseline_cells = session.execute(
+        select(func.count()).select_from(AwardLine).where(AwardLine.award_id == award_id)
+    ).scalar_one()
 
     history: list[VersionRow] = [
         VersionRow(
