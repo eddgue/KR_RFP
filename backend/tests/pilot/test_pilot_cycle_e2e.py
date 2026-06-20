@@ -53,7 +53,7 @@ from app.pilot.setup_template import (
 from app.pilot.setup_template import (
     HEADER_ROW as SETUP_HEADER_ROW,
 )
-from app.pilot.vault import stage_filename
+from app.pilot.vault import is_rehearsal, stage_filename
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +383,9 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     )
     assert "Analysis v1" in banner
     assert "Round 1" in banner
+    # A live (non-rehearsal) run is stamped LIVE — never the demo's SYNTHETIC placeholder.
+    assert "LIVE CYCLE DATA" in banner
+    assert "SYNTHETIC" not in banner
 
     # 3) freeze the award (human selects Scenario B) → booking guides.
     analysis_run_id = _latest_run_id(db_session, cycle_id)
@@ -474,6 +477,89 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
     service.purge_run(slug)
     assert not paths.root.exists()
     assert zip_path.is_file()
+
+
+def _all_cell_text(path: Path) -> str:
+    """Every string cell across every sheet of a workbook, joined — for provenance assertions."""
+
+    wb = load_workbook(path)
+    chunks: list[str] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            chunks.extend(str(v) for v in row if isinstance(v, str))
+    return "\n".join(chunks)
+
+
+@pytest.mark.integration
+def test_rehearsal_run_stamps_synthetic_provenance(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """A rehearsal run marks EVERY artifact SYNTHETIC — never 'LIVE CYCLE DATA — real names'.
+
+    The finding from the dress rehearsal: synthetic Test Greens output was stamped "LIVE CYCLE DATA
+    — real names & prices", indistinguishable from a real cycle. A run started with rehearsal=True
+    carries the .rehearsal sentinel; run_round and freeze_award read it and stamp the workbooks
+    SYNTHETIC, so a rehearsal can never be mistaken for a live cycle.
+    """
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Test Greens", label="Rehearsal", rehearsal=True)
+    # The provenance sentinel exists and is_rehearsal sees it.
+    assert (paths.root / ".rehearsal").is_file()
+    assert is_rehearsal(paths)
+
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup())
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+
+    template_path = service.generate_bid_template(db_session, paths, 1)
+    template_path.write_bytes(_fill_bid_template(template_path.read_bytes()))
+    service.ingest_bids(db_session, paths, 1, template_path)
+
+    # The alignment workbook stays SYNTHETIC — the LIVE restamp must NOT have fired.
+    alignment_path = service.run_round(db_session, paths, 1)
+    align_text = _all_cell_text(alignment_path)
+    assert "SYNTHETIC" in align_text
+    assert "LIVE CYCLE DATA" not in align_text
+
+    # The booking guides are stamped SYNTHETIC too (not "real names & prices").
+    analysis_run_id = _latest_run_id(db_session, cycle_id)
+    service.freeze_award(
+        db_session,
+        paths,
+        analysis_run_id=analysis_run_id,
+        scenario_code="B",
+        award_code="AWD-REH-1",
+    )
+    bg_text = _all_cell_text(paths.outputs / "08_award_booking_guide.xlsx")
+    assert "SYNTHETIC" in bg_text
+    assert "real names & prices" not in bg_text
+
+    # The sentinel rides the close-out archive so the provenance travels with the run.
+    zip_path = service.close_run(paths)
+    with zipfile.ZipFile(zip_path) as zf:
+        assert f"{paths.slug}/.rehearsal" in zf.namelist()
+
+
+def test_failed_start_leaves_no_orphan_run(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A start that fails after the scaffold is created tears the partial run down (finding #2).
+
+    The dress rehearsal left orphan run folders (and provisioned databases) behind when a
+    run_start aborted partway. start_run now wraps the post-scaffold steps and, on any failure,
+    purges the folder (and drops the isolated DB) so a failed start leaves nothing.
+    """
+
+    service = PilotService(tmp_path, isolate_db=False)
+
+    def _boom() -> bytes:
+        raise RuntimeError("setup generation blew up after the scaffold was created")
+
+    monkeypatch.setattr("app.pilot.service.build_setup_workbook", _boom)
+    with pytest.raises(RuntimeError):
+        service.start_run(commodity="Test Greens", label="Orphan")
+
+    # No run folder is left behind — the partial run was cleaned up.
+    runs_dir = tmp_path / "runs"
+    leftover = list(runs_dir.iterdir()) if runs_dir.exists() else []
+    assert leftover == []
 
 
 @pytest.mark.integration

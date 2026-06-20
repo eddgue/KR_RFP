@@ -81,11 +81,22 @@ class BookingAwardView(Protocol):
     def cells(self) -> Sequence[BookingCellView]: ...
 
 
+def _provenance_line(synthetic: bool) -> str:
+    """The provenance token for a booking-guide strap — SYNTHETIC for a rehearsal, else LIVE."""
+
+    return (
+        "SYNTHETIC — names & prices invented"
+        if synthetic
+        else "LIVE CYCLE DATA — real names & prices"
+    )
+
+
 def write_booking_guide_internal_xlsx(
     cycle: CycleView,
     award: BookingAwardView,
     *,
     output_path: Path,
+    synthetic: bool = False,
 ) -> Path:
     """The buyers/pricing master booking guide (D22 internal version) — FROM THE AWARD.
 
@@ -117,7 +128,7 @@ def write_booking_guide_internal_xlsx(
         Col("FOB $/case", 14, NUMFMT_MONEY),
         Col("Landed $/case", 14, NUMFMT_MONEY),
         Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
-        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
+        Col("Line Spend", 20, NUMFMT_MONEY, total="sum"),
         Col("Routing Baseline $/case", 20, NUMFMT_MONEY),
         Col("Savings vs Baseline", 16, NUMFMT_PCT),
         Col("Key ref (DC·lot·sup)", 22),  # traceability — names lead, keys trail (D23)
@@ -161,7 +172,7 @@ def write_booking_guide_internal_xlsx(
         subtitle_lines=[
             f"Awarded from Scenario {award.scenario_code} ({award.scenario_label}) · "
             f"post-award: selected → awarded → frozen → signed off (D22)",
-            f"Generated {date.today():%Y-%m-%d} · SYNTHETIC names & prices · "
+            f"Generated {date.today():%Y-%m-%d} · {_provenance_line(synthetic)} · "
             f"{DECISION_SUPPORT_STRAP}",
         ],
         columns=columns,
@@ -178,6 +189,7 @@ def write_supplier_award_guides_xlsx(
     award: BookingAwardView,
     *,
     output_path: Path,
+    synthetic: bool = False,
 ) -> Path:
     """The per-supplier award guides (D22 per-supplier version) — one SHEET per awarded supplier.
 
@@ -207,7 +219,7 @@ def write_supplier_award_guides_xlsx(
         Col("Volume Share", 13, NUMFMT_PCT),
         Col("Awarded Period Cases", 18, NUMFMT_INT, total="sum"),
         Col("Awarded $/case", 16, NUMFMT_MONEY),
-        Col("Line Spend (synthetic)", 20, NUMFMT_MONEY, total="sum"),
+        Col("Line Spend", 20, NUMFMT_MONEY, total="sum"),
     ]
     header_row = 5  # title banner occupies rows 1-4
     # Stable, readable order: awarded suppliers by name.
@@ -237,7 +249,8 @@ def write_supplier_award_guides_xlsx(
             title=f"AWARD GUIDE — {sup_disp}",
             subtitle_lines=[
                 f"{cycle.cycle_name}: here is what you've been awarded",
-                f"Generated {date.today():%Y-%m-%d} · SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+                f"Generated {date.today():%Y-%m-%d} · {_provenance_line(synthetic)} · "
+                f"{DECISION_SUPPORT_STRAP}",
             ],
             columns=columns,
             n_body_rows=n_rows,

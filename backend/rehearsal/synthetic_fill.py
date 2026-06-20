@@ -41,8 +41,12 @@ INCUMBENT = "Delta Fresh"  # the incumbent across all cells (so retention has so
 TF = ("Spring Test", "2026-04-01", "2026-06-30", 13)
 ROUNDS = 3
 WEEKLY = {0: 400, 1: 300, 2: 200}  # weekly cases per lot index
-# base all-in price per (supplier index -> [price per lot index]); the incumbent (Delta=3) is HIGH.
-BASE = {0: [12.0, 14.0, 11.0], 1: [12.5, 13.5, 11.5], 2: [13.0, 14.5, 12.0], 3: [22.0, 24.0, 20.0]}
+# base all-in price per (supplier index -> [price per lot index]); lots: 0 Spring Mix, 1 Romaine,
+# 2 Spinach. The incumbent (Delta=3) prices itself OUT on Spring Mix + Romaine (surfaced in the
+# Incumbent Retention tab as a premium to keep), but stays COMPETITIVE on Spinach (11.2 vs the 11.0
+# floor) — a near-tie where the continuity factor can actually preserve the relationship, so the
+# rehearsal exercises retention, not just "all gated by premium".
+BASE = {0: [12.0, 14.0, 11.0], 1: [12.5, 13.5, 11.5], 2: [13.0, 14.5, 12.0], 3: [22.0, 24.0, 11.2]}
 
 
 def _hdrmap(ws: Worksheet, header_row: int) -> dict[str, int]:

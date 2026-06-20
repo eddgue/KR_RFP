@@ -168,17 +168,25 @@ def _lookup_name(index: dict[str, str], name: object, label: str) -> str:
 # tools — start / list / status
 # --------------------------------------------------------------------------- #
 @app.tool()
-def run_start(commodity: str, label: str) -> str:
+def run_start(commodity: str, label: str, rehearsal: bool = False) -> str:
     """Start a new RFP run: stamp the vault folder + generate the Setup/Kickoff workbook.
 
-    Returns the run slug (use it for every later call) + the file the sponsor fills next.
+    Returns the run slug (use it for every later call) + the file the sponsor fills next. Set
+    `rehearsal=true` for a practice run on synthetic data — every artifact it generates is stamped
+    SYNTHETIC so it can never be mistaken for a live cycle.
     """
 
-    paths = _service().start_run(commodity=commodity, label=label)
+    paths = _service().start_run(commodity=commodity, label=label, rehearsal=rehearsal)
     setup = paths.inputs / "01_setup_kickoff.xlsx"
+    mode = (
+        "  Mode: REHEARSAL — synthetic data (artifacts stamped SYNTHETIC).\n"
+        if rehearsal
+        else ""
+    )
     return (
         f"Started the {commodity} run.\n"
         f"  Run: {paths.slug}\n"
+        f"{mode}"
         f"  Next: fill in the Setup/Kickoff workbook I generated at "
         f"`inputs/{setup.name}`, then upload it back into this run's inputs/ and tell me to "
         f"ingest the setup."

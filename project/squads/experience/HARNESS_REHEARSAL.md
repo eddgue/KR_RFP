@@ -30,25 +30,35 @@ export DATABASE_URL="postgresql+psycopg://app:app@localhost:5432/kr_rfp"
 cd KR_RFP/backend && .venv/bin/alembic upgrade head
 
 # the app role must be able to create per-run databases (D30)
-sudo -u postgres psql -d postgres -c "ALTER ROLE app CREATEDB;"
+psql -d postgres -c "ALTER ROLE app CREATEDB;"   # (Homebrew: connects as your user; Linux: sudo -u postgres)
 
 # a throwaway vault folder — this is the entire "prime the vault" step
 mkdir -p ~/rfp-rehearsal-vault
 
-# these two names are what mcp/.mcp.json substitutes — export them, not PILOT_VAULT_ROOT
-export KR_RFP_BACKEND="$(pwd)"            # the backend/ checkout (cwd above)
-export RFP_PILOT_VAULT="$HOME/rfp-rehearsal-vault"
+# register the MCP server with ABSOLUTE paths (the reliable method — see note below).
+# run this from the KR_RFP repo root so --scope local keys to this project:
+cd ..
+claude mcp add rfp-pilot --scope local \
+  --env DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/kr_rfp \
+  --env PILOT_VAULT_ROOT="$HOME/rfp-rehearsal-vault" \
+  --env PYTHONPATH="$PWD/backend" \
+  -- "$PWD/backend/.venv/bin/python" -m rfp_mcp.rfp_pilot_server
+claude mcp list      # expect: rfp-pilot ... ✓ Connected
 
-# launch Claude Code with the harness plugin loaded from the local folder
-cd .. && claude --plugin-dir ./mcp        # from the KR_RFP repo root (or --plugin-dir /path/to/RFP_MCP)
+# launch Claude Code with the harness plugin (agents + skill) loaded from the local folder
+claude --plugin-dir ./mcp
 ```
 
-> The plugin auto-registers the `rfp-pilot` MCP server from `mcp/.mcp.json`, which maps
-> `${RFP_PILOT_VAULT}` → the server's `PILOT_VAULT_ROOT` env var. Export the two names above in the
-> same shell you launch `claude` from.
+> **Why `claude mcp add` and not just the plugin's `.mcp.json`?** `--plugin-dir` reliably loads the
+> agents + skill, but autoloading the plugin's MCP server (and substituting `${ENV}` in it) varies by
+> Claude Code version — in the first rehearsal the server silently failed to start because its path
+> placeholders weren't substituted. Registering it once with absolute paths + `PYTHONPATH` (so
+> `rfp_mcp` imports without depending on the process CWD) is deterministic. The plugin's `.mcp.json`
+> now uses `${CLAUDE_PLUGIN_ROOT}` and may also work directly; `claude mcp add` is the guaranteed path.
 
-The plugin registers the `rfp-pilot` MCP server and the three agents (orchestrator skill +
-`rfp-engine` + `rfp-secretary`). You talk to the **orchestrator**; it delegates.
+The plugin registers the three agents (orchestrator skill + `rfp-engine` + `rfp-secretary`); the
+`claude mcp add` step registers the `rfp-pilot` MCP server they call. You talk to the
+**orchestrator**; it delegates.
 
 ## 2. How you drive it
 
@@ -65,9 +75,9 @@ engine or the secretary — watch that it does (see §4).
 
 | # | Say to the orchestrator | Then run / upload | Watch for |
 |---|---|---|---|
-| 1 | "Start a Test Greens run." | `python -m rehearsal.synthetic_fill setup <inputs>/01_setup_kickoff.xlsx` → tell it to ingest setup | secretary did `run_start`; engine did `setup_ingest`; cycle = 3 DCs, 3 lots, 4 suppliers, 3 rounds |
-| 2 | "Generate the Round 1 bid template." | `synthetic_fill bids <inputs>/0X_round1_bid_template.xlsx 1` → "load Round 1 bids" | engine generated + ingested; ~11 priced lines (Gamma skips Spinach = NO-BID) |
-| 3 | "Run the Round 1 alignment." | — | engine sealed Analysis v1; names the file; **incumbent Delta Fresh retained where price-eligible** |
+| 1 | "Start a Test Greens run **as a rehearsal**." | `python -m rehearsal.synthetic_fill setup <inputs>/01_setup_kickoff.xlsx` → tell it to ingest setup | secretary did `run_start` **with rehearsal=true** (artifacts stamped SYNTHETIC); engine did `setup_ingest`; cycle = 3 DCs, 3 lots, 4 suppliers, 3 rounds |
+| 2 | "Generate the Round 1 bid template." | `synthetic_fill bids <inputs>/0X_round1_bid_template.xlsx 1` → "load Round 1 bids" | engine generated + ingested; **33 priced lines** (3 DCs × 3 lots × 4 suppliers − Gamma's 3 Spinach NO-BIDs) |
+| 3 | "Run the Round 1 alignment." | — | engine sealed Analysis v1; names the file; the file is stamped **SYNTHETIC, never "LIVE CYCLE DATA"**; Delta priced out on Spring Mix/Romaine (surfaced in **Incumbent Retention**) but **competitive on Spinach** so continuity is in play |
 | 4 | **EDGE — re-run R1.** "Re-run Round 1." | — | new version v2 (not an overwrite); engine, not secretary |
 | 5 | "Round 2 template / bids / run." | `synthetic_fill bids ...round2... 2` | drift down; Analysis v3; round-over-round movement shows |
 | 6 | **EDGE — flex ingest.** "Round 3 template; I have Alpha's own file." | `synthetic_fill bids ...round3... 3` (the others) + `synthetic_fill messy <round3 template> /tmp/alpha_messy.xlsx` → upload, "ingest this as-is" | engine proposes the column mapping (confirm=false) → you confirm → ingests; supersedes Alpha's bulk line |
@@ -94,6 +104,11 @@ Tick every box. A miss is a finding to fix in the skill/agent definitions, not s
       session's agent/model indicator.
 - [ ] **Isolation held.** The two concurrent runs used separate databases (no `DC01` collision); the
       shared `kr_rfp` DB stayed empty of run cycles; purge dropped the run DB.
+- [ ] **Provenance is honest.** Every rehearsal artifact (alignment workbooks + booking guides) is
+      stamped **SYNTHETIC** — never "LIVE CYCLE DATA — real names & prices". (A real run is the
+      inverse: LIVE, never SYNTHETIC.)
+- [ ] **No orphans.** A failed/aborted `run_start` leaves no run folder and no leftover
+      `kr_rfp_run_*` database. `run_list` shows only the runs you actually started.
 - [ ] **Voice + governance.** Buyer language, one ask at a time, names-not-keys, and inbound data only
       via request → upload → ingest.
 
@@ -111,6 +126,8 @@ When the rehearsal passes, the only changes for a real cycle are **where the vau
   only commits locally.
 - Pin the plugin to the released tag (`RFP_MCP` `v0.1.0`) so the live run is frozen against ongoing
   development (D32).
-- Use the real fill-out docs (the buyer/suppliers fill them) — **stop using `synthetic_fill`**. Real
-  runs are stamped "LIVE CYCLE DATA"; the rehearsal's "Test Greens" can never be mistaken for one.
+- Start the run **without** the rehearsal flag (`rehearsal=false`, the default) — a live run is
+  stamped **"LIVE CYCLE DATA — real names & prices"**, while a rehearsal is stamped SYNTHETIC, so the
+  two can never be confused in the output files.
+- Use the real fill-out docs (the buyer/suppliers fill them) — **stop using `synthetic_fill`**.
 - Each real run still gets its own isolated database automatically (D30).

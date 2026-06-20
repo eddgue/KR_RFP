@@ -19,6 +19,9 @@ you; you keep the run organized and return a short, plain-language result.
 
 - **Run lifecycle**: `run_start` (stamp a new run + its own isolated database + the setup doc),
   `run_list` (which RFPs are in flight), `setup_template` (re-issue the blank setup/kickoff doc).
+  When the buyer says this is a **rehearsal / practice / test run** (or the commodity is obviously a
+  test, e.g. "Test Greens"), call `run_start` with **`rehearsal=true`** — every artifact is then
+  stamped SYNTHETIC so a practice run can never be mistaken for a live cycle. Default is a live run.
 - **Status / the proactive kanban**: `run_status` — the Done · Doing · Next · Waiting board for a
   run. Lead with this whenever the orchestrator asks where a run stands or what's next; it is the
   buyer's open-the-kanban view, surfaced proactively.

@@ -60,6 +60,7 @@ from app.pilot.vault import (
     archive_run,
     create_run,
     git_commit_run,
+    is_rehearsal,
     list_runs,
     purge_run,
     run_paths,
@@ -123,23 +124,38 @@ class PilotService:
     # ------------------------------------------------------------------ #
     # step 0 — start run + setup
     # ------------------------------------------------------------------ #
-    def start_run(self, *, commodity: str, label: str) -> RunPaths:
+    def start_run(
+        self, *, commodity: str, label: str, rehearsal: bool = False
+    ) -> RunPaths:
         """Create the run scaffold + its OWN blank database, write the Setup/Kickoff workbook.
 
         D30: when `isolate_db` is on, the run is born with a freshly created + migrated database of
         its own — blank, no demo data, invisible to other runs. Callers then operate on this run
         via `run_unit_of_work(paths.slug)`. The kanban Next bucket points the sponsor at the setup.
+
+        `rehearsal=True` marks the run SYNTHETIC (every artifact is stamped so, never "LIVE CYCLE
+        DATA") — see `is_rehearsal`. If any step after the scaffold/DB is created fails, the partial
+        run is torn down (folder removed + DB dropped) so a failed start never leaves an orphan.
         """
 
-        paths = create_run(self.vault_root, commodity=commodity, label=label)
-        if self.isolate_db:
-            provision_run_database(paths.slug)
-        setup_name = stage_filename(1, "setup_kickoff")
-        write_to_run(paths, SUBDIR_INPUTS, setup_name, build_setup_workbook())
+        paths = create_run(
+            self.vault_root, commodity=commodity, label=label, rehearsal=rehearsal
+        )
+        try:
+            if self.isolate_db:
+                provision_run_database(paths.slug)
+            setup_name = stage_filename(1, "setup_kickoff")
+            write_to_run(paths, SUBDIR_INPUTS, setup_name, build_setup_workbook())
 
-        board = status_mod.kanban(None, None, paths)
-        status_mod.render_run_md(paths, board)
-        git_commit_run(self.vault_root, paths.slug, "setup/kickoff workbook generated")
+            board = status_mod.kanban(None, None, paths)
+            status_mod.render_run_md(paths, board)
+            git_commit_run(self.vault_root, paths.slug, "setup/kickoff workbook generated")
+        except Exception:
+            # A failed start must not leave an orphan run (vault folder + provisioned database).
+            if self.isolate_db:
+                drop_run_database(paths.slug)
+            purge_run(self.vault_root, paths.slug)
+            raise
         return paths
 
     def ingest_setup(self, session: Session, runpaths: RunPaths, uploaded: Path) -> str:
@@ -352,6 +368,10 @@ class PilotService:
         commits. Returns the written path.
         """
 
+        # A rehearsal run stamps every artifact SYNTHETIC regardless of the caller's flag, so its
+        # output can never be mislabelled "LIVE CYCLE DATA — real names & prices".
+        synthetic = synthetic or is_rehearsal(runpaths)
+
         cycle = self._load_cycle(session, runpaths)
         round_id = cycle.rounds[round_no - 1].id
         incumbents = tuple(
@@ -442,11 +462,12 @@ class PilotService:
         supplier_name = stage_filename(
             self._stage("booking_guide"), "award_supplier_guides"
         )
+        synthetic = is_rehearsal(runpaths)
         write_booking_guide_internal_xlsx(
-            cycle, booking, output_path=runpaths.outputs / internal_name
+            cycle, booking, output_path=runpaths.outputs / internal_name, synthetic=synthetic
         )
         write_supplier_award_guides_xlsx(
-            cycle, booking, output_path=runpaths.outputs / supplier_name
+            cycle, booking, output_path=runpaths.outputs / supplier_name, synthetic=synthetic
         )
 
         self._render_kanban(

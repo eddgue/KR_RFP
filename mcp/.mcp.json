@@ -1,11 +1,13 @@
 {
   "//": "RFP_MCP — Claude Code MCP server registration for the produce-RFP pilot.",
-  "//paths": "Edit `cwd` to the absolute path of the backend/ folder in your KR_RFP checkout. The command runs the stdio server from backend/.venv so the `mcp` SDK + app code resolve. The package is `rfp_mcp` (NOT `mcp`) so it never shadows the installed MCP SDK.",
+  "//portability": "Paths use ${CLAUDE_PLUGIN_ROOT} (Claude Code substitutes it for the plugin's install dir) so the backend resolves WITHOUT exporting KR_RFP_BACKEND — valid for the in-repo layout where the plugin is <repo>/mcp and the backend is <repo>/backend. `cwd` is set to backend/ so anything CWD-relative resolves. The package is `rfp_mcp` (NOT `mcp`) so it never shadows the installed MCP SDK.",
+  "//vault": "PILOT_VAULT_ROOT is deployment-specific (rehearsal vault vs the live RFP_PILOT_VAULT clone), so it cannot be derived from the plugin dir — export RFP_PILOT_VAULT before launch.",
+  "//reliable-setup": "If the server does not connect on launch via --plugin-dir (plugin .mcp.json autoload / env substitution can vary by Claude Code version), register it directly with absolute paths: `claude mcp add rfp-pilot --scope local --env DATABASE_URL=postgresql+psycopg://app:app@localhost:5432/kr_rfp --env PILOT_VAULT_ROOT=/abs/vault --env PYTHONPATH=/abs/KR_RFP/backend -- /abs/KR_RFP/backend/.venv/bin/python -m rfp_mcp.rfp_pilot_server`",
   "mcpServers": {
     "rfp-pilot": {
-      "command": "${KR_RFP_BACKEND}/.venv/bin/python",
+      "command": "${CLAUDE_PLUGIN_ROOT}/../backend/.venv/bin/python",
       "args": ["-m", "rfp_mcp.rfp_pilot_server"],
-      "cwd": "${KR_RFP_BACKEND}",
+      "cwd": "${CLAUDE_PLUGIN_ROOT}/../backend",
       "env": {
         "DATABASE_URL": "postgresql+psycopg://app:app@localhost:5432/kr_rfp",
         "PILOT_VAULT_ROOT": "${RFP_PILOT_VAULT}"

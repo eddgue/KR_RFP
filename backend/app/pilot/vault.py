@@ -51,6 +51,10 @@ RUN_DATA_NAME = "run_data.json"
 # template-fit, process friction, sponsor notes) for the platform team to review and adapt the
 # engine/templates/analysis. Written by PilotService.feedback_file; included in the close archive.
 FEEDBACK_NAME = "FEEDBACK.md"
+# Provenance sentinel: a rehearsal run carries this marker so every generated artifact is stamped
+# SYNTHETIC (never "LIVE CYCLE DATA — real names & prices"). Its ABSENCE means a live run. Set at
+# create_run(rehearsal=True); read by `is_rehearsal`. Travels in the close-out archive.
+REHEARSAL_NAME = ".rehearsal"
 
 
 @dataclass(frozen=True)
@@ -172,13 +176,18 @@ def _seed_notes_md(slug: str, *, label: str) -> str:
 # ---------------------------------------------------------------------------
 # run creation + listing
 # ---------------------------------------------------------------------------
-def create_run(vault_root: Path, *, commodity: str, label: str) -> RunPaths:
+def create_run(
+    vault_root: Path, *, commodity: str, label: str, rehearsal: bool = False
+) -> RunPaths:
     """Stamp out the IDENTICAL run scaffold for a new RFP and commit it to the vault.
 
     slug = `<commodity-slug>-<YYYYMMDD>-<short-id>`. Creates `runs/<slug>/{inputs,outputs,memory}/`
     plus seeded NOTES.md, RUN.md, an (empty) cycle_id.txt, and a placeholder run_data.json (the
     git-versioned governed-data snapshot, filled in once the cycle exists) — the same structure
     every run. If the vault is (or should be) a git repo, the new run is committed.
+
+    `rehearsal=True` drops a `.rehearsal` provenance sentinel so every artifact this run generates
+    is stamped SYNTHETIC — a rehearsal can never be mistaken for a live cycle (see `is_rehearsal`).
     """
 
     vault_root = Path(vault_root)
@@ -214,8 +223,25 @@ def create_run(vault_root: Path, *, commodity: str, label: str) -> RunPaths:
     for subdir in (paths.inputs, paths.outputs, paths.memory):
         (subdir / ".gitkeep").write_text("", encoding="utf-8")
 
+    # Provenance sentinel: a rehearsal run stamps every artifact SYNTHETIC (never live).
+    if rehearsal:
+        (paths.root / REHEARSAL_NAME).write_text(
+            "This run is a REHEARSAL — its data is SYNTHETIC, not a real cycle.\n",
+            encoding="utf-8",
+        )
+
     git_init_and_commit(vault_root, f"run {slug} created")
     return paths
+
+
+def is_rehearsal(runpaths: RunPaths) -> bool:
+    """True if this run was started as a rehearsal (carries the `.rehearsal` provenance sentinel).
+
+    Drives the SYNTHETIC vs LIVE provenance stamp on every generated artifact, so a rehearsal's
+    output can never be mistaken for a real cycle's.
+    """
+
+    return (runpaths.root / REHEARSAL_NAME).is_file()
 
 
 def list_runs(vault_root: Path) -> list[RunPaths]:
@@ -305,7 +331,9 @@ def _git(vault_root: Path, *args: str) -> bool:
 # The full normalized history a close-out archives (PILOT_SYSTEM_DESIGN step 10): the inputs/
 # outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
 _ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
-_ARCHIVE_FILES = (_NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, FEEDBACK_NAME, _CYCLE_ID_NAME)
+_ARCHIVE_FILES = (
+    _NOTES_NAME, _RUN_NAME, RUN_DATA_NAME, FEEDBACK_NAME, _CYCLE_ID_NAME, REHEARSAL_NAME
+)
 
 
 def archive_run(runpaths: RunPaths) -> Path:
