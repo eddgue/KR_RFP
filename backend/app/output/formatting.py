@@ -142,6 +142,10 @@ def format_table(
     # Header row — bold white-on-color, centered, wrapped, bordered.
     for ci, col in enumerate(columns, start=1):
         cell = ws.cell(row=header_row, column=ci, value=col.header)
+        # A header is a LABEL, never a formula: a leading =, +, - or @ makes openpyxl/Excel treat
+        # the text as a formula (e.g. "= All-In $/case" → Excel repairs the file). Force it to text.
+        if isinstance(col.header, str) and col.header[:1] in ("=", "+", "-", "@"):
+            cell.data_type = "s"
         cell.font = _HEADER_FONT
         cell.fill = _HEADER_FILL
         cell.alignment = _WRAP_CENTER
