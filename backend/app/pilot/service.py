@@ -39,7 +39,7 @@ from app.domain.bid.models import BidLine
 from app.domain.bid.template_generator import generate_template_bytes
 from app.domain.eng.models import AnalysisRun
 from app.domain.eng.runner import EngineRunner, IncumbentRow
-from app.engine.interface import EngineConfig, WeightPreset
+from app.engine.interface import PRESET_WEIGHTS, EngineConfig, WeightPreset
 from app.output.booking_guide import (
     BookingAwardView,
     write_booking_guide_internal_xlsx,
@@ -76,11 +76,7 @@ from app.pilot.vault import (
 # human to decide (Incumbent Retention tab), never silently paid.
 _DEFAULT_CONFIG = EngineConfig(
     preset=WeightPreset.BALANCED,
-    weight_price=Decimal("0.31"),
-    weight_coverage=Decimal("0.22"),
-    weight_historical=Decimal("0.18"),
-    weight_zrisk=Decimal("0.09"),
-    weight_continuity=Decimal("0.20"),
+    **PRESET_WEIGHTS[WeightPreset.BALANCED],  # single source of truth for the balanced weights
     max_sup_dc=2,
     conc_thresh=Decimal("0.40"),
     global_premium_threshold=Decimal("0.12"),
@@ -384,10 +380,12 @@ class PilotService:
             for (dc_id, lot_id), sup_id in cycle.incumbent_by_dc_lot.items()
         )
 
-        # Honour the per-RFP engine safeties the buyer set at kickoff (premium ceiling, coverage
-        # floor, concentration threshold, max suppliers/DC) over the strategy-preset default —
-        # blank fields fall back to the preset. EngineConfig is frozen, so layer via model_copy.
-        effective_config = self._apply_cycle_safeties(config or _DEFAULT_CONFIG, cycle)
+        # Honour the per-RFP strategy the buyer set at kickoff: the named weight preset (remaps the
+        # five scoring weights) AND the four engine safeties (premium ceiling, coverage floor,
+        # concentration threshold, max suppliers/DC) — each over the default, blank fields falling
+        # back. EngineConfig is frozen, so both layers go on via model_copy.
+        effective_config = self._apply_cycle_preset(config or _DEFAULT_CONFIG, cycle)
+        effective_config = self._apply_cycle_safeties(effective_config, cycle)
 
         runner = EngineRunner(session)
         run_result = runner.run_analysis(
@@ -434,6 +432,28 @@ class PilotService:
             f"round {round_no} alignment analysis v{version_seq} sealed",
         )
         return out_path
+
+    @staticmethod
+    def _apply_cycle_preset(config: EngineConfig, cycle: CycleView) -> EngineConfig:
+        """Remap the five scoring weights to the buyer's named preset (blank/unknown → unchanged).
+
+        The setup workbook's "Weight Preset" is authoritative for the run. A named preset
+        (balanced/price_focus/coverage_focus/risk_averse) swaps in its canonical weight vector;
+        CUSTOM keeps the explicit weights as given (only the preset label is recorded). The ingester
+        already rejects an unrecognized preset, so an unparseable value here is treated as "leave as
+        is" rather than guessed.
+        """
+
+        if not cycle.weight_preset:
+            return config
+        try:
+            preset = WeightPreset(cycle.weight_preset.strip().lower())
+        except ValueError:
+            return config
+        weights = PRESET_WEIGHTS.get(preset)
+        if weights is None:  # CUSTOM — keep the explicit weights, just record the label
+            return config.model_copy(update={"preset": preset})
+        return config.model_copy(update={"preset": preset, **weights})
 
     @staticmethod
     def _apply_cycle_safeties(config: EngineConfig, cycle: CycleView) -> EngineConfig:

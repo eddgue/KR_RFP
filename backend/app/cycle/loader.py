@@ -29,7 +29,7 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
         text(
             "SELECT c.cycle_code, c.cycle_name, c.commodity_id, m.commodity_name, "
             "c.engine_premium_ceiling, c.engine_coverage_floor, c.engine_conc_thresh, "
-            "c.engine_max_sup_dc "
+            "c.engine_max_sup_dc, c.engine_weight_preset "
             "FROM cyc.cycle c "
             "LEFT JOIN ref.commodity m ON m.id::text = c.commodity_id "
             "WHERE c.cycle_id = :cyc"
@@ -45,6 +45,7 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
         coverage_floor,
         conc_thresh,
         max_sup_dc,
+        weight_preset,
     ) = cycle_row
 
     # DCs in scope — the DCs the cycle carries projected volume for (ref.dc display names, D23).
@@ -184,4 +185,5 @@ def load_cycle(session: Session, cycle_id: str) -> CycleView:
         coverage_floor=Decimal(str(coverage_floor)) if coverage_floor is not None else None,
         conc_thresh=Decimal(str(conc_thresh)) if conc_thresh is not None else None,
         max_sup_dc=int(max_sup_dc) if max_sup_dc is not None else None,
+        weight_preset=weight_preset,
     )

@@ -41,6 +41,7 @@ from app.pilot.setup_template import (
     TAB_SUPPLIERS,
     TAB_TIMEFRAMES,
     TAB_VOLUMES,
+    WEIGHT_PRESETS,
 )
 
 # The first data row the sponsor types into (examples start at EXAMPLE_START_ROW but are greyed and
@@ -206,6 +207,13 @@ def ingest_setup_workbook(
     coverage_floor = _to_decimal(_cell(cyc_ws, crow, cyc_hdr.get("Coverage Floor", 0)))
     conc_thresh = _to_decimal(_cell(cyc_ws, crow, cyc_hdr.get("Concentration Threshold", 0)))
     max_sup_dc = _to_int(_cell(cyc_ws, crow, cyc_hdr.get("Max Suppliers / DC", 0)))
+    weight_preset = _cell(cyc_ws, crow, cyc_hdr.get("Weight Preset", 0)).strip().lower() or None
+    if weight_preset is not None and weight_preset not in WEIGHT_PRESETS:
+        problems.add(
+            TAB_CYCLE,
+            crow,
+            f"Weight Preset '{weight_preset}' not in {', '.join(WEIGHT_PRESETS)}",
+        )
 
     # --- DCs ---
     dcs = _parse_named_tab(wb[TAB_DCS], "DC Name", TAB_DCS, problems)
@@ -314,6 +322,7 @@ def ingest_setup_workbook(
         coverage_floor=coverage_floor,
         conc_thresh=conc_thresh,
         max_sup_dc=max_sup_dc,
+        weight_preset=weight_preset,
         dcs=dcs,
         suppliers=suppliers,
         timeframes=timeframes,
@@ -374,6 +383,7 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
     coverage_floor: Decimal | None,
     conc_thresh: Decimal | None,
     max_sup_dc: int | None,
+    weight_preset: str | None,
     dcs: dict[str, _Named],
     suppliers: dict[str, _Named],
     timeframes: dict[str, _Named],
@@ -426,8 +436,10 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
             "INSERT INTO cyc.cycle (cycle_id, cycle_code, cycle_name, commodity_id, "
             "subcommodity_id, status, why_now, target_effective_date, round_count, "
             "engine_premium_ceiling, engine_coverage_floor, engine_conc_thresh, "
-            "engine_max_sup_dc, created_at, created_by) VALUES (:cyc, :code, :name, :cid, :sid, "
-            "'OPEN', 'Pilot setup ingest', :ted, :rc, :prem, :cov, :conc, :maxsup, :now, :by)"
+            "engine_max_sup_dc, engine_weight_preset, created_at, created_by) "
+            "VALUES (:cyc, :code, :name, :cid, :sid, "
+            "'OPEN', 'Pilot setup ingest', :ted, :rc, :prem, :cov, :conc, :maxsup, :preset, "
+            ":now, :by)"
         ),
         {
             "cyc": cycle_id,
@@ -441,6 +453,7 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
             "cov": coverage_floor,
             "conc": conc_thresh,
             "maxsup": max_sup_dc,
+            "preset": weight_preset,
             "now": now,
             "by": created_by,
         },

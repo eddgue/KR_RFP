@@ -55,6 +55,44 @@ class WeightPreset(StrEnum):
     CUSTOM = "custom"
 
 
+# Canonical scoring weights per named preset (ADR-0016). The five factors are
+# price · coverage · historical · zrisk · continuity; each vector sums to 1.0 (the scorer
+# renormalizes anyway if a vector drifts >1%). CUSTOM is intentionally ABSENT — it means "use the
+# explicit weights as given" (no remap). Continuity stays materially weighted in every preset
+# (incumbency carries value in a repeated-game category); PRICE_FOCUS leans hardest on cost,
+# RISK_AVERSE hardest on stability (historical + zrisk + continuity). BALANCED is the pilot default.
+PRESET_WEIGHTS: dict[WeightPreset, dict[str, Decimal]] = {
+    WeightPreset.BALANCED: {
+        "weight_price": Decimal("0.31"),
+        "weight_coverage": Decimal("0.22"),
+        "weight_historical": Decimal("0.18"),
+        "weight_zrisk": Decimal("0.09"),
+        "weight_continuity": Decimal("0.20"),
+    },
+    WeightPreset.PRICE_FOCUS: {
+        "weight_price": Decimal("0.50"),
+        "weight_coverage": Decimal("0.18"),
+        "weight_historical": Decimal("0.12"),
+        "weight_zrisk": Decimal("0.06"),
+        "weight_continuity": Decimal("0.14"),
+    },
+    WeightPreset.COVERAGE_FOCUS: {
+        "weight_price": Decimal("0.24"),
+        "weight_coverage": Decimal("0.38"),
+        "weight_historical": Decimal("0.12"),
+        "weight_zrisk": Decimal("0.08"),
+        "weight_continuity": Decimal("0.18"),
+    },
+    WeightPreset.RISK_AVERSE: {
+        "weight_price": Decimal("0.20"),
+        "weight_coverage": Decimal("0.20"),
+        "weight_historical": Decimal("0.20"),
+        "weight_zrisk": Decimal("0.18"),
+        "weight_continuity": Decimal("0.22"),
+    },
+}
+
+
 class ExclusionRule(BaseModel):
     """Scenario E input: drop a supplier (optionally scoped to a cell). Blank = wildcard."""
 

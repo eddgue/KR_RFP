@@ -51,6 +51,7 @@ class CycleView:
     coverage_floor: Decimal | None = None  # eligibility coverage floor
     conc_thresh: Decimal | None = None  # category-concentration flag threshold
     max_sup_dc: int | None = None  # split cap (max suppliers per DC)
+    weight_preset: str | None = None  # named scoring preset (remaps the five weights); None=default
 
 
 # Back-compat alias: the demo seeded this view, so the historical name is kept.

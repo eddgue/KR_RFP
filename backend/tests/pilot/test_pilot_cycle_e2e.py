@@ -29,6 +29,7 @@ from sqlalchemy import text
 
 from app.cycle.loader import load_cycle
 from app.domain.bid.template_schema import BODY_START_ROW, HEADER_ROW, SHEET_BIDS, BidColumn
+from app.engine.interface import PRESET_WEIGHTS, WeightPreset
 from app.output.types import CycleView, Entity
 from app.pilot.flex_ingest import (
     FIELD_ALL_IN,
@@ -39,6 +40,7 @@ from app.pilot.flex_ingest import (
     infer_bid_mapping,
 )
 from app.pilot.service import _DEFAULT_CONFIG, PilotService
+from app.pilot.setup_ingest import SetupIngestError
 from app.pilot.setup_template import (
     EXAMPLE_START_ROW,
     TAB_CYCLE,
@@ -77,11 +79,11 @@ def _write_setup_rows(ws: Worksheet, rows: list[dict[str, object]]) -> None:
             ws.cell(row=excel_row, column=col, value=None)
 
 
-def _build_filled_setup(premium_ceiling: float = 0.12) -> bytes:
+def _build_filled_setup(premium_ceiling: float = 0.12, weight_preset: str = "balanced") -> bytes:
     """A synthetic setup: 2 DCs, 2 lots, 2 suppliers, 1 TF, 2 rounds, volumes, incumbents.
 
-    `premium_ceiling` is the buyer-adjustable engine safety written to the Cycle tab (default 0.12,
-    the preset value); tests pass a distinctive value to prove it flows through to the engine.
+    `premium_ceiling` and `weight_preset` are buyer-adjustable strategy knobs written to the Cycle
+    tab (defaults match the preset); tests pass distinctive values to prove they flow to the engine.
     """
 
     wb = load_workbook(BytesIO(build_setup_workbook()))
@@ -95,7 +97,7 @@ def _build_filled_setup(premium_ceiling: float = 0.12) -> bytes:
                 "Horizon (weeks)": 13,
                 "Rounds": 2,
                 "Target Effective Date": "2026-12-31",
-                "Weight Preset": "balanced",
+                "Weight Preset": weight_preset,
                 "Max Suppliers / DC": 2,
                 "Premium Ceiling": premium_ceiling,
                 "Concentration Threshold": 0.40,
@@ -583,6 +585,57 @@ def test_setup_engine_safeties_flow_to_engine_config(tmp_path: Path, db_session)
     # The buyer's 0.15 ceiling overrides the preset default (0.12) in the effective engine config.
     cfg = PilotService._apply_cycle_safeties(_DEFAULT_CONFIG, view)
     assert cfg.global_premium_threshold == Decimal("0.15")
+
+
+def test_apply_cycle_preset_remaps_weights() -> None:
+    """A named preset swaps in its weight vector; CUSTOM keeps weights; blank leaves config be."""
+
+    base = _DEFAULT_CONFIG  # balanced
+    cv = _fake_cycle_view()
+    assert PilotService._apply_cycle_preset(base, cv) is base  # no preset set → unchanged
+
+    cv.weight_preset = "price_focus"
+    out = PilotService._apply_cycle_preset(base, cv)
+    assert out.preset == WeightPreset.PRICE_FOCUS
+    assert out.weight_price == PRESET_WEIGHTS[WeightPreset.PRICE_FOCUS]["weight_price"]
+    assert out.weight_price == Decimal("0.50")  # price leans hardest here
+    assert out.weight_continuity == Decimal("0.14")
+
+    cv.weight_preset = "custom"
+    custom = PilotService._apply_cycle_preset(base, cv)
+    assert custom.preset == WeightPreset.CUSTOM
+    assert custom.weight_price == base.weight_price  # CUSTOM keeps the explicit weights
+
+
+@pytest.mark.integration
+def test_setup_weight_preset_flows_to_engine_config(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """The buyer's Weight Preset on the setup workbook remaps the engine's scoring weights."""
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="Preset")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup(weight_preset="risk_averse"))
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+
+    view = load_cycle(db_session, cycle_id)
+    assert view.weight_preset == "risk_averse"
+    cfg = PilotService._apply_cycle_preset(_DEFAULT_CONFIG, view)
+    assert cfg.preset == WeightPreset.RISK_AVERSE
+    assert cfg.weight_zrisk == Decimal("0.18")  # risk-averse elevates stability factors
+    assert cfg.weight_price == Decimal("0.20")
+
+
+@pytest.mark.integration
+def test_setup_rejects_unknown_weight_preset(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """An unrecognized Weight Preset is rejected at ingest (never silently ignored)."""
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="BadPreset")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup(weight_preset="cheapest_wins"))
+    with pytest.raises(SetupIngestError) as exc:
+        service.ingest_setup(db_session, paths, setup_path)
+    assert "Weight Preset" in str(exc.value)
 
 
 def test_failed_start_leaves_no_orphan_run(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
