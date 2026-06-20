@@ -295,7 +295,7 @@ def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # t
     prior lines (is_scoreable=false) and the engine reads only scoreable lines.
     """
 
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     paths = service.start_run(commodity="Field Tomatoes", label="Supersede")
     setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
     setup_path.write_bytes(_build_filled_setup())
@@ -343,7 +343,7 @@ def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # t
 
 
 def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
 
     # 0) start the run + ingest the synthetic setup → a governed cycle.
     paths = service.start_run(commodity="Field Tomatoes", label="E2E Loop")
@@ -480,7 +480,7 @@ def test_full_cycle_loop_e2e(tmp_path: Path, db_session) -> None:  # type: ignor
 def test_ingest_any_flexible_roundtrip(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     """ingest_any: propose-then-confirm — a messy file becomes bid_line rows via the strict path."""
 
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     paths = service.start_run(commodity="Field Tomatoes", label="Flex Loop")
     setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
     setup_path.write_bytes(_build_filled_setup())

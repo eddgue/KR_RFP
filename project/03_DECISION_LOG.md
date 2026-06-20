@@ -187,6 +187,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 ### D31 — The pilot skill is a 3-agent HARNESS (orchestrator / engine / secretary) with isolated contexts · **NOTE 2026-06-20**
 **Principle (sponsor).** The skill is a small agent harness, not one agent: **Orchestrator** (the only one that talks to the user; routes + sequences), **Engine** (data-dedicated — takes inputs, runs, delivers outputs + comments; answers data questions by **reading the data**; context = sealed records only), **Secretary** (memory + memory-file side: NOTES.md, `memory/`, reminders, kanban, admin — "the noise"). Separation keeps **data commentary uncontaminated** by operational noise. **Communication discipline:** preferred **hub-and-spoke** — only the Orchestrator talks to the Engine and Secretary, under strict constraints; the Engine and Secretary do not share context directly (peer-to-peer only if essential, mediated). The aim is strict **context isolation** so the Engine's commentary is provably data-only.
 **Status.** Design vision for the skill build (the step after the first RFP_MCP commit). Full design in `project/squads/experience/SKILL_HARNESS_DESIGN.md`. Depends on D30 (per-run data isolation).
+**Model (sponsor).** The harness **always operates on Opus 4.8 ("ultracode")** — every agent pinned to that model (no silent fallback); part of the version a live run is pinned to (D32).
 **Linked:** EXP-SKILL-HARNESS, D28 (engine-derived comments), D30 (data isolation), PILOT_SYSTEM_DESIGN, RFP_MCP + RFP_PILOT_VAULT.
 
 ---

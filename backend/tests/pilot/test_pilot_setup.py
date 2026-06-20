@@ -171,7 +171,7 @@ def test_stage_filename_normalized() -> None:
 
 
 def test_start_run_creates_identical_scaffold(tmp_path: Path) -> None:
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     paths = service.start_run(commodity="Field Tomatoes", label="Spring Tomatoes")
 
     # The identical scaffold — every directory + manifest exists.
@@ -201,7 +201,7 @@ def test_start_run_creates_identical_scaffold(tmp_path: Path) -> None:
 
 
 def test_two_runs_are_structurally_identical(tmp_path: Path) -> None:
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     a = service.start_run(commodity="Tomatoes", label="A")
     b = service.start_run(commodity="Peppers", label="B")
 
@@ -218,7 +218,7 @@ def test_two_runs_are_structurally_identical(tmp_path: Path) -> None:
 
 
 def test_remember_and_add_memory_append_notes(tmp_path: Path) -> None:
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     paths = service.start_run(commodity="Tomatoes", label="Notes Run")
 
     service.remember(paths, "Buyer wants Dallas prioritized")
@@ -257,7 +257,7 @@ def test_setup_template_has_all_tabs_and_dropdowns() -> None:
 def test_setup_roundtrips_to_cycle(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     from app.cycle.loader import load_cycle
 
-    service = PilotService(tmp_path)
+    service = PilotService(tmp_path, isolate_db=False)
     paths = service.start_run(commodity="Field Tomatoes", label="Roundtrip Run")
 
     # The sponsor "uploads" the filled setup into inputs/ (formal upload step).

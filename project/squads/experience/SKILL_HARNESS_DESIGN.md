@@ -43,6 +43,13 @@ Two options; the **hub-and-spoke** one is preferred:
 
 The governing aim: **strict context isolation** so the Engine's commentary is provably data-only.
 
+## Model (sponsor)
+
+The harness **always operates on Opus 4.8 ("ultracode")** — every agent (Orchestrator, Engine,
+Secretary) is pinned to that model. Pin it in the skill/agent definitions so a run does not silently
+fall back to a smaller model; this pairs with version isolation (D32) — a live run's *model* is part
+of the version it is pinned to.
+
 ## Data isolation this depends on (sponsor, binding)
 
 The harness is only as clean as the data underneath it:

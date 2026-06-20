@@ -27,8 +27,10 @@ from app.core.db.base import SCHEMAS, metadata
 
 config = context.config
 
-# Inject the URL from settings so alembic.ini holds no connection string.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Inject the URL from settings so alembic.ini holds no connection string. A caller may pre-set the
+# URL on the Config (e.g. per-run database provisioning, D30) — respect it and don't override.
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

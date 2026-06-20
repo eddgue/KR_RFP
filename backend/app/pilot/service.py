@@ -50,6 +50,7 @@ from app.output.scenario_workbook import write_scenario_workbook_xlsx
 from app.output.types import CycleView
 from app.pilot import status as status_mod
 from app.pilot.flex_ingest import MappingProposal, apply_mapping, infer_bid_mapping
+from app.pilot.run_db import drop_run_database, provision_run_database
 from app.pilot.setup_ingest import ingest_setup_workbook
 from app.pilot.setup_template import build_setup_workbook
 from app.pilot.vault import (
@@ -113,20 +114,26 @@ class _BookingAward:
 class PilotService:
     """Orchestrates the per-RFP run vault + the governed cycle store for the pilot loop."""
 
-    def __init__(self, vault_root: Path) -> None:
+    def __init__(self, vault_root: Path, *, isolate_db: bool = True) -> None:
         self.vault_root = Path(vault_root)
+        # D30: each run gets its OWN blank database. On by default (the compliant runtime); unit
+        # tests that share a rolled-back session pass isolate_db=False.
+        self.isolate_db = isolate_db
 
     # ------------------------------------------------------------------ #
     # step 0 — start run + setup
     # ------------------------------------------------------------------ #
     def start_run(self, *, commodity: str, label: str) -> RunPaths:
-        """Create the run scaffold, write the Setup/Kickoff workbook, update RUN.md, and commit.
+        """Create the run scaffold + its OWN blank database, write the Setup/Kickoff workbook.
 
-        No DB touch — a cycle doesn't exist until the filled setup is ingested. The kanban's Next
-        bucket points the sponsor at filling & uploading the setup doc.
+        D30: when `isolate_db` is on, the run is born with a freshly created + migrated database of
+        its own — blank, no demo data, invisible to other runs. Callers then operate on this run
+        via `run_unit_of_work(paths.slug)`. The kanban Next bucket points the sponsor at the setup.
         """
 
         paths = create_run(self.vault_root, commodity=commodity, label=label)
+        if self.isolate_db:
+            provision_run_database(paths.slug)
         setup_name = stage_filename(1, "setup_kickoff")
         write_to_run(paths, SUBDIR_INPUTS, setup_name, build_setup_workbook())
 
@@ -861,13 +868,16 @@ class PilotService:
         return archive_run(runpaths)
 
     def purge_run(self, slug: str) -> None:
-        """Remove a run's vault folder + commit the removal (after the buyer confirms the archive).
+        """Remove a run's vault folder AND drop its isolated database (after the buyer confirms).
 
-        The governed Postgres records for the cycle REMAIN — only the vault document folder is
-        purged; `close_run`'s archive already preserves the full history.
+        `close_run`'s archive already preserves the full history (files + the run_data.json),
+        so purge is a clean teardown: the vault folder is removed and — under D30 isolation — the
+        run's own database is dropped. Nothing of this run lingers to contaminate another.
         """
 
         purge_run(self.vault_root, slug)
+        if self.isolate_db:
+            drop_run_database(slug)
 
     # ================================================================== #
     # PART B — internal helpers
