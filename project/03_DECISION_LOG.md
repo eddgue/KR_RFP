@@ -191,6 +191,13 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D32 — Version isolation: a LIVE run is pinned to the MCP + Vault + platform version it started on; development cannot affect it · **NOTE 2026-06-20**
+**Principle (sponsor).** Once a session is **live** (running a real cycle), it is **isolated from ongoing development** of the MCP server and the Vault: no change we make can affect a current run. A live run is **version-pinned** across the whole stack — the MCP build, the Vault scaffold/tooling, and the platform/schema (engine + migrations) — and only a **deliberate, opt-in upgrade** moves a run to a newer version. This extends the existing per-run `engine_version` seal (already on `eng.analysis_run`) to the entire stack, consistent with the sealed-run / reproducibility philosophy: a run reproduces under the exact versions it ran on.
+**Mechanism (direction).** Live sessions connect to a **released/tagged** MCP build, not dev HEAD; dev iterates on a separate build that live sessions do not pick up until restart/upgrade. A run records its MCP + Vault + migration versions; new dev migrations are **not** auto-applied to a live run's data store. Requires a release/versioning discipline (tags/pins) for RFP_MCP and RFP_PILOT_VAULT — set this up at the first MCP commit.
+**Linked:** D30 (data isolation — the other axis), ADR-0006 (sealed/reproducible), `eng.analysis_run.engine_version` (existing precedent), EXP-SKILL-HARNESS, RFP_MCP + RFP_PILOT_VAULT.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

@@ -59,6 +59,17 @@ The harness is only as clean as the data underneath it:
   contaminated at the source — no amount of agent-context discipline could fix it. Isolation at the
   data layer is the precondition for clean data commentary.
 
+### Version isolation (D32) — a live run is frozen against our development
+
+Beyond *data* isolation (above), a **live** run must be isolated from **our ongoing development** of
+the MCP and the Vault: once a session is live, no change we make can affect it. A live run is
+**version-pinned** across the whole stack — the MCP build, the Vault scaffold/tooling, and the
+platform/schema — and only a deliberate, opt-in upgrade moves it forward. Live sessions connect to a
+**released/tagged** MCP build (not dev HEAD); a run records its MCP + Vault + migration versions; new
+dev migrations are not auto-applied to a live run's store. This extends the existing per-run
+`engine_version` seal to the entire stack. It needs a release/versioning discipline (tags/pins) for
+RFP_MCP and RFP_PILOT_VAULT — established at the first MCP commit.
+
 ### Known gap to close before multi-run
 
 The current pilot shares ONE Postgres database across runs, with globally-unique reference codes
