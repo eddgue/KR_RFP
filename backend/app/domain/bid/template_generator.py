@@ -81,6 +81,7 @@ def _hide_columns(ws: Worksheet, header_index: dict[str, int], headers: tuple[st
     for h in headers:
         ws.column_dimensions[get_column_letter(header_index[h])].hidden = True
 
+
 # The supplier rules written onto the Instructions sheet (label, value) — our wording, D17.
 _INSTRUCTION_RULES: tuple[tuple[str, str], ...] = (
     ("Template version", ""),  # filled from scope at build time
@@ -263,9 +264,7 @@ def _build_capacity(ws: Worksheet, scope: CycleScope) -> None:
     _protect_form(ws)
 
 
-def build_template_workbook(
-    scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET
-) -> Workbook:
+def build_template_workbook(scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET) -> Workbook:
     """Build the in-memory multi-sheet template workbook for a cycle scope.
 
     `preset` selects which supplier-entry columns the Bids sheet carries (default = the full column
@@ -289,9 +288,7 @@ def build_template_workbook(
     return wb
 
 
-def generate_template_bytes(
-    scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET
-) -> bytes:
+def generate_template_bytes(scope: CycleScope, preset: BidTemplatePreset = FULL_PRESET) -> bytes:
     """Generate the template and return it as xlsx bytes (the artifact the system releases)."""
 
     wb = build_template_workbook(scope, preset)

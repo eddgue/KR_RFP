@@ -49,13 +49,9 @@ class BidTemplatePreset:
         if len(set(self.entry_columns)) != len(self.entry_columns):
             raise ValueError(f"preset {self.name!r}: duplicate entry columns")
         if not any(c in self.entry_columns for c in _USABLE_PRICE):
-            raise ValueError(
-                f"preset {self.name!r}: must include a usable price (All-In or FOB)"
-            )
+            raise ValueError(f"preset {self.name!r}: must include a usable price (All-In or FOB)")
         if not any(c in self.entry_columns for c in _VOLUME):
-            raise ValueError(
-                f"preset {self.name!r}: must include a volume (Weekly or Total)"
-            )
+            raise ValueError(f"preset {self.name!r}: must include a volume (Weekly or Total)")
 
     def bid_headers(self) -> tuple[str, ...]:
         """The full ordered header list for this preset's Bids sheet: scope first, then entries."""

@@ -35,8 +35,12 @@ LOTS = [
     ("Lot 2 — Romaine", "Romaine Hearts 3ct", "3ct sleeve", "Conventional", "Greens"),
     ("Lot 3 — Spinach", "Baby Spinach 1lb", "1lb clamshell", "Conventional", "Greens"),
 ]
-SUPPLIERS = [("Alpha Farms", "East"), ("Beta Growers", "South"), ("Gamma Produce", "West"),
-             ("Delta Fresh", "East")]
+SUPPLIERS = [
+    ("Alpha Farms", "East"),
+    ("Beta Growers", "South"),
+    ("Gamma Produce", "West"),
+    ("Delta Fresh", "East"),
+]
 INCUMBENT = "Delta Fresh"  # the incumbent across all cells (so retention has something to chew on)
 TF = ("Spring Test", "2026-04-01", "2026-06-30", 13)
 ROUNDS = 3
@@ -71,38 +75,89 @@ def _write_tab(ws: Worksheet, cols: dict[str, list[object]]) -> None:
 
 def fill_setup(path: Path) -> None:
     wb = load_workbook(path)
-    _write_tab(wb["Cycle"], {
-        "Cycle Label": ["Test Greens — REHEARSAL"], "Commodity": [COMMODITY],
-        "Sub-commodity": [COMMODITY], "Horizon (weeks)": [13], "Rounds": [ROUNDS],
-        "Target Effective Date": ["2026-04-01"], "Weight Preset": ["balanced"],
-        "Max Suppliers / DC": [2], "Premium Ceiling": [0.15], "Concentration Threshold": [0.40],
-        "Coverage Floor": [0.80]})
-    _write_tab(wb["DCs"], {"DC Name": [d[0] for d in DCS], "Region": [d[1] for d in DCS],
-                           "State": [d[2] for d in DCS]})
-    _write_tab(wb["Lots and Items"], {
-        "Lot Name": [lt[0] for lt in LOTS], "Item Description": [lt[1] for lt in LOTS],
-        "Pack Size / UOM": [lt[2] for lt in LOTS], "Product Type": [lt[3] for lt in LOTS],
-        "Category": [lt[4] for lt in LOTS]})
-    _write_tab(wb["Suppliers"], {
-        "Supplier Name": [s[0] for s in SUPPLIERS], "Region / Origin": [s[1] for s in SUPPLIERS],
-        "Notes": ["incumbent" if s[0] == INCUMBENT else "" for s in SUPPLIERS]})
-    _write_tab(wb["Timeframes"], {"Timeframe Label": [TF[0]], "Start Date": [TF[1]],
-                                  "End Date": [TF[2]], "Week Count": [TF[3]]})
+    _write_tab(
+        wb["Cycle"],
+        {
+            "Cycle Label": ["Test Greens — REHEARSAL"],
+            "Commodity": [COMMODITY],
+            "Sub-commodity": [COMMODITY],
+            "Horizon (weeks)": [13],
+            "Rounds": [ROUNDS],
+            "Target Effective Date": ["2026-04-01"],
+            "Weight Preset": ["balanced"],
+            "Max Suppliers / DC": [2],
+            "Premium Ceiling": [0.15],
+            "Concentration Threshold": [0.40],
+            "Coverage Floor": [0.80],
+        },
+    )
+    _write_tab(
+        wb["DCs"],
+        {
+            "DC Name": [d[0] for d in DCS],
+            "Region": [d[1] for d in DCS],
+            "State": [d[2] for d in DCS],
+        },
+    )
+    _write_tab(
+        wb["Lots and Items"],
+        {
+            "Lot Name": [lt[0] for lt in LOTS],
+            "Item Description": [lt[1] for lt in LOTS],
+            "Pack Size / UOM": [lt[2] for lt in LOTS],
+            "Product Type": [lt[3] for lt in LOTS],
+            "Category": [lt[4] for lt in LOTS],
+        },
+    )
+    _write_tab(
+        wb["Suppliers"],
+        {
+            "Supplier Name": [s[0] for s in SUPPLIERS],
+            "Region / Origin": [s[1] for s in SUPPLIERS],
+            "Notes": ["incumbent" if s[0] == INCUMBENT else "" for s in SUPPLIERS],
+        },
+    )
+    _write_tab(
+        wb["Timeframes"],
+        {
+            "Timeframe Label": [TF[0]],
+            "Start Date": [TF[1]],
+            "End Date": [TF[2]],
+            "Week Count": [TF[3]],
+        },
+    )
     vols = [(d[0], lt[0], WEEKLY[i]) for d in DCS for i, lt in enumerate(LOTS)]
-    _write_tab(wb["Volumes"], {
-        "DC Name": [v[0] for v in vols], "Lot Name": [v[1] for v in vols],
-        "Timeframe": [TF[0]] * len(vols), "Method": ["WEEKLY_X_WEEKS"] * len(vols),
-        "Weekly Cases": [v[2] for v in vols], "Weeks": [TF[3]] * len(vols)})
-    incs = [(d[0], lt[0], INCUMBENT, round(BASE[3][i] * 1.1, 2))
-            for d in DCS for i, lt in enumerate(LOTS)]
-    _write_tab(wb["Incumbents"], {
-        "DC Name": [x[0] for x in incs], "Lot Name": [x[1] for x in incs],
-        "Incumbent Supplier": [x[2] for x in incs],
-        "Routing Baseline $/case": [x[3] for x in incs],
-        "Contract Notes": ["auto-renew"] * len(incs)})
+    _write_tab(
+        wb["Volumes"],
+        {
+            "DC Name": [v[0] for v in vols],
+            "Lot Name": [v[1] for v in vols],
+            "Timeframe": [TF[0]] * len(vols),
+            "Method": ["WEEKLY_X_WEEKS"] * len(vols),
+            "Weekly Cases": [v[2] for v in vols],
+            "Weeks": [TF[3]] * len(vols),
+        },
+    )
+    incs = [
+        (d[0], lt[0], INCUMBENT, round(BASE[3][i] * 1.1, 2))
+        for d in DCS
+        for i, lt in enumerate(LOTS)
+    ]
+    _write_tab(
+        wb["Incumbents"],
+        {
+            "DC Name": [x[0] for x in incs],
+            "Lot Name": [x[1] for x in incs],
+            "Incumbent Supplier": [x[2] for x in incs],
+            "Routing Baseline $/case": [x[3] for x in incs],
+            "Contract Notes": ["auto-renew"] * len(incs),
+        },
+    )
     wb.save(path)
-    print(f"filled setup ({len(DCS)} DCs, {len(LOTS)} lots, {len(SUPPLIERS)} suppliers, "
-          f"{ROUNDS} rounds) -> {path.name}")
+    print(
+        f"filled setup ({len(DCS)} DCs, {len(LOTS)} lots, {len(SUPPLIERS)} suppliers, "
+        f"{ROUNDS} rounds) -> {path.name}"
+    )
 
 
 def fill_bids(path: Path, round_no: int) -> None:
@@ -148,8 +203,13 @@ def fill_messy(template_path: Path, out_path: Path) -> None:
         sup = str(ws.cell(r, col["Supplier"]).value or "").strip()
         if sup != "Alpha Farms":
             continue
-        rows.append((str(ws.cell(r, col["Lot"]).value or "").strip(),
-                     str(ws.cell(r, col["DC Name"]).value or "").strip(), sup))
+        rows.append(
+            (
+                str(ws.cell(r, col["Lot"]).value or "").strip(),
+                str(ws.cell(r, col["DC Name"]).value or "").strip(),
+                sup,
+            )
+        )
     out = Workbook()
     o = out.active
     o.title = "Our Bid"

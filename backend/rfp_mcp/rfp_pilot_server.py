@@ -122,8 +122,7 @@ def _resolve_award(history: dict[str, Any], ref: str) -> dict[str, Any]:
         if award["award_code"] == ref or str(award["award_id"]) == ref:
             return award
     raise ValueError(
-        f"no award matches '{ref}'. Available: "
-        + ", ".join(str(a["award_code"]) for a in awards)
+        f"no award matches '{ref}'. Available: " + ", ".join(str(a["award_code"]) for a in awards)
     )
 
 
@@ -159,7 +158,8 @@ def _lookup_name(index: dict[str, str], name: object, label: str) -> str:
     if resolved is None:
         raise ValueError(
             f"{label} '{name}' isn't in this cycle's scope. Known {label}s: "
-            + ", ".join(sorted(index)) + "."
+            + ", ".join(sorted(index))
+            + "."
         )
     return resolved
 
@@ -179,9 +179,7 @@ def run_start(commodity: str, label: str, rehearsal: bool = False) -> str:
     paths = _service().start_run(commodity=commodity, label=label, rehearsal=rehearsal)
     setup = paths.inputs / "01_setup_kickoff.xlsx"
     mode = (
-        "  Mode: REHEARSAL — synthetic data (artifacts stamped SYNTHETIC).\n"
-        if rehearsal
-        else ""
+        "  Mode: REHEARSAL — synthetic data (artifacts stamped SYNTHETIC).\n" if rehearsal else ""
     )
     return (
         f"Started the {commodity} run.\n"
@@ -339,9 +337,7 @@ def run_round(run_slug: str, round_no: int) -> str:
 # tools — award + post-award
 # --------------------------------------------------------------------------- #
 @app.tool()
-def select_award(
-    run_slug: str, analysis_run_ref: str, scenario_code: str, award_code: str
-) -> str:
+def select_award(run_slug: str, analysis_run_ref: str, scenario_code: str, award_code: str) -> str:
     """Freeze a chosen scenario into an award + generate the booking guides.
 
     `analysis_run_ref` is the alignment version (e.g. "1" or "v1") or its raw id; `scenario_code`
@@ -428,8 +424,7 @@ def history(run_slug: str) -> str:
         lines.append("  Alignment versions:")
         for run in runs:
             lines.append(
-                f"    - v{run['version']} (Round {run['round_number']}, sealed "
-                f"{run['sealed_at']})"
+                f"    - v{run['version']} (Round {run['round_number']}, sealed {run['sealed_at']})"
             )
     else:
         lines.append("  No alignment analyses yet.")

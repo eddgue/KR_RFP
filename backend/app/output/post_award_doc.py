@@ -85,15 +85,11 @@ def _resolve_names(session: Session, award: Award) -> _Names:
         session.execute(text("SELECT dc_id, dc_name FROM ref.dc")).all()  # type: ignore[arg-type]
     )
     sup_names: dict[str, str] = dict(
-        session.execute(
-            text("SELECT supplier_id, canonical_name FROM ref.supplier")
-        ).all()  # type: ignore[arg-type]
+        session.execute(text("SELECT supplier_id, canonical_name FROM ref.supplier")).all()  # type: ignore[arg-type]
     )
     lot_names: dict[str, str] = dict(
         session.execute(
-            select(CycleLot.lot_id, CycleLot.lot_name).where(
-                CycleLot.cycle_id == award.cycle_id
-            )
+            select(CycleLot.lot_id, CycleLot.lot_name).where(CycleLot.cycle_id == award.cycle_id)
         ).all()  # type: ignore[arg-type]
     )
     tf_names: dict[str, str] = dict(
@@ -121,9 +117,7 @@ def write_post_award_adjustments_xlsx(
     the explicit version heading (PILOT step 5). Names not keys (D23); deterministic.
     """
 
-    award = session.execute(
-        select(Award).where(Award.award_id == award_id)
-    ).scalar_one()
+    award = session.execute(select(Award).where(Award.award_id == award_id)).scalar_one()
     names = _resolve_names(session, award)
     history = award_versions(session, award_id=award_id)
 
@@ -140,12 +134,8 @@ def write_post_award_adjustments_xlsx(
 
     wb = Workbook()
     _write_versions_tab(wb, banner, subtitle, history)
-    _write_effective_tab(
-        wb, banner, subtitle, session, award_id, version_n, names
-    )
-    _write_changes_tab(
-        wb, banner, subtitle, session, award_id, version_n, names
-    )
+    _write_effective_tab(wb, banner, subtitle, session, award_id, version_n, names)
+    _write_changes_tab(wb, banner, subtitle, session, award_id, version_n, names)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

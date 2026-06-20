@@ -151,9 +151,7 @@ def build_inputs(*, single_round: bool = False) -> EngineInputs:
     bids.append(_bid("b_cov_nan_e", "S113", "DC11", "LC09", "TF1", "100.00", total_vol=None))
     req("DC11", "LC09")
     bids.append(_bid("b_cov_an_a", "S114", "DC11", "LC10", "TF1", "100.00", total_vol="100"))
-    bids.append(
-        _bid("b_cov_an_e", "S115", "DC11", "LC10", "TF1", "100.00", is_as_needed=True)
-    )
+    bids.append(_bid("b_cov_an_e", "S115", "DC11", "LC10", "TF1", "100.00", is_as_needed=True))
     req("DC11", "LC10")
 
     # === HISTORICAL-band edges vs incumbent routing baseline 100.00. ==============
@@ -227,9 +225,7 @@ def build_inputs(*, single_round: bool = False) -> EngineInputs:
     # === CONTINUITY + SCENARIO C: incumbent S70 bids within 3% at full coverage. ===
     # Incumbent (continuity 100) at 100.00 (group min) vs a cheaper non-incumbent at
     # 99.00. B picks the higher RecScore; C retains the incumbent (within-3%, >=80%).
-    bids.append(
-        _bid("b_inc", "S70", "DC60", "LT01", "TF1", "100.00", is_incumbent=True)
-    )
+    bids.append(_bid("b_inc", "S70", "DC60", "LT01", "TF1", "100.00", is_incumbent=True))
     bids.append(_bid("b_inc_rival", "S71", "DC60", "LT01", "TF1", "99.00"))
     req("DC60", "LT01")
 

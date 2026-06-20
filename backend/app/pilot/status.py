@@ -94,9 +94,7 @@ def kanban(
     open_adjustments = counts["open_adjustments"]
 
     if rounds_with_bids > 0:
-        board[_DONE].append(
-            f"Bids loaded for {rounds_with_bids} of {total_rounds} round(s)"
-        )
+        board[_DONE].append(f"Bids loaded for {rounds_with_bids} of {total_rounds} round(s)")
     if analysis_versions > 0:
         board[_DONE].append(f"{analysis_versions} alignment analysis version(s) sealed")
 
@@ -111,9 +109,7 @@ def kanban(
     else:
         board[_DONE].append("Award frozen")
         if open_adjustments > 0:
-            board[_DOING].append(
-                f"{open_adjustments} post-award adjustment version(s) recorded"
-            )
+            board[_DOING].append(f"{open_adjustments} post-award adjustment version(s) recorded")
         board[_NEXT].append("Record any further negotiated reprices as new versions")
 
     # Waiting-on-you: the gated, sponsor-action step.
@@ -140,9 +136,7 @@ def _cycle_counts(session: Session, cycle_id: str) -> dict[str, int]:
         "suppliers": scalar(
             "SELECT count(*) FROM cyc.cycle_invited_supplier WHERE cycle_id = :cyc"
         ),
-        "timeframes": scalar(
-            "SELECT count(*) FROM cyc.cycle_timeframe WHERE cycle_id = :cyc"
-        ),
+        "timeframes": scalar("SELECT count(*) FROM cyc.cycle_timeframe WHERE cycle_id = :cyc"),
         "rounds": scalar("SELECT count(*) FROM cyc.cycle_round WHERE cycle_id = :cyc"),
         "rounds_with_bids": scalar(
             "SELECT count(DISTINCT round_id) FROM bid.bid_line WHERE cycle_id = :cyc"

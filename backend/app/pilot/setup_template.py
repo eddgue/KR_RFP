@@ -254,9 +254,7 @@ def _tab_specs() -> tuple[TabSpec, ...]:
                 FieldSpec("End Date", "YYYY-MM-DD.", 16),
                 FieldSpec("Week Count", "Weeks in the window.", 14, NUMFMT_INT),
             ),
-            examples=(
-                ("Spring 2026 (EXAMPLE)", "2026-04-01", "2026-06-30", 13),
-            ),
+            examples=(("Spring 2026 (EXAMPLE)", "2026-04-01", "2026-06-30", 13),),
         ),
         TabSpec(
             name=TAB_PREMIUMS,

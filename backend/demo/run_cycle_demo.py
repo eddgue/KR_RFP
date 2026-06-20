@@ -385,9 +385,9 @@ def seed_cycle(session: Session) -> SeededCycle:
             # Incumbent routing = prior-period actual-paid (the iTrade baseline, D11). Modelled as
             # the incumbent's own final-round bid + a margin the RFP captures (~7%), so the cycle
             # shows realistic SAVINGS vs what we paid last period (the headline buyers sign).
-            routing = (
-                _synthetic_price(N_ROUNDS - 1, di, li, 0) * Decimal("1.07")
-            ).quantize(Decimal("0.01"))
+            routing = (_synthetic_price(N_ROUNDS - 1, di, li, 0) * Decimal("1.07")).quantize(
+                Decimal("0.01")
+            )
             assignment_id = _id()
             session.execute(
                 text(
@@ -711,9 +711,7 @@ def write_recommendation_md(
     lot_name = {lot.id: lot.name for lot in seeded.lots}
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     tf_name = {tf.id: tf.name for tf in seeded.tfs}
-    item_name_for_lot = {
-        seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))
-    }
+    item_name_for_lot = {seeded.lots[i].id: seeded.items[i].name for i in range(len(seeded.lots))}
     # Compact KEY-reference codes (id -> short code) — a trailing traceability column, not the lead.
     dc_code = {dc.id: dc.code for dc in seeded.dcs}
     lot_code = {lot.id: lot.code for lot in seeded.lots}
@@ -799,9 +797,7 @@ def write_recommendation_md(
     lines.append("| Lens | Label | Objective spend (synthetic) |")
     lines.append("| --- | --- | --- |")
     for s in scenarios:
-        spend = (
-            f"${s.objective_total_spend:,.2f}" if s.objective_total_spend is not None else "—"
-        )
+        spend = f"${s.objective_total_spend:,.2f}" if s.objective_total_spend is not None else "—"
         lines.append(f"| {s.scenario_code} | {s.label} | {spend} |")
     lines.append("")
     if delta_pct is not None:
@@ -942,9 +938,7 @@ def _dc_supplier_split(
         vol_by[a.dc_id][a.supplier_id] += cases * a.volume_share
         lots_by[a.dc_id][a.supplier_id].add(a.lot_id)
     return {
-        dc_id: {
-            sup_id: (vol, len(lots_by[dc_id][sup_id])) for sup_id, vol in sups.items()
-        }
+        dc_id: {sup_id: (vol, len(lots_by[dc_id][sup_id])) for sup_id, vol in sups.items()}
         for dc_id, sups in vol_by.items()
     }
 
@@ -1039,9 +1033,7 @@ def select_award_from_scenario(
                 period_cases=seeded.period_cases_by_cell.get(
                     (a.dc_id, a.lot_id, a.tf_id), Decimal("0")
                 ),
-                routing_baseline=seeded.incumbent_routing.get(
-                    (a.dc_id, a.lot_id), Decimal("0")
-                ),
+                routing_baseline=seeded.incumbent_routing.get((a.dc_id, a.lot_id), Decimal("0")),
             )
         )
     return SelectedAward(
@@ -1070,8 +1062,10 @@ def main() -> None:
     )
 
     with unit_of_work() as session:
-        print("[1/8] Seeding synthetic cycle (client/commodity, DCs, lots, items, TFs, rounds, "
-              "suppliers, volumes, incumbents — readable DEMO names, D23)…")
+        print(
+            "[1/8] Seeding synthetic cycle (client/commodity, DCs, lots, items, TFs, rounds, "
+            "suppliers, volumes, incumbents — readable DEMO names, D23)…"
+        )
         seeded = seed_cycle(session)
         print(
             f"   cycle {seeded.cycle_code}: {len(seeded.dcs)} DCs, {len(seeded.lots)} lots, "
@@ -1083,8 +1077,10 @@ def main() -> None:
             scope = build_scope(seeded, round_entity)
             template_bytes = generate_template_bytes(scope)
             if round_idx == 0:
-                print(f"[2/8] Generated owned bid template for {round_entity.code} "
-                      f"({len(scope.rows)} scope rows, keys embedded — D21)")
+                print(
+                    f"[2/8] Generated owned bid template for {round_entity.code} "
+                    f"({len(scope.rows)} scope rows, keys embedded — D21)"
+                )
             filled = fill_template(template_bytes, seeded, round_idx)
             n = ingest_and_persist(session, filled, scope, seeded, round_entity)
             total_lines += n
@@ -1102,8 +1098,10 @@ def main() -> None:
             for (dc_id, lot_id), sup_id in seeded.incumbent_by_dc_lot.items()
         )
 
-        print(f"[4/8] Running engine runner on final round {final_round.code} "
-              f"(read-by-key -> assemble -> V3Engine.run -> seal)…")
+        print(
+            f"[4/8] Running engine runner on final round {final_round.code} "
+            f"(read-by-key -> assemble -> V3Engine.run -> seal)…"
+        )
         runner = EngineRunner(session)
         run_result = runner.run_analysis(
             cycle_id=seeded.cycle_id,
@@ -1122,8 +1120,10 @@ def main() -> None:
         print("[5/8] Generating RECOMMENDATION.md (pre-award decision-support, names not keys)…")
         rec_path = write_recommendation_md(session, seeded, run_result.analysis_run_id, config)
 
-        print("[6/8] Simulating the human selecting Scenario B -> promote to award "
-              "(real flow gates this through award -> FREEZE -> SIGN-OFF before any output, D22)…")
+        print(
+            "[6/8] Simulating the human selecting Scenario B -> promote to award "
+            "(real flow gates this through award -> FREEZE -> SIGN-OFF before any output, D22)…"
+        )
         award = select_award_from_scenario(
             session, seeded, run_result.analysis_run_id, selected_scenario_code="B"
         )
@@ -1134,20 +1134,26 @@ def main() -> None:
             "[freeze + sign-off gates noted, deferred to the awd.* phase]"
         )
 
-        print("[7/9] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD "
-              "(buyers/pricing; presentation-formatted — D24)…")
+        print(
+            "[7/9] Generating BOOKING_GUIDE_INTERNAL.xlsx FROM THE AWARD "
+            "(buyers/pricing; presentation-formatted — D24)…"
+        )
         internal_path = write_booking_guide_internal_xlsx(
             seeded, award, output_path=OUTPUT_DIR / "BOOKING_GUIDE_INTERNAL.xlsx"
         )
-        print("[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
-              "(one sheet per awarded supplier; presentation-formatted — D24)…")
+        print(
+            "[8/9] Generating SUPPLIER_AWARD_GUIDES.xlsx FROM THE AWARD "
+            "(one sheet per awarded supplier; presentation-formatted — D24)…"
+        )
         supplier_path = write_supplier_award_guides_xlsx(
             seeded, award, output_path=OUTPUT_DIR / "SUPPLIER_AWARD_GUIDES.xlsx"
         )
-        print("[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26/D27): "
-              "Scenario Comparison (lenses side by side + LIVE Custom column + EXPANDABLE "
-              "scenario→DC→supplier drill) + interactive Custom Scenario (D25) + a flat "
-              "Data (pivot me) Excel Table (D27)…")
+        print(
+            "[9/9] Generating SCENARIO_WORKBOOK.xlsx — ALIGNMENT/COMPARISON tool (D26/D27): "
+            "Scenario Comparison (lenses side by side + LIVE Custom column + EXPANDABLE "
+            "scenario→DC→supplier drill) + interactive Custom Scenario (D25) + a flat "
+            "Data (pivot me) Excel Table (D27)…"
+        )
         workbook_path = write_scenario_workbook_xlsx(
             session, seeded, config, run_result.analysis_run_id, final_round.id, award
         )

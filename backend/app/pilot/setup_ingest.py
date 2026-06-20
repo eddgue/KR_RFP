@@ -150,9 +150,7 @@ class _Named:
 # ---------------------------------------------------------------------------
 # the ingest
 # ---------------------------------------------------------------------------
-def ingest_setup_workbook(
-    session: Session, data: bytes, *, created_by: str = "pilot"
-) -> str:
+def ingest_setup_workbook(session: Session, data: bytes, *, created_by: str = "pilot") -> str:
     """Parse the filled setup workbook and write the cycle + scope; return the new cycle_id.
 
     Validates first (collecting ALL problems), then writes atomically within the caller's unit of
@@ -252,9 +250,7 @@ def ingest_setup_workbook(
         pack = _cell(lots_ws, row, lots_hdr.get("Pack Size / UOM", 0))
         ptype = _cell(lots_ws, row, lots_hdr.get("Product Type", 0))
         if ptype and ptype not in PRODUCT_TYPES:
-            problems.add(
-                TAB_LOTS, row, f"Product Type '{ptype}' not in {', '.join(PRODUCT_TYPES)}"
-            )
+            problems.add(TAB_LOTS, row, f"Product Type '{ptype}' not in {', '.join(PRODUCT_TYPES)}")
         category = _cell(lots_ws, row, lots_hdr.get("Category", 0))
         lots[lot_name] = _Named(_id(), lot_name)
         items_by_lot[lot_name] = _Named(_id(), desc)

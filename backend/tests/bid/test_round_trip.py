@@ -301,7 +301,5 @@ def test_name_mismatch_warns_but_keys_still_resolve() -> None:
     assert warning.column == BidColumn.SUPPLIER.value
     assert warning.found_name == "Totally Wrong Name"
     # The row that warned still carries the CORRECT keyed supplier_id (no re-resolve to the name).
-    warned_line = next(
-        line for line in result.lines if line.source_row_number == body_rows[0]
-    )
+    warned_line = next(line for line in result.lines if line.source_row_number == body_rows[0])
     assert warned_line.identity.supplier_id == kept_supplier_id

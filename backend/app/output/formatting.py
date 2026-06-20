@@ -130,14 +130,10 @@ def format_table(
     # Title banner occupies rows 1..(header_row-1); caller may pass header_row, else
     # we compute it from the banner height.
     if header_row is None:
-        next_row = _title_block(
-            ws, title=title, subtitle_lines=subtitle_lines, span=span
-        )
+        next_row = _title_block(ws, title=title, subtitle_lines=subtitle_lines, span=span)
         header_row = next_row
     else:
-        _title_block(
-            ws, title=title, subtitle_lines=subtitle_lines, span=span, start_row=1
-        )
+        _title_block(ws, title=title, subtitle_lines=subtitle_lines, span=span, start_row=1)
 
     # Header row — bold white-on-color, centered, wrapped, bordered.
     for ci, col in enumerate(columns, start=1):

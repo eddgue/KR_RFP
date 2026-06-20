@@ -37,9 +37,7 @@ def _awards() -> tuple[ScenarioAward, ...]:
 
 def _award(code: str, dc: str, lot: str) -> list[ScenarioAward]:
     return [
-        a
-        for a in _awards()
-        if a.scenario_code.value == code and a.dc_no == dc and a.lot_id == lot
+        a for a in _awards() if a.scenario_code.value == code and a.dc_no == dc and a.lot_id == lot
     ]
 
 
@@ -150,9 +148,7 @@ def test_cap_breach_surfaces() -> None:
 
     dc, tf = _EXPECT["cap_breach"]["breaching_dc_tf"]
     breach_awards = [
-        a
-        for a in _awards()
-        if a.scenario_code.value == "B" and a.dc_no == dc and a.tf_code == tf
+        a for a in _awards() if a.scenario_code.value == "B" and a.dc_no == dc and a.tf_code == tf
     ]
     assert breach_awards, "expected B awards in the breaching DC×TF"
     assert all(a.cap_breach_flag is True for a in breach_awards)

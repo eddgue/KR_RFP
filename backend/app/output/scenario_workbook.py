@@ -433,9 +433,7 @@ def _gather_scenario_rollups(
     for s in sorted(scenarios, key=lambda x: x.scenario_code):
         code = s.scenario_code
         spend = spend_by.get(code, Decimal("0"))
-        sv_base = (
-            (baseline_total - spend) / baseline_total if baseline_total > 0 else Decimal("0")
-        )
+        sv_base = (baseline_total - spend) / baseline_total if baseline_total > 0 else Decimal("0")
         sv_stly = (stly_total - spend) / stly_total if stly_total > 0 else Decimal("0")
         rollups.append(
             ScenarioRollup(
@@ -537,9 +535,7 @@ def _gather_award_details(
     ).all()
     score_by: dict[tuple[str, str, str, str], tuple[Decimal, ...]] = {}
     for s, d, lo, t, ps, cov, hist, z, cont, rec in score_rows:
-        score_by[(s, d, lo, t)] = tuple(
-            Decimal(str(v)) for v in (ps, cov, hist, z, cont, rec)
-        )
+        score_by[(s, d, lo, t)] = tuple(Decimal(str(v)) for v in (ps, cov, hist, z, cont, rec))
 
     award_rows = session.execute(
         text(
@@ -600,9 +596,7 @@ def _gather_award_details(
                 relationship="Preserve" if is_inc else "Create",
             )
         )
-    details.sort(
-        key=lambda d: (d.scenario_code, d.dc_name, d.lot_name, d.tf_name, d.supplier_name)
-    )
+    details.sort(key=lambda d: (d.scenario_code, d.dc_name, d.lot_name, d.tf_name, d.supplier_name))
     return details
 
 
@@ -805,8 +799,16 @@ def _write_scenario_drill(
         _drill_cells(
             ws,
             row,
-            [scen_label, tot_spend, tot_vol, tot_sav, len({d.supplier_name for d in by_scen[code]}),
-             None, None, ""],
+            [
+                scen_label,
+                tot_spend,
+                tot_vol,
+                tot_sav,
+                len({d.supplier_name for d in by_scen[code]}),
+                None,
+                None,
+                "",
+            ],
             level=0,
             bold=True,
             fill=(_BENCH_FILL if code == "A" else _REC_FILL if code == "B" else _TOTAL_FILL),
@@ -819,8 +821,16 @@ def _write_scenario_drill(
             _drill_cells(
                 ws,
                 row,
-                [f"   {dcr.dc_name}", dcr.spend, dcr.volume, dcr.savings_vs_baseline,
-                 dcr.n_suppliers, None, None, ""],
+                [
+                    f"   {dcr.dc_name}",
+                    dcr.spend,
+                    dcr.volume,
+                    dcr.savings_vs_baseline,
+                    dcr.n_suppliers,
+                    None,
+                    None,
+                    "",
+                ],
                 level=1,
                 bold=False,
                 hidden=True,
@@ -1078,8 +1088,8 @@ def _write_scenario_comparison_tab(
         row=custom_row,
         column=7,
         value=(
-            f"=SUMPRODUCT(({custom_refs['sup']}<>\"\")/"
-            f"COUNTIF({custom_refs['sup']},{custom_refs['sup']}&\"\"))"
+            f'=SUMPRODUCT(({custom_refs["sup"]}<>"")/'
+            f'COUNTIF({custom_refs["sup"]},{custom_refs["sup"]}&""))'
         ),
     )
     ws.cell(row=custom_row, column=8, value="(see Custom tab)")
@@ -1293,7 +1303,7 @@ def _write_supplier_comparison_tab(
         # Per-row MIN: the cell equals the row's min over the supplier price block (ignores blanks
         # via MIN). Anchored so the formula slides per row but the row's range is absolute-column.
         min_formula = (
-            f"AND({first_letter}{body_start}<>\"\","
+            f'AND({first_letter}{body_start}<>"",'
             f"{first_letter}{body_start}=MIN(${first_letter}{body_start}:${last_letter}{body_start}))"
         )
         ws.conditional_formatting.add(
@@ -1444,9 +1454,7 @@ def _write_custom_scenario_tab(
         ws.cell(
             row=row,
             column=6,
-            value=(
-                f'=SUMIFS({p_val},{p_key},{col_cellkey}{row}&"@"&{col_supplier}{row})'
-            ),
+            value=(f'=SUMIFS({p_val},{p_key},{col_cellkey}{row}&"@"&{col_supplier}{row})'),
         )
         # LIVE: picked price vs the cell's Min / Incumbent / Baseline (grounded comparisons, D26).
         ws.cell(
@@ -1593,8 +1601,7 @@ def _write_custom_scenario_tab(
         # row (each row matches itself), so there is no div/0; the (dc=…) numerator zeroes
         # non-DC rows, leaving the distinct count for the DC. Recomputes live.
         distinct_formula = (
-            f'=SUMPRODUCT(({rng_dc}="{dc}")/'
-            f"COUNTIFS({rng_dc},{rng_dc},{rng_sup},{rng_sup}))"
+            f'=SUMPRODUCT(({rng_dc}="{dc}")/COUNTIFS({rng_dc},{rng_dc},{rng_sup},{rng_sup}))'
         )
         lcell = ws.cell(row=cap_row, column=s_label_col, value=dc)
         lcell.alignment = _LEFT
@@ -1602,9 +1609,7 @@ def _write_custom_scenario_tab(
         dcell.alignment = _CENTER
         dcell.border = _BORDER
         # Flag column right of the count.
-        flag_formula = (
-            f'=IF({val_letter}{cap_row}>{config.max_sup_dc},"⚠ CAP BREACH","OK")'
-        )
+        flag_formula = f'=IF({val_letter}{cap_row}>{config.max_sup_dc},"⚠ CAP BREACH","OK")'
         fcell = ws.cell(row=cap_row, column=s_val_col + 1, value=flag_formula)
         fcell.font = _TOTAL_FONT
         fcell.alignment = _LEFT
@@ -1684,14 +1689,33 @@ def _write_data_pivot_tab(wb: Workbook, details: list[AwardDetail]) -> None:
     row = header_row + 1
     for d in details:
         vals: list[object] = [
-            d.scenario_code, d.scenario_label, d.dc_name, d.lot_name, d.item_name, d.tf_name,
-            d.supplier_name, d.incumbent_name, "Yes" if d.is_incumbent else "No",
-            float(d.volume), float(d.volume_share), float(d.price), float(d.spend),
-            float(d.baseline_price), float(d.baseline_spend), float(d.savings_vs_baseline),
-            float(d.premium_vs_baseline_frac), float(d.price_score), float(d.coverage_score),
-            float(d.hist_score), float(d.zrisk_score), float(d.continuity_score),
-            float(d.rec_score), "Yes" if d.cap_breach else "No",
-            "Yes" if d.is_fallback else "No", d.transit_days, d.relationship,
+            d.scenario_code,
+            d.scenario_label,
+            d.dc_name,
+            d.lot_name,
+            d.item_name,
+            d.tf_name,
+            d.supplier_name,
+            d.incumbent_name,
+            "Yes" if d.is_incumbent else "No",
+            float(d.volume),
+            float(d.volume_share),
+            float(d.price),
+            float(d.spend),
+            float(d.baseline_price),
+            float(d.baseline_spend),
+            float(d.savings_vs_baseline),
+            float(d.premium_vs_baseline_frac),
+            float(d.price_score),
+            float(d.coverage_score),
+            float(d.hist_score),
+            float(d.zrisk_score),
+            float(d.continuity_score),
+            float(d.rec_score),
+            "Yes" if d.cap_breach else "No",
+            "Yes" if d.is_fallback else "No",
+            d.transit_days,
+            d.relationship,
         ]
         for ci, (val, (_h, fmt)) in enumerate(zip(vals, _DATA_COLUMNS, strict=True), start=1):
             cell = ws.cell(row=row, column=ci, value=val)
@@ -1821,7 +1845,7 @@ def _gather_score_detail(
     ).all()
 
     details: list[ScoreDetail] = []
-    for (sup_id, dc_id, lot_id, tf_id, ps, cov, hist, z, cont, rec, elig, flags) in score_rows:
+    for sup_id, dc_id, lot_id, tf_id, ps, cov, hist, z, cont, rec, elig, flags in score_rows:
         mn, avg, std, n = _stats((dc_id, lot_id, tf_id))
         price = price_by.get((sup_id, dc_id, lot_id, tf_id), Decimal("0"))
         prem = (price - mn) / mn if mn > 0 else Decimal("0")
@@ -1897,9 +1921,7 @@ def _write_lowest_cost_check_tab(
 
     ws = wb.create_sheet("Lowest-Cost Check")
     # Per-cell recommended detail line, keyed by (dc,lot,tf) names via the rec flag.
-    rec_by_cell = {
-        (d.dc_name, d.lot_name, d.tf_name): d for d in details if d.is_recommended
-    }
+    rec_by_cell = {(d.dc_name, d.lot_name, d.tf_name): d for d in details if d.is_recommended}
     columns = [
         Col("DC", 16),
         Col("Lot", 20),
@@ -2220,7 +2242,7 @@ def _write_tf_comparison_tab(wb: Workbook, cells: list[CellInfo]) -> None:
 
     header_row = 6
     row = header_row + 1
-    for (dcn, lotn, itemn) in sorted(by_dclot):
+    for dcn, lotn, itemn in sorted(by_dclot):
         per_tf = by_dclot[(dcn, lotn, itemn)]
         ws.cell(row=row, column=1, value=dcn)
         ws.cell(row=row, column=2, value=lotn)
@@ -2779,9 +2801,7 @@ class FobRow:
     transit_days: int | None  # real lane transit (None if not supplied)
 
 
-def _gather_fob(
-    session: Session, seeded: CycleView, final_round_id: str
-) -> list[FobRow]:
+def _gather_fob(session: Session, seeded: CycleView, final_round_id: str) -> list[FobRow]:
     """Per (lot × DC × supplier): the FOB / Delivery / VegCool / All-In decomposition (final round).
 
     Reads the persisted `bid.bid_line` components (`fob_case`, `delivery_surcharge_case`,
@@ -2996,16 +3016,12 @@ def _gather_incumbent_retention(cells: list[CellInfo]) -> list[IncumbentRetentio
         else:
             status = _RETAIN_NOBID
         prem_case = (
-            inc_price - rec_price
-            if inc_price is not None and rec_price is not None
-            else None
+            inc_price - rec_price if inc_price is not None and rec_price is not None else None
         )
         prem_period = prem_case * c.volume if prem_case is not None else None
         has_rec = rec_price is not None and rec_price != Decimal("0")
         prem_pct = (
-            prem_case / rec_price
-            if prem_case is not None and has_rec and rec_price
-            else None
+            prem_case / rec_price if prem_case is not None and has_rec and rec_price else None
         )
         rows.append(
             IncumbentRetentionRow(
@@ -3031,9 +3047,7 @@ def _gather_incumbent_retention(cells: list[CellInfo]) -> list[IncumbentRetentio
     return rows
 
 
-def _write_incumbent_retention_tab(
-    wb: Workbook, rows: list[IncumbentRetentionRow]
-) -> None:
+def _write_incumbent_retention_tab(wb: Workbook, rows: list[IncumbentRetentionRow]) -> None:
     """Incumbent Retention — the dollar cost of keeping each incumbent the engine did not pick.
 
     The engine recommends on economics; relationships are the buyer's call. Each row prices that
@@ -3168,8 +3182,7 @@ def _write_share_relationships_tab(
 
     ws = wb.create_sheet("Share & Relationships")
     incumbent_names = {
-        seeded_sup_name(seeded, sup_id)
-        for sup_id in set(seeded.incumbent_by_dc_lot.values())
+        seeded_sup_name(seeded, sup_id) for sup_id in set(seeded.incumbent_by_dc_lot.values())
     }
     codes = [s.scenario_code for s in sorted(scenarios, key=lambda x: x.scenario_code)]
     # spend per (scenario, supplier) and per scenario total.
@@ -3228,9 +3241,15 @@ def _write_share_relationships_tab(
     ws.conditional_formatting.add(
         f"{get_column_letter(first_scen_col)}{body_start}:{last_scen_col}{share_end}",
         ColorScaleRule(
-            start_type="num", start_value=0, start_color="FFFFFF",
-            mid_type="num", mid_value=float(config.conc_thresh), mid_color="FFEB9C",
-            end_type="num", end_value=0.6, end_color="F8696B",
+            start_type="num",
+            start_value=0,
+            start_color="FFFFFF",
+            mid_type="num",
+            mid_value=float(config.conc_thresh),
+            mid_color="FFEB9C",
+            end_type="num",
+            end_value=0.6,
+            end_color="F8696B",
         ),
     )
 
@@ -3335,8 +3354,13 @@ def _gather_negotiation(
             read = "Competing in line with the field"
         plays.append(
             _SupplierPlay(
-                name=name, role=role, cells=len(moves[name]), avg_move_frac=amove,
-                avg_prem_frac=aprem, sustainability_flags=flags, read=read,
+                name=name,
+                role=role,
+                cells=len(moves[name]),
+                avg_move_frac=amove,
+                avg_prem_frac=aprem,
+                sustainability_flags=flags,
+                read=read,
             )
         )
     return plays, _avg(inc_moves), _avg(chal_moves)
@@ -3472,7 +3496,8 @@ def _compute_kpis(
     created = len({d.supplier_name for d in rec_details if d.relationship == "Create"})
     gap = inc_move - chal_move
     fair = (
-        "leaning on tenure" if gap > Decimal("0.005")
+        "leaning on tenure"
+        if gap > Decimal("0.005")
         else ("competing" if gap < Decimal("-0.005") else "in line")
     )
     cost, hidden, rel, neg = "548235", "BF8F00", "2E5496", "1F3864"
@@ -3483,8 +3508,10 @@ def _compute_kpis(
         _Kpi("Hidden costs", "Freshness watches", f"{fresh}", hidden),
         _Kpi("Relationships", "Preserved / Created", f"{preserved} / {created}", rel),
         _Kpi(
-            "Negotiation", "Incumbent vs field move",
-            f"{inc_move:.1%} / {chal_move:.1%} ({fair})", neg,
+            "Negotiation",
+            "Incumbent vs field move",
+            f"{inc_move:.1%} / {chal_move:.1%} ({fair})",
+            neg,
         ),
     ]
 
@@ -3596,27 +3623,33 @@ def _write_custom_dashboard_tab(
         ("Total spend", f"={cust_spend}", float(rec_spend), NUMFMT_MONEY),
         (
             "Savings vs incumbent $",
-            f"={base_spend}-{cust_spend}", float(base_rec), NUMFMT_MONEY,
+            f"={base_spend}-{cust_spend}",
+            float(base_rec),
+            NUMFMT_MONEY,
         ),
         (
             "Savings vs incumbent %",
             f"=IFERROR(({base_spend}-{cust_spend})/{base_spend},0)",
-            pct_rec, NUMFMT_PCT,
+            pct_rec,
+            NUMFMT_PCT,
         ),
         (
             "Avg transit (days, vol-wtd)",
             f"=IFERROR(SUMPRODUCT({vol_r},{tr_r})/SUM({vol_r}),0)",
-            rec_avg_transit, "0.0",
+            rec_avg_transit,
+            "0.0",
         ),
         (
             "Freshness watches (cells)",
             f'=COUNTIF({tr_r},">{FRESHNESS_WATCH_DAYS}")',
-            float(rec_fresh), NUMFMT_INT,
+            float(rec_fresh),
+            NUMFMT_INT,
         ),
         (
             "Suppliers used",
             f"=SUMPRODUCT(1/COUNTIF({sup_r},{sup_r}))",
-            float(rec_n_suppliers), NUMFMT_INT,
+            float(rec_n_suppliers),
+            NUMFMT_INT,
         ),
     ]
     for label, cust_f, rec_v, nf in kpi_rows:
@@ -3657,7 +3690,8 @@ def _write_custom_dashboard_tab(
         sh.alignment = _CENTER
         sh.border = _BORDER
         dep = ws.cell(
-            row=r, column=4,
+            row=r,
+            column=4,
             value=f'=IF(C{r}>={float(config.conc_thresh)},"DEPENDENCY","")',
         )
         dep.alignment = _CENTER
@@ -3667,9 +3701,15 @@ def _write_custom_dashboard_tab(
     ws.conditional_formatting.add(
         f"C{share_start}:C{share_end}",
         ColorScaleRule(
-            start_type="num", start_value=0, start_color="FFFFFF",
-            mid_type="num", mid_value=float(config.conc_thresh), mid_color="FFEB9C",
-            end_type="num", end_value=0.6, end_color="F8696B",
+            start_type="num",
+            start_value=0,
+            start_color="FFFFFF",
+            mid_type="num",
+            mid_value=float(config.conc_thresh),
+            mid_color="FFEB9C",
+            end_type="num",
+            end_value=0.6,
+            end_color="F8696B",
         ),
     )
     ws.conditional_formatting.add(
@@ -3691,7 +3731,7 @@ def _write_custom_dashboard_tab(
         cspend.number_format = NUMFMT_MONEY
         cspend.alignment = _CENTER
         cspend.border = _BORDER
-        sav = ws.cell(row=r, column=3, value=f"={base_dc}-SUMIF({dc_r},\"{nm}\",{spend_r})")
+        sav = ws.cell(row=r, column=3, value=f'={base_dc}-SUMIF({dc_r},"{nm}",{spend_r})')
         sav.number_format = NUMFMT_MONEY
         sav.alignment = _CENTER
         sav.border = _BORDER
@@ -3723,9 +3763,7 @@ def _run_version(
     """
 
     this_run = (
-        session.query(AnalysisRun)
-        .filter(AnalysisRun.analysis_run_id == analysis_run_id)
-        .one()
+        session.query(AnalysisRun).filter(AnalysisRun.analysis_run_id == analysis_run_id).one()
     )
     seq = (
         session.query(AnalysisRun)
@@ -3833,12 +3871,8 @@ def write_scenario_workbook_xlsx(
         session, seeded, scenarios, analysis_run_id
     )
     details = _gather_award_details(session, seeded, scenarios, analysis_run_id)
-    score_detail = _gather_score_detail(
-        session, seeded, analysis_run_id, final_round_id, award
-    )
-    coverage_rows = _gather_coverage(
-        session, seeded, analysis_run_id, final_round_id, award
-    )
+    score_detail = _gather_score_detail(session, seeded, analysis_run_id, final_round_id, award)
+    coverage_rows = _gather_coverage(session, seeded, analysis_run_id, final_round_id, award)
     dc_names = [dc.name for dc in seeded.dcs]
 
     # Product type per lot (DEMO-illustrative segmentation, by lot order).
@@ -3858,9 +3892,7 @@ def write_scenario_workbook_xlsx(
 
     # Per-DC negotiation capture (R1→Final) on the RECOMMENDED award cells, + recommended spend.
     rec_code = award.scenario_code
-    evo_by_key = {
-        (e.dc_name, e.lot_name, e.tf_name, e.supplier_name): e for e in evo_rows
-    }
+    evo_by_key = {(e.dc_name, e.lot_name, e.tf_name, e.supplier_name): e for e in evo_rows}
     negotiation_by_dc: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     rec_spend = Decimal("0")
     for d in details:
@@ -3962,8 +3994,16 @@ def write_scenario_workbook_xlsx(
     rec_fresh = sum(1 for t, _vol in t_pairs if t > FRESHNESS_WATCH_DAYS)
     rec_n_suppliers = len({d.supplier_name for d in rec_details})
     _write_custom_dashboard_tab(
-        wb, len(cells), seeded, config, baseline_total, rec_spend,
-        rec_avg_transit, rec_fresh, rec_n_suppliers, incumbent_names,
+        wb,
+        len(cells),
+        seeded,
+        config,
+        baseline_total,
+        rec_spend,
+        rec_avg_transit,
+        rec_fresh,
+        rec_n_suppliers,
+        incumbent_names,
     )
     _write_data_pivot_tab(wb, details)
     tab_index.append(
