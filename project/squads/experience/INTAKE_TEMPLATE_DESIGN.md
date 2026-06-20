@@ -48,38 +48,38 @@ to read what comes back.
 - **Delivery as a guided walk-through.** Surface this as a template-builder wizard / walk-through:
   step the buyer through choosing columns, grouping them, and saving the preset.
 
-## 1a. The period model — capture per fiscal period, define periods by PRESET, roll up by grouping
+## 1a. The period model — DATA is flat at the 13 fiscal periods; the TEMPLATE groups; intake fans out
 
-The load-bearing pricing-intake decision (sponsor 2026-06-20). Chosen for **error-protection**:
-ONE mechanism covers flat / monthly / quarterly / custom, and the finest grain can always roll UP
-but a coarse grain can never be disaggregated — so we capture fine and aggregate for view.
+The load-bearing pricing-intake decision (sponsor 2026-06-20, refined). The data structure stays
+**flat and canonical**; the template does the grouping for supplier ease; intake expands the grouped
+price back into the flat per-period rows. Chosen for **error-protection**: there is exactly ONE
+storage grain, so every downstream calc/group/compare runs on a uniform structure.
 
-- **One unit: the timeframe (period).** A cycle's horizon is divided into N timeframes
-  (`cyc.cycle_timeframe`, already in the schema). Everything is per-timeframe; "flat" is just N=1.
-- **Periods are defined by a PRESET, not hand-typed dates.** The buyer picks the calendar and the
-  preset GENERATES the timeframes, so boundaries are encoded once and consistent across cycles:
-  - **Kroger fiscal period** — the 4-5-4 retail period (~monthly, ~12–13/yr). The finest standard
-    grain; pick this when pricing is volatile and you want monthly resolution.
-  - **Kroger fiscal quarter** — 13 weeks, 4/yr.
-  - **Fiscal trimester** — 3/yr.
-  - **Custom** — explicit start/end dates (the escape hatch).
-  - **Flat** — a single timeframe spanning the whole horizon (N=1).
-- **Cost components are collected PER timeframe** (D12 period-grain — already the bid grain: one row
-  per DC × lot × item × **TF** × supplier). Each period carries its OWN component set
-  (FOB / Delivery / VegCool / − Lot Discount / All-In). NOT flat-only; NOT hardcoded-monthly —
-  "monthly", "quarterly", and "flat" are all the same per-period mechanism with a different N.
-- **Grouping rolls periods UP for visualization (increment 2).** Excel row-outline compact/expand
-  over the period rows (periods → quarter/trimester → year), per §1 grouping above — the captured
-  per-period grain never changes, only how much is shown.
-- **Buyer trades precision vs supplier-input burden by choosing the preset.** Per-period pricing is
-  more cells for a supplier to fill; a stable category picks flat/quarterly, a volatile one picks
-  fiscal period. The platform supports all; the cycle's preset decides — and the supplier form's
-  readiness traffic light (§2) makes a denser per-period template tractable to complete.
+- **Storage = FLAT at the 13 fiscal periods.** A fiscal year has **13 periods** (Kroger's 4-5-4
+  retail calendar). Every offer/price is recorded in the database against **exactly ONE of the 13
+  periods** — the database never stores a "grouped" or variable-grain price. This flat per-period
+  table is the invariant the whole platform reads.
+- **The TEMPLATE groups periods into a few timeframes (supplier-facing only).** A cycle's bid
+  template defines a small number of timeframes, each = a contiguous span of periods, so the supplier
+  prices a handful of timeframes instead of all 13. Example: **A = P1–2, B = P3–9, C = P10–12** → the
+  supplier fills 3 price columns, not 13.
+- **Intake FANS OUT the grouped price into the flat periods.** When a return comes in, each
+  timeframe's price/components are written **flat to every period in that timeframe's span** —
+  timeframe B (P3–9) priced once → periods 3,4,5,6,7,8,9 each get that price/components in the DB.
+  "The grouping and calculating-out comes from the bid template" — the template carries the
+  period→timeframe map; intake resolves it to the flat per-period rows. Keeps the **data structure
+  flat and the supplier template easy** at the same time.
+- **Compact/expand is a VIEW over the flat data (increment 2).** Excel row-outline grouping rolls the
+  13 stored periods up into the template's timeframes (or quarters/year) for reading — the stored
+  data never changes grain, only how much is shown.
+- **Buyer trades precision vs supplier burden by choosing the timeframe grouping**, not the storage
+  grain — fewer, wider timeframes = easier for the supplier (a flat year = one timeframe spanning all
+  13); finer timeframes = more resolution. Storage is always the 13 periods regardless.
 
-**Why this is the safest:** a single per-period code path (no flat/monthly/quarterly special cases to
-drift), named fiscal-calendar presets (fewer date-boundary errors than free-form entry), capture-fine
-/ roll-up-for-view (future "we need it monthly after all" never forces a re-collect), and it extends
-the existing `cyc.cycle_timeframe` model rather than rebuilding it.
+**Why this is the safest:** ONE canonical storage grain (13 periods) for every downstream consumer —
+no variable-grain data ever enters the store; the supplier never faces 13 cells (the template groups
+for them); the grouping is resolved at the boundary (intake fan-out), so a regrouping later is just a
+different fan-out/roll-up over the same flat periods, never a re-collect.
 
 ## 2. Supplier-side: the sent template is a governed FORM
 
@@ -108,9 +108,12 @@ The template a supplier receives must behave like a true form, not an editable s
   the superset; the generator emits exactly those, and a reduced preset still round-trips through
   ingest (test: `test_preset_reduces_columns_and_still_round_trips`). Built-in presets: full /
   all_in_simple / components.
-- **§1 period grouping (compact/expand) — NEXT (increment 2).** Excel row-outline grouping along the
-  timeframe axis, per the sponsor clarification above. Needs a multi-TF scope to be meaningful (the
-  pilot's synthetic scope is single-TF).
+- **§1 period model (flat-13 storage + template grouping + intake fan-out) — NEXT (increment 2),
+  per §1a.** Two parts: (a) the data layer stores flat at the 13 fiscal periods and intake fans a
+  timeframe's price out to each period in its span; (b) the compact/expand VIEW rolls those 13
+  periods up into the template's timeframes. Needs a multi-period scope to be meaningful (the pilot's
+  synthetic scope is single-period). This is the larger build — likely its own schema work
+  (period table + period→timeframe map) given the pilot's bid grain is currently one row per TF.
 - **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
