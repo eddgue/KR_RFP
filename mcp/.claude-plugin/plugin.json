@@ -1,0 +1,8 @@
+{
+  "name": "rfp-pilot",
+  "description": "Run real produce-RFP sourcing cycles end to end as a 3-agent harness — an orchestrator that talks to the buyer, a data-only engine subagent, and a secretary subagent for memory/notes. Wraps the rfp-pilot MCP server over a per-run isolated database.",
+  "version": "0.1.0",
+  "author": { "name": "KR_RFP" },
+  "homepage": "https://github.com/eddgue/RFP_MCP",
+  "keywords": ["rfp", "sourcing", "produce", "procurement", "harness"]
+}

@@ -1,20 +1,42 @@
-# RFP_MCP — the produce-RFP pilot (MCP server + Claude Code skill)
+# RFP_MCP — the produce-RFP pilot (Claude Code plugin: harness + MCP server)
 
 This is the deployable home of the **RFP pilot**: a stdio **MCP server** that drives a real produce
-RFP cycle end to end over the governed Postgres store + a per-run git vault, and a co-located
-**Claude Code skill** (`skill/rfp-pilot/SKILL.md`) that orchestrates it in the buyer's language.
+RFP cycle end to end over a **per-run isolated Postgres database** + a per-run git vault, and a
+Claude Code **plugin** that runs it as a small **three-agent harness** in the buyer's language.
 
-You drive everything by talking to Claude Code. The skill walks you step by step — start a run, fill
-and upload each document, run the alignment, freeze an award, record post-award reprices, draft
+You drive everything by talking to Claude Code. The harness walks you step by step — start a run,
+fill and upload each document, run the alignment, freeze an award, record post-award reprices, draft
 data-merged emails, and close out — always showing a short kanban of where each run stands.
+
+## The harness (three agents)
+
+The plugin ships an **orchestrator skill** and two **subagents**, all pinned to Opus 4.8:
+
+| Agent | Role | Tools |
+|---|---|---|
+| **orchestrator** (`skills/rfp-pilot/SKILL.md`) | Talks to the buyer; delegates; relays results. Touches no data or tools directly. | delegates only |
+| **rfp-engine** (`agents/rfp-engine.md`) | DATA only — ingest, run the alignment, award, post-award, and answer data questions by **reading the run's data**. | the data MCP tools |
+| **rfp-secretary** (`agents/rfp-secretary.md`) | Memory / admin — start, the kanban, NOTES.md, memory files, close-out. Owns "the noise." | the admin/memory MCP tools |
+
+**Hub-and-spoke:** only the orchestrator talks to the subagents; they never talk to each other.
+Tool-scoping (in each subagent's frontmatter) keeps the engine's context data-only and the
+secretary's free of raw data — so the engine's commentary is provably grounded in the sealed records.
 
 ## The three pieces
 
 | Repo / folder | What it is |
 |---|---|
 | **KR_RFP** (platform) | The engine, the governed Postgres schema, and the MCP server source (`backend/rfp_mcp/rfp_pilot_server.py`). |
-| **RFP_MCP** (this) | The MCP registration (`.mcp.json`) + the skill (`skill/rfp-pilot/`). Co-located so Claude Code can register the server and load the skill. |
+| **RFP_MCP** (this) | The Claude Code **plugin**: `.claude-plugin/plugin.json` (name + **version**), the orchestrator `skills/rfp-pilot/`, the `agents/` subagents, and the MCP registration (`.mcp.json`). |
 | **RFP_PILOT_VAULT** | The single git repository the routine runs in. One sub-folder ("run") per RFP, identical structure every run: `inputs/ outputs/ memory/ NOTES.md RUN.md run_data.json cycle_id.txt`. |
+
+### Per-run isolation (D30) + version pinning (D32)
+
+Each run gets its **own blank Postgres database** (created + migrated when the run starts, dropped on
+purge). A run never sees demo data or another run's data — and concurrent RFPs can't collide. The
+shared `kr_rfp` database below is only the credentials/template the run databases are derived from;
+the per-run databases are provisioned automatically. The plugin's `version` (in `plugin.json`) pins a
+live run to a released build — develop against a newer build without disturbing runs in flight.
 
 Two complementary stores: **Postgres = the governed data** (cycle, bids, sealed analysis runs,
 awards, adjustments); **the vault = the documents + their git history**. Each run also keeps a
@@ -104,15 +126,25 @@ Smoke-check the server registers all its tools without touching the DB:
 cd KR_RFP/backend && .venv/bin/python -m pytest tests/mcp -q
 ```
 
-### 6. Install the skill
+### 6. Install the plugin (skill + subagents)
 
-Copy the skill into your Claude Code skills directory so it loads automatically:
+The plugin bundles the orchestrator skill **and** the engine/secretary subagents, so they travel
+together. Install it as a plugin:
 
 ```bash
-cp -r RFP_MCP/skill/rfp-pilot  ~/.claude/skills/rfp-pilot
-# or, project-scoped, into the working repo:
-cp -r RFP_MCP/skill/rfp-pilot  ./.claude/skills/rfp-pilot
+claude --plugin-dir /abs/path/to/RFP_MCP        # load the plugin locally
+# or install from a marketplace once published:  /plugin install rfp-pilot
 ```
+
+Or, without the plugin loader, copy the skill + subagents into your `.claude/` directory:
+
+```bash
+cp -r RFP_MCP/skills/rfp-pilot  ~/.claude/skills/rfp-pilot     # the orchestrator
+cp    RFP_MCP/agents/rfp-engine.md  RFP_MCP/agents/rfp-secretary.md  ~/.claude/agents/
+```
+
+The subagents (`rfp-engine`, `rfp-secretary`) are pinned to `claude-opus-4-8` in their frontmatter
+and scoped to their own tool sets — the engine to the data tools, the secretary to admin/memory.
 
 ### 7. Point a routine / session at RFP_MCP
 
@@ -126,14 +158,17 @@ checks each run's kanban and pings you for the next step (a template to send, an
 sign-off, an un-recorded reprice). Disarm by removing/pausing the routine. See the **Scheduled
 nudges** section of `skill/rfp-pilot/SKILL.md`.
 
-## The tools (what the skill calls)
+## The tools (split across the two subagents)
 
-`run_start` · `run_list` · `run_status` · `setup_template` · `setup_ingest` · `bid_template` ·
-`ingest_bids` · `ingest_any` · `run_round` · `select_award` · `record_adjustment` · `history` ·
-`remember` · `add_memory` · `close_run` · `purge_run`.
+The **engine** holds the data tools: `setup_ingest` · `bid_template` · `ingest_bids` · `ingest_any` ·
+`run_round` · `select_award` · `record_adjustment` · `history` · `feedback`.
 
-Every tool returns a plain-language summary in the buyer's vocabulary (lots, DCs, rounds, awards —
-names, never raw keys) and names the exact file it generated and where it lives.
+The **secretary** holds the admin/memory tools: `run_start` · `run_list` · `run_status` ·
+`setup_template` · `remember` · `add_memory` · `close_run` · `purge_run`.
+
+Every tool opens a session on the **run's own database** (`run_unit_of_work(run_slug)`), returns a
+plain-language summary in the buyer's vocabulary (lots, DCs, rounds, awards — names, never raw keys),
+and names the exact file it generated and where it lives.
 
 ## Data governance
 
