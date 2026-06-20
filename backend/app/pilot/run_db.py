@@ -15,6 +15,7 @@ follows: each run's store is pinned to the migration head it was provisioned at.
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -124,6 +125,71 @@ def run_unit_of_work(slug: str) -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def _libpq_url(slug: str) -> str:
+    """The run DB URL as a plain libpq URI (no `+psycopg`) for the pg_dump/psql CLIs."""
+
+    return (
+        make_url(run_db_url(slug))
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+
+
+def _run_cli(cmd: list[str]) -> None:
+    """Run a Postgres CLI (pg_dump/psql); raise with stderr on failure."""
+
+    result = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        cmd, capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"{cmd[0]} failed ({result.returncode}): {result.stderr.strip()}")
+
+
+def dump_run_database(slug: str, out_path: Path) -> Path:
+    """Dump the run's database to a plain-SQL file (schema + data) for the vault (git-persisted).
+
+    A full pg_dump restores into an EMPTY database cleanly — tables created, data COPY'd, then FK
+    constraints added last — so the FK-heavy schema round-trips without load-order issues. This is
+    how a run's governed state survives an ephemeral (web) container: the dump rides the vault git.
+    """
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_cli(
+        ["pg_dump", "--no-owner", "--no-privileges", "--file", str(out_path), _libpq_url(slug)]  # noqa: S607
+    )
+    return out_path
+
+
+def restore_run_database(slug: str, sql_path: Path) -> None:
+    """Rehydrate the run's database from a vault SQL dump into a FRESH empty database.
+
+    The inverse of `dump_run_database`, for session start in a fresh container: drop any stale copy,
+    create an EMPTY database (no migrate — the dump carries the schema), then load the dump. After
+    this the run resumes exactly where it was sealed.
+    """
+
+    name = run_db_name(slug)
+    _engines.pop(run_db_url(slug), None)
+    admin = _admin_engine()
+    try:
+        with admin.connect() as conn:
+            conn.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = :n AND pid <> pg_backend_pid()"
+                ),
+                {"n": name},
+            )
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+    finally:
+        admin.dispose()
+    _run_cli(
+        ["psql", "--set", "ON_ERROR_STOP=1", "--quiet", "--file", str(sql_path), _libpq_url(slug)]  # noqa: S607
+    )
 
 
 def drop_run_database(slug: str) -> None:

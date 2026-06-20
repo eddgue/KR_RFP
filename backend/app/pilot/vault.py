@@ -324,7 +324,7 @@ def _git(vault_root: Path, *args: str) -> bool:
 # ---------------------------------------------------------------------------
 # The full normalized history a close-out archives (PILOT_SYSTEM_DESIGN step 10): the inputs/
 # outputs/ memory/ subfolders PLUS the NOTES.md + RUN.md manifests and the cycle_id.txt link.
-_ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY)
+_ARCHIVE_SUBDIRS = (SUBDIR_INPUTS, SUBDIR_OUTPUTS, SUBDIR_MEMORY, "db")  # db/ = the run-DB snapshot
 _ARCHIVE_FILES = (
     _NOTES_NAME,
     _RUN_NAME,
