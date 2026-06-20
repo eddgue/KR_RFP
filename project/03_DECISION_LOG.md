@@ -177,6 +177,20 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D30 — Per-run data isolation: each run starts BLANK, no demo data, no cross-run contamination · **NOTE 2026-06-20**
+**Principle (sponsor).** Every session/run uses a **blank database** — **no demo/synthetic data anywhere** in a run store (reinforces ADR-0001 clean-room). When **multiple RFPs run concurrently**, one run's data must **never** be visible to another: each run is an isolated data store (database/schema-per-run, or a hard run-scoped boundary). This is the substrate the skill harness reads — the Engine agent grounds its commentary by reading the run store, so isolation at the data layer is the *precondition* for clean, uncontaminated data commentary (D28).
+**Known gap.** The pilot currently shares ONE Postgres DB across runs with globally-unique reference codes (`ref.dc` DC01.., suppliers, items); a second run collides (`dc_code=DC01 already exists`, observed in testing) and would see the first run's reference rows. Closing this — per-run isolation — is required before multi-run.
+**Linked:** ADR-0001 (clean-room), EXP-SKILL-HARNESS, D28 (engine-derived comments), the multi-RFP concurrency goal.
+
+---
+
+### D31 — The pilot skill is a 3-agent HARNESS (orchestrator / engine / secretary) with isolated contexts · **NOTE 2026-06-20**
+**Principle (sponsor).** The skill is a small agent harness, not one agent: **Orchestrator** (the only one that talks to the user; routes + sequences), **Engine** (data-dedicated — takes inputs, runs, delivers outputs + comments; answers data questions by **reading the data**; context = sealed records only), **Secretary** (memory + memory-file side: NOTES.md, `memory/`, reminders, kanban, admin — "the noise"). Separation keeps **data commentary uncontaminated** by operational noise. **Communication discipline:** preferred **hub-and-spoke** — only the Orchestrator talks to the Engine and Secretary, under strict constraints; the Engine and Secretary do not share context directly (peer-to-peer only if essential, mediated). The aim is strict **context isolation** so the Engine's commentary is provably data-only.
+**Status.** Design vision for the skill build (the step after the first RFP_MCP commit). Full design in `project/squads/experience/SKILL_HARNESS_DESIGN.md`. Depends on D30 (per-run data isolation).
+**Linked:** EXP-SKILL-HARNESS, D28 (engine-derived comments), D30 (data isolation), PILOT_SYSTEM_DESIGN, RFP_MCP + RFP_PILOT_VAULT.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
