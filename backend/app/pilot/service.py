@@ -68,13 +68,17 @@ from app.pilot.vault import (
 
 # The default engine strategy for a pilot run when the caller passes no config — a balanced preset
 # mirroring the demo's. The setup workbook also carries the strategy; this is the safe fallback.
+# Continuity is weighted at 0.20 (raised from 0.10): in a relationship-heavy, repeated-game
+# category the engine should prefer the incumbent on a near-tie. It only retains a *price-eligible*
+# incumbent — one over the premium ceiling is still gated, and that premium is surfaced for the
+# human to decide (Incumbent Retention tab), never silently paid.
 _DEFAULT_CONFIG = EngineConfig(
     preset=WeightPreset.BALANCED,
-    weight_price=Decimal("0.35"),
-    weight_coverage=Decimal("0.25"),
-    weight_historical=Decimal("0.20"),
-    weight_zrisk=Decimal("0.10"),
-    weight_continuity=Decimal("0.10"),
+    weight_price=Decimal("0.31"),
+    weight_coverage=Decimal("0.22"),
+    weight_historical=Decimal("0.18"),
+    weight_zrisk=Decimal("0.09"),
+    weight_continuity=Decimal("0.20"),
     max_sup_dc=2,
     conc_thresh=Decimal("0.40"),
     global_premium_threshold=Decimal("0.12"),

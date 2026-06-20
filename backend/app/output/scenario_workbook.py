@@ -2921,6 +2921,214 @@ def _write_fob_analysis_tab(wb: Workbook, rows: list[FobRow]) -> None:
     ws.sheet_view.showGridLines = False
 
 
+# ---------------------------------------------------------------------------
+# Incumbent Retention — SURFACE THE PREMIUM, the human decides (relationship pillar).
+# The engine recommends on economics and keeps a price-eligible incumbent on a near-tie (continuity
+# weight). An incumbent over the premium ceiling is GATED — never silently paid. This tab puts a
+# dollar figure on keeping each incumbent the engine did not pick, so the buyer overrides with eyes
+# open (a recorded Scenario-F override), not by feel.
+# ---------------------------------------------------------------------------
+_RETAIN_RECOMMENDED = "Retained — recommended"
+_RETAIN_ELIGIBLE = "Eligible — not the pick"
+_RETAIN_GATED = "Gated by premium"
+_RETAIN_NOBID = "No bid"
+
+
+@dataclass(frozen=True)
+class IncumbentRetentionRow:
+    """One incumbent cell: keep cost vs. the recommendation (D26 relationship surface)."""
+
+    dc_name: str
+    lot_name: str
+    tf_name: str
+    incumbent: str
+    incumbent_price: Decimal | None  # incumbent's bid $/case (None -> did not bid)
+    status: str
+    rec_supplier: str
+    rec_price: Decimal | None
+    volume: Decimal
+    premium_per_case: Decimal | None  # incumbent - recommendation (None if no incumbent bid)
+    premium_period: Decimal | None  # premium_per_case x period volume
+    premium_pct: Decimal | None  # premium_per_case / recommendation price
+
+
+def _gather_incumbent_retention(cells: list[CellInfo]) -> list[IncumbentRetentionRow]:
+    """Per incumbent cell: the cost to keep them vs the recommendation, sorted by $ at stake.
+
+    Reads ONLY the resolved `CellInfo` (incumbent name, the per-supplier price map, the eligible
+    list, the B pick, the volume) — the same governed records the comparison tabs use; no new
+    queries, no boilerplate. Status is derived, not asserted: recommended / eligible-but-not-picked
+    / gated-by-premium / no-bid.
+    """
+
+    rows: list[IncumbentRetentionRow] = []
+    for c in cells:
+        inc = c.incumbent_name
+        if not inc:
+            continue
+        inc_price = c.price_by_supplier.get(inc)
+        rec_price = c.price_by_supplier.get(c.rec_supplier)
+        if c.rec_supplier and inc == c.rec_supplier:
+            status = _RETAIN_RECOMMENDED
+        elif inc in c.eligible_suppliers:
+            status = _RETAIN_ELIGIBLE
+        elif inc_price is not None:
+            status = _RETAIN_GATED
+        else:
+            status = _RETAIN_NOBID
+        prem_case = (
+            inc_price - rec_price
+            if inc_price is not None and rec_price is not None
+            else None
+        )
+        prem_period = prem_case * c.volume if prem_case is not None else None
+        has_rec = rec_price is not None and rec_price != Decimal("0")
+        prem_pct = (
+            prem_case / rec_price
+            if prem_case is not None and has_rec and rec_price
+            else None
+        )
+        rows.append(
+            IncumbentRetentionRow(
+                dc_name=c.dc_name,
+                lot_name=c.lot_name,
+                tf_name=c.tf_name,
+                incumbent=inc,
+                incumbent_price=inc_price,
+                status=status,
+                rec_supplier=c.rec_supplier,
+                rec_price=rec_price,
+                volume=c.volume,
+                premium_per_case=prem_case,
+                premium_period=prem_period,
+                premium_pct=prem_pct,
+            )
+        )
+    # Biggest retention bill first (the decisions that cost the most); no-bid / retained settle low.
+    rows.sort(
+        key=lambda r: r.premium_period if r.premium_period is not None else Decimal("-1"),
+        reverse=True,
+    )
+    return rows
+
+
+def _write_incumbent_retention_tab(
+    wb: Workbook, rows: list[IncumbentRetentionRow]
+) -> None:
+    """Incumbent Retention — the dollar cost of keeping each incumbent the engine did not pick.
+
+    The engine recommends on economics; relationships are the buyer's call. Each row prices that
+    call: keep the incumbent (Δ to retain $/case × period volume) or take the recommendation. Rows
+    where the incumbent is over the premium ceiling are flagged GATED — retaining one is a recorded
+    override, never a silent payment. Sorted by $ at stake; a relationship-budget total at the foot.
+    """
+
+    ws = wb.create_sheet("Incumbent Retention")
+    columns: list[Col] = [
+        Col("DC", 16),
+        Col("Lot", 24),
+        Col("TF", 8),
+        Col("Incumbent", 18),
+        Col("Incumbent $/case", 14, NUMFMT_MONEY),
+        Col("Status", 20),
+        Col("Recommended", 18),
+        Col("Rec $/case", 12, NUMFMT_MONEY),
+        Col("Δ to retain $/case", 14, NUMFMT_MONEY),
+        Col("Period cases", 12, NUMFMT_INT),
+        Col("Premium to retain $", 16, NUMFMT_MONEY, total="sum"),
+        Col("Retain? (your call)", 16),
+    ]
+    header_row = 5
+    body_start = header_row + 1
+    for i, r in enumerate(rows):
+        rr = body_start + i
+
+        def _m(v: Decimal | None) -> float | str:
+            return float(v) if v is not None else "—"
+
+        ws.cell(row=rr, column=1, value=r.dc_name)
+        ws.cell(row=rr, column=2, value=r.lot_name)
+        ws.cell(row=rr, column=3, value=r.tf_name)
+        ws.cell(row=rr, column=4, value=r.incumbent)
+        ws.cell(row=rr, column=5, value=_m(r.incumbent_price))
+        scell = ws.cell(row=rr, column=6, value=r.status)
+        ws.cell(row=rr, column=7, value=r.rec_supplier)
+        ws.cell(row=rr, column=8, value=_m(r.rec_price))
+        ws.cell(row=rr, column=9, value=_m(r.premium_per_case))
+        ws.cell(row=rr, column=10, value=float(r.volume))
+        ws.cell(row=rr, column=11, value=_m(r.premium_period))
+        # colour the status: gated = amber (a real override decision), retained = green.
+        if r.status == _RETAIN_GATED:
+            scell.fill = _INCUMBENT_FILL
+            scell.font = Font(bold=True, color="7F6000")
+        elif r.status == _RETAIN_RECOMMENDED:
+            scell.fill = _MIN_FILL
+            scell.font = _MIN_FONT
+
+    format_table(
+        ws,
+        title="Incumbent Retention — what keeping each incumbent costs vs. the recommendation",
+        subtitle_lines=[
+            "The engine recommends on economics and already keeps a price-eligible incumbent on a "
+            "near-tie. 'Gated by premium' = the incumbent's bid is over the eligibility ceiling, "
+            "so the engine excludes it — retaining is a recorded override, never silently paid.",
+            "Δ to retain = incumbent − recommendation; Premium to retain $ = Δ × period cases. "
+            "Sort/keep what the relationship is worth. " + DECISION_SUPPORT_STRAP,
+        ],
+        columns=columns,
+        n_body_rows=len(rows),
+        header_row=header_row,
+        total_label="RELATIONSHIP BUDGET — premium to retain every non-recommended incumbent",
+        total_label_col=1,
+    )
+
+    # Status tally — the picture at a glance (counts + the $ already saved by the gate).
+    by_status: dict[str, int] = defaultdict(int)
+    gated_premium = Decimal("0")
+    for r in rows:
+        by_status[r.status] += 1
+        if r.status in (_RETAIN_GATED, _RETAIN_ELIGIBLE) and r.premium_period is not None:
+            gated_premium += r.premium_period
+    sec = body_start + len(rows) + 3
+    title = ws.cell(
+        row=sec,
+        column=1,
+        value="Incumbent picture — counts by status + the relationship budget at stake",
+    )
+    title.font = _TITLE_FONT
+    title.fill = _TITLE_FILL
+    title.alignment = _LEFT
+    ws.merge_cells(start_row=sec, start_column=1, end_row=sec, end_column=6)
+    for c in range(1, 7):
+        ws.cell(row=sec, column=c).fill = _TITLE_FILL
+    bs = by_status.get
+    lines = [
+        (f"{_RETAIN_RECOMMENDED} (engine kept the incumbent)", bs(_RETAIN_RECOMMENDED, 0)),
+        (f"{_RETAIN_ELIGIBLE} (in range, lost on score)", bs(_RETAIN_ELIGIBLE, 0)),
+        (f"{_RETAIN_GATED} (over the ceiling — override to keep)", bs(_RETAIN_GATED, 0)),
+        (f"{_RETAIN_NOBID} (incumbent did not bid)", bs(_RETAIN_NOBID, 0)),
+    ]
+    rr = sec + 1
+    for label, n in lines:
+        ws.cell(row=rr, column=1, value=label).alignment = _LEFT
+        nc = ws.cell(row=rr, column=4, value=n)
+        nc.number_format = NUMFMT_INT
+        nc.alignment = _CENTER
+        rr += 1
+    bc = ws.cell(
+        row=rr,
+        column=1,
+        value="Relationship budget — premium to retain every non-recommended incumbent that bid",
+    )
+    bc.font = _TOTAL_FONT
+    bc.alignment = _LEFT
+    vc = ws.cell(row=rr, column=4, value=float(gated_premium))
+    vc.number_format = NUMFMT_MONEY
+    vc.font = _TOTAL_FONT
+    vc.fill = _TOTAL_FILL
+    ws.sheet_view.showGridLines = False
+
+
 def _write_share_relationships_tab(
     wb: Workbook,
     details: list[AwardDetail],
@@ -3645,6 +3853,7 @@ def write_scenario_workbook_xlsx(
         ("Landed & Hidden Costs", "Beyond price: freight + transit/freshness — the true cost."),
         ("§ RELATIONSHIPS & NEGOTIATION", ""),
         ("Share & Relationships", "Who carries the business — preserve vs create + dependency."),
+        ("Incumbent Retention", "What keeping each incumbent costs vs the rec."),
         ("Negotiation Dynamics", "Treated fairly? Concession vs the field, real risk vs theater."),
         ("§ DILIGENCE", ""),
         ("Coverage", "Can they supply it? Offered vs required volume + cover band."),
@@ -3673,6 +3882,7 @@ def write_scenario_workbook_xlsx(
     _write_fob_analysis_tab(wb, _gather_fob(session, seeded, final_round_id))
     # --- RELATIONSHIPS & NEGOTIATION (the repeated-game pillars 3 & 4). ---
     _write_share_relationships_tab(wb, details, scenarios, seeded, config, rec_code)
+    _write_incumbent_retention_tab(wb, _gather_incumbent_retention(cells))
     _write_negotiation_dynamics_tab(wb, plays, inc_move, chal_move)
     # --- DILIGENCE (the receipts behind the recommendation). ---
     _write_coverage_tab(wb, coverage_rows, config)
