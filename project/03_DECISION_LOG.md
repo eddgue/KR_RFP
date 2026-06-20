@@ -170,6 +170,13 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D29 — The bid column set is a SUPERSET, always available; processes use a subset · **NOTE 2026-06-20**
+**Principle (sponsor).** Every column the platform understands is part of the standard bid column SET and is **always available**; any given cycle/process uses only the columns it needs (e.g. `Transit Days` — migration 0011 — is a standard, optional, nullable column surfaced only when a submission supplies it; no synthetic proxy when absent). **Buyer-side:** the buyer composes a cycle's intake template by selecting columns naturally and grouping them, delivered as a template-builder walk-through; the selection+grouping is **saved as a preset** that remembers how to map a returned file back to the canonical schema (not re-inferred per upload). **Supplier-side:** the sent template behaves as a governed FORM — only entry-point cells editable, everything else hard-coded + sheet-password-protected (keys/names/structure locked, D21/D23) — with a per-row **readiness traffic light** (Not bid / Bid incomplete / Complete bid) mirroring the ingester's completeness classes.
+**Status.** Captured for the REAL software (post-pilot), not the pilot. Full requirements in `project/squads/experience/INTAKE_TEMPLATE_DESIGN.md`. First realisation: `Transit Days` as an always-available optional column (migration 0011).
+**Linked:** EXP-INTAKE-TEMPLATE, D20 (round-trip), D21 (keys), D23 (names), bid `template_schema`, `bid_ingester` Completeness.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
