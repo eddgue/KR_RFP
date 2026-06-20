@@ -34,12 +34,18 @@ sudo -u postgres psql -d postgres -c "ALTER ROLE app CREATEDB;"
 
 # a throwaway vault folder — this is the entire "prime the vault" step
 mkdir -p ~/rfp-rehearsal-vault
-export PILOT_VAULT_ROOT=~/rfp-rehearsal-vault
-export KR_RFP_BACKEND="$(pwd)"
+
+# these two names are what mcp/.mcp.json substitutes — export them, not PILOT_VAULT_ROOT
+export KR_RFP_BACKEND="$(pwd)"            # the backend/ checkout (cwd above)
+export RFP_PILOT_VAULT="$HOME/rfp-rehearsal-vault"
 
 # launch Claude Code with the harness plugin loaded from the local folder
-cd KR_RFP && claude --plugin-dir ./mcp     # (or --plugin-dir /path/to/RFP_MCP)
+cd .. && claude --plugin-dir ./mcp        # from the KR_RFP repo root (or --plugin-dir /path/to/RFP_MCP)
 ```
+
+> The plugin auto-registers the `rfp-pilot` MCP server from `mcp/.mcp.json`, which maps
+> `${RFP_PILOT_VAULT}` → the server's `PILOT_VAULT_ROOT` env var. Export the two names above in the
+> same shell you launch `claude` from.
 
 The plugin registers the `rfp-pilot` MCP server and the three agents (orchestrator skill +
 `rfp-engine` + `rfp-secretary`). You talk to the **orchestrator**; it delegates.
