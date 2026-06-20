@@ -217,6 +217,14 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D35 — The Kroger fiscal calendar is stored AUTHORITATIVELY (data, not a date rule); 13 periods, 4-3-3-3 quarters, 53-week leap years · **NOTE 2026-06-20**
+**Decision.** The platform's fiscal-period reference is the sponsor's actual conversion table, stored as data (`app/fiscal/data/kroger_fiscal_periods.csv`, FY16..FY36, derived from the sponsor's daily Web-Intelligence export), NOT a computed date rule. `app/fiscal/calendar.py` reads it for `period_for_date`, the timeframe presets, and the intake fan-out. Chosen for error-protection (the sponsor's stated principle): a calendar quirk becomes a CSV update, never a subtly-wrong derivation.
+**Confirmed facts (correct earlier assumptions).** Exactly **13 periods/year**; quarters split **4-3-3-3** (Q1=P1-4, Q2=P5-7, Q3=P8-10, Q4=P11-13), *not* 3-3-3-4; most years are 52 weeks (every period = 4 weeks) but a **53-week leap year** (~every 5-6 yrs — FY17/23/28/34 in the table) gives **Period 13 a 5th week**, so a period is **not always 28 days** — spans are always read from the table. The table is fully contiguous (each period begins the day after the prior ends, across FY boundaries). 2026-06-20 = FY26 Period 5 (Q2).
+**Role.** This is the canonical flat-13 grain the intake model records against (INTAKE_TEMPLATE_DESIGN §1a): every offer lands in exactly ONE period; a template groups periods into timeframes for the supplier; intake fans a timeframe's price out to each period (`expand_to_periods`). Foundation done (increment 2a); the flat-13 storage table + bid-grain FK + compact/expand view are the next data-layer increment (2b).
+**Linked:** INTAKE_TEMPLATE_DESIGN §1a (flat-13 model), D29 (column superset), the reference clean-room rule (the derived table lives in `backend/app/`, not `reference/`), `tests/fiscal/test_calendar.py`.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

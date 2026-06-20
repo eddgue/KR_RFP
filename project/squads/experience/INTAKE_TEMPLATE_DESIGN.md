@@ -108,16 +108,32 @@ The template a supplier receives must behave like a true form, not an editable s
   the superset; the generator emits exactly those, and a reduced preset still round-trips through
   ingest (test: `test_preset_reduces_columns_and_still_round_trips`). Built-in presets: full /
   all_in_simple / components.
-- **§1 period model (flat-13 storage + template grouping + intake fan-out) — NEXT (increment 2),
-  per §1a.** Two parts: (a) the data layer stores flat at the 13 fiscal periods and intake fans a
-  timeframe's price out to each period in its span; (b) the compact/expand VIEW rolls those 13
-  periods up into the template's timeframes. Needs a multi-period scope to be meaningful (the pilot's
-  synthetic scope is single-period). This is the larger build — likely its own schema work
-  (period table + period→timeframe map) given the pilot's bid grain is currently one row per TF.
+- **§1 period model — calendar FOUNDATION DONE (increment 2a, 2026-06-20).** The authoritative
+  Kroger fiscal calendar is now in the platform: `app/fiscal/calendar.py` + the reference table
+  `app/fiscal/data/kroger_fiscal_periods.csv` (FY16..FY36, 273 rows, fully contiguous, derived from
+  the sponsor's daily conversion table). It gives `period_for_date` (date → the one of 13 periods an
+  offer lands in), `get_period`/`periods_in_year`, the timeframe presets
+  (`fiscal_quarters`/`fiscal_halves`/`fiscal_year_timeframe`/`per_period` + a generic
+  `group_periods` for arbitrary contiguous spans like A=P1-2,B=P3-9,C=P10-13), and `expand_to_periods`
+  — the intake **fan-out** that writes a timeframe's price to each period in its span. Tested:
+  `tests/fiscal/test_calendar.py` (11). **Confirmed facts** (use these, they correct earlier
+  assumptions): 13 periods/year; quarters are **4-3-3-3** (Q1=P1-4, Q2=P5-7, Q3=P8-10, Q4=P11-13),
+  not 3-3-3-4; most years are 52 weeks but a **53-week leap year** (~every 5-6 yrs: FY17/23/28/34)
+  gives **Period 13 a 5th week**, so a period is **not always 28 days** — always read the span from
+  the table, never assume a length. Stored authoritatively (data, not a date rule) so a future
+  calendar quirk is a CSV update, not a code change ("protects us from future errors").
+- **§1 period model (flat-13 STORAGE + fan-out on ingest + compact/expand view) — NEXT (increment
+  2b), per §1a.** With the calendar in place, the remaining data-layer work: (a) store bids flat at
+  the 13 fiscal periods (a `ref.fiscal_period` table seeded from the same CSV, and the bid grain
+  carrying a period FK) and have intake call `expand_to_periods` to fan a timeframe's price out to
+  each period; (b) the compact/expand VIEW rolls the 13 periods up into the template's timeframes.
+  This is the schema work (the pilot's bid grain is currently one row per TF, single-period scope).
 - **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
 
+- The fiscal calendar (period↔date, timeframes, fan-out): `app/fiscal/calendar.py` +
+  `app/fiscal/data/kroger_fiscal_periods.csv`. The flat-13 grain everything below records against.
 - The bid column set + ordering: `app/domain/bid/template_schema.py` (`BidColumn`, `PRICE_COLUMNS`).
 - Completeness classification (the traffic-light source of truth): `bid_ingester` `Completeness`
   (`NO_BID` / `INCOMPLETE` / `BID`).
