@@ -24,6 +24,28 @@ mode inside the container and reached over loopback. The server supports both tr
 entry point — `RFP_MCP_TRANSPORT=streamable-http` selects HTTP (`rfp_mcp/rfp_pilot_server.py`,
 `main()`). The repo-root **`.mcp.json`** registers the HTTP URL the web runtime connects to.
 
+## The 3-agent harness (skill + subagents) on the web
+
+The orchestrator **skill** and the **engine/secretary subagents** ship in the plugin layout
+(`mcp/skills/rfp-pilot/`, `mcp/agents/`). The web runtime does **not** auto-load a plugin from a
+cloned repo — it only auto-loads project skills/subagents from `.claude/skills/` and `.claude/agents/`
+(or a plugin *declared* in `.claude/settings.json` via a marketplace). So the SessionStart hook
+(`scripts/web_session_start.sh`, step 5) **symlinks** the plugin's canonical skill + subagents into
+`.claude/` (no committed duplication — the links are `.gitignored`) and emits
+`{"hookSpecificOutput":{"hookEventName":"SessionStart","reloadSkills":true}}` to re-scan skills.
+
+- **Caveat — validate in a real web session.** Skill reload via the hook is documented; **subagent**
+  live-reload is not. If a real session loads the orchestrator skill but not the `rfp-engine` /
+  `rfp-secretary` subagents, switch to one of the cleaner alternatives below.
+- **Alternative A (simplest):** commit the skill + subagents directly to `.claude/skills/rfp-pilot/`
+  and `.claude/agents/` (they auto-load from the clone, no hook/reload needed). Trade-off: duplicates
+  the plugin content, or means moving the canonical copy out of `mcp/`.
+- **Alternative B (keeps the plugin/versioning architecture, D31/D32):** publish `RFP_MCP` as a
+  marketplace and **declare the plugin in `.claude/settings.json`**, which the cloud runtime installs
+  at session start. Trade-off: needs the marketplace + a settings declaration.
+- The raw MCP **tools** work on the web regardless of the above (they come from the HTTP server), so
+  a single session can still drive a run; the harness loading is what gives the curated 3-agent UX.
+
 ## One-time environment setup (web console)
 
 Do these once when you create the environment at claude.ai/code (environment settings):
@@ -91,10 +113,15 @@ configured in the web console only.
 - `scripts/web_session_start.sh` end to end against a local Postgres: starts/locates Postgres,
   ensures the role/DB, resolves + clones the vault (option b), rehydrates, and brings the HTTP server
   up — with the vault's upstream branch present so autopush has a target.
+- The session-start hook's **stdout is clean JSON** (`reloadSkills`) with all logs on stderr, and it
+  symlinks the harness skill + subagents into `.claude/` (verified locally).
 
 **Needs validation in an actual web session (cannot be tested from here):**
 - That the web runtime loads `.claude/settings.json` hooks and runs the SessionStart hook **before**
   connecting to `.mcp.json` servers, and that it reaches the loopback HTTP MCP server.
+- That the harness loads after the hook: the orchestrator **skill** AND the `rfp-engine` /
+  `rfp-secretary` **subagents** (subagent live-reload is undocumented — fall back to Alternative A/B
+  in "The 3-agent harness on the web" if the subagents don't appear).
 - The exact Postgres start command for the web image (the script tries `service postgresql start`
   then `pg_ctlcluster 16 main start`, with and without `sudo`) — adjust if the image differs.
 - The credential path for the vault: that an attached second repo (option a) pushes, or that the
