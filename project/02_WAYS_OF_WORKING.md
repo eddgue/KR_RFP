@@ -1,10 +1,10 @@
 ---
 doc: Ways of Working
 id: PM-002
-version: 0.1
+version: 0.2
 status: Draft
 created: 2026-06-18
-depends_on: PM-000, PM-001
+depends_on: PM-000, PM-001, PM-007
 ---
 
 # Ways of Working
@@ -61,7 +61,7 @@ Acceptance criteria written · gap/epic linked · data-model impact identified �
 
 ## 5. Definition of Done (a story is complete)
 
-Code + migration merged · unit/integration tests green · migration roundtrip passes · API contract updated · RBAC/tenancy honored · audit events emitted · docs/ADR updated · demoable in a vertical slice · no new hard-delete or live-formula fragility introduced.
+Code + migration merged · unit/integration tests green · migration roundtrip passes · API contract updated · RBAC/tenancy honored · audit events emitted · docs/ADR updated · **As-Built Audit updated if an audit trigger was hit (§8, D37)** · demoable in a vertical slice · no new hard-delete or live-formula fragility introduced.
 
 ## 6. Quality gates (per phase)
 
@@ -69,9 +69,18 @@ Code + migration merged · unit/integration tests green · migration roundtrip p
 2. Security review passed for any new endpoint/entity (tenancy + RBAC + PII classification).
 3. Architecture review passed for any change to a governance invariant.
 4. **Real-data check** from Phase B onward: the slice works against the pilot dataset, not only synthetic fixtures.
+5. **As-Built Audit current** — if the change hit an audit trigger (§8), `project/07_AS_BUILT_PROCESS_AUDIT.md` is updated in the same change; **a major version is not complete until it is** (D37).
 
 ## 7. Documentation standard
 
 - Decisions → ADRs (in `docs/adr/`, numbered, status-tracked) + the decision log.
 - The **Target Spec v1.0** is the living source of truth; the two original packages and the audit are frozen inputs under `specs/` and `audit/`.
 - Every squad keeps its plan current in `project/squads/<squad>/`.
+
+## 8. As-Built Audit — event-triggered, and a release gate
+
+The **As-Built Process Audit** (`project/07_AS_BUILT_PROCESS_AUDIT.md`, PM-007) is a **living** document, refreshed on **architecture events, not a calendar** — a quarterly audit is mostly noise; an audit after meaningful change catches drift while it is cheap to fix. Its trigger table and the five standing questions live in that doc (§12). The headline rule:
+
+> **No major version is complete until the As-Built Audit is updated.** (D37)
+
+Re-audit triggers (scope per PM-007 §12): new major version · new data store · new agent · new write path · new user role · new UI surface · new approval process · pre-/post-production rollout. Each update records the **delta** (Added capabilities / Closed gaps / Introduced gaps), so "when did this capability appear / when did this control disappear?" is answerable without reverse-engineering git. This makes the audit part of the development process rather than documentation that drifts into fiction.

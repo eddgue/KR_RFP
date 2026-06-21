@@ -234,6 +234,14 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D37 — The As-Built Audit is event-triggered (not calendar), tracked as deltas, and a release gate · **RATIFIED 2026-06-21**
+**Why.** Time-boxed documentation (a quarterly audit) is mostly noise and drifts into fiction; an audit run **after meaningful architectural change** catches drift while it is still cheap to fix. Sponsor principle: trigger on architecture **events**, not the calendar, and make the audit part of the build rather than a side artifact that slowly becomes untrue.
+**Decision.** The **As-Built Process Audit** (`project/07_AS_BUILT_PROCESS_AUDIT.md`, PM-007) is the single living audit. It is **re-run on architecture-change triggers** (new major version · new data store · new agent · new write path · new user role · new UI surface · new approval process · pre-/post-production rollout — scoped per the trigger table in PM-007 §12), and every run answers the same **five questions**: (1) what is the workflow now, (2) what records exist and where are they stored, (3) who can read/write/approve them, (4) what must be surfaced to users, (5) where are the gaps between design and implementation. It is maintained as a **delta** version history (Added / Closed / Introduced) so "when did this capability appear / when did this control disappear?" is answerable without reverse-engineering git.
+**Release gate.** **No major version is complete until the As-Built Audit is updated** — enforced via `02_WAYS_OF_WORKING` §8, the per-phase Quality Gates (§6), and the Definition of Done (§5).
+**Linked:** PM-007 (the audit + its §12 triggers/questions/delta history), 02_WAYS_OF_WORKING §5/§6/§8, the governance gaps the audit tracks (esp. **G-B** / E-05).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

@@ -22,9 +22,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TypedDict
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.audit.events import DomainEvent, EventType
+from app.core.audit.recorder import client_id_for_award, client_id_for_cycle
+from app.core.audit.writer import AuditWriter
 from app.domain.awd.models import (
     Award,
     AwardAdjustment,
@@ -136,6 +139,25 @@ def freeze_award(
             )
         )
     session.flush()
+
+    # Governed decision: the award is frozen. Land its tamper-evident event in the same
+    # transaction as the freeze (Gap G-B) — identifiers + counts only, no commercial values.
+    AuditWriter(session).append(
+        DomainEvent(
+            event_type=EventType.FROZEN,
+            client_id=client_id_for_cycle(session, cycle_id),
+            entity_type="awd.award",
+            entity_id=uuid.UUID(award_id),
+            cycle_id=uuid.UUID(cycle_id),
+            actor=frozen_by,
+            source="api",
+            after={
+                "scenario_code": scenario_code,
+                "analysis_run_id": analysis_run_id,
+                "n_lines": len(rows),
+            },
+        )
+    )
     return award_id
 
 
@@ -201,6 +223,30 @@ def add_adjustment(
             )
         )
     session.flush()
+
+    # Governed decision: a post-award adjustment layer was applied. Land its tamper-evident event
+    # in the same transaction (Gap G-B) — identifiers + counts only, no prices. The event's cycle
+    # is the award's cycle.
+    cycle_id = session.execute(
+        text("SELECT cycle_id FROM awd.award WHERE award_id = :aid"),
+        {"aid": award_id},
+    ).scalar_one()
+    AuditWriter(session).append(
+        DomainEvent(
+            event_type=EventType.CREATED,
+            client_id=client_id_for_award(session, award_id),
+            entity_type="awd.award_adjustment",
+            entity_id=uuid.UUID(adjustment_id),
+            cycle_id=uuid.UUID(cycle_id),
+            actor=created_by,
+            source="api",
+            after={
+                "version_no": next_version,
+                "adjustment_type": adjustment_type,
+                "n_lines": len(line_changes),
+            },
+        )
+    )
     return next_version
 
 
