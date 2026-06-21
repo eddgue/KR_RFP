@@ -49,6 +49,7 @@ from app.domain.bid.template_schema import (
     CycleScope,
     ScopeRow,
 )
+from app.engine.formulas import construct_price_from_parts
 
 # The full embedded key tuple (KEY_ID_COLUMNS order): cycle, round, tf, lot, item, dc, supplier.
 KeyGrain = tuple[str, str, str, str, str, str, str]
@@ -297,11 +298,13 @@ def construct_price(components: ParsedComponents) -> tuple[Decimal | None, str |
         return components.all_in, PRICE_BASIS_ALL_IN, None
 
     if components.fob is not None:
-        price = (
-            components.fob
-            + components.delivery_surcharge
-            + components.vegcool_surcharge
-            - components.lot_discount
+        # The fallback arithmetic is the canonical §7 formula (one definition for engine + ingest).
+        price = construct_price_from_parts(
+            None,
+            components.fob,
+            components.delivery_surcharge,
+            components.vegcool_surcharge,
+            components.lot_discount,
         )
         return price, PRICE_BASIS_FALLBACK, None
 
