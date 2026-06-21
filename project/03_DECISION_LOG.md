@@ -266,6 +266,14 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D40 — Hosting platform: GCP (Cloud Run + Cloud SQL for PostgreSQL) · **RATIFIED 2026-06-21**
+**Why.** DEP-4 (target hosting) blocked the path to Live Run #1. The sponsor set the frame — *not Azure · best for longevity · "modest monthly OK for reliability"* — and **delegated the choice to the decision methodology**. The system is already a container (CI builds the image) over Postgres 16 (the governed system of record + audit hash-chain) with a Next.js console.
+**Decision.** Host on **GCP**: the web console as a container on **Cloud Run** (runs the CI-built image as-is; scales to zero between pilot runs, `min-instances=1` the reliability dial), backed by **Cloud SQL for PostgreSQL 16** (managed, automated backups + PITR; the MCP harness's per-run isolated DBs, D30, as logical DBs on the same instance), **Secret Manager** (USDA key DEP-6, session key, vault credentials), **Artifact Registry** (deploy-by-digest from `main`). Methodology: criteria weighted to **longevity + least-margin-for-error** (lead), then managed durability, then "modest monthly" cost — scored GCP > AWS (App Runner/Fargate + RDS, the documented fallback) > PaaS (Render/Fly, rejected for vendor-longevity risk); Azure excluded; self-managed VMs/k8s rejected (operational surface). Full rationale + the scored matrix in **ADR-0017**.
+**Scope.** Resolves the **hosting** half of DEP-4; the **IdP** half is deferred to the tenancy/RBAC work (G-C/G-J), with **Google Identity Platform** the forward option. Low exit cost preserved (standard container + standard Postgres → an AWS move is redeploy + dump/restore, not a rewrite).
+**Linked:** ADR-0017, DEP-4, ADR-0003 (two runtimes), ADR-0002 (stack), D30 (per-run DBs), DEP-6 (secret store), `.github/workflows/ci.yml` (the main-only build-push/deploy stanza), gaps G-C/G-J.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
@@ -273,7 +281,7 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 | **DEP-1** | **Isolated, read-only** access to the existing repo (`models.py`, Alembic chain, tests, ECLS) — in the sponsor's GitHub; read via an isolated worktree agent per ADR-0001, never imported | ECLS/test verification, R6 | Sponsor | **OPEN — non-blocking** (we baseline from the as-built schema we already hold) |
 | DEP-2 | One **complete RFP process** = **all rounds (R1..Rn) of a single category**, end to end — ideally a category we already hold matching data for (the Potato golden-v3 run, or a kickoff category + its iTrade pull) so kickoff→history→bids→engine→award join up. iTrade pull already provided. **Fast-follow:** a *second* category of the **other bid template** (tomato flat sheet ↔ onion 9-tab) to prove multi-template intake. | Phase B pilot (E-13), S2, R1 | Sponsor | OPEN — bid workbooks outstanding |
 | DEP-3 | One or two **real kickoff docs** (for the keystone, G5) | Phase C | Sponsor | OPEN (4 referenced in intake) |
-| DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | OPEN |
+| DEP-4 | Target hosting/cloud + identity provider (for tenancy/RBAC/D6) | Phase A DevOps/Sec | Sponsor/IT | **HOSTING RESOLVED (D40 / ADR-0017 — GCP Cloud Run + Cloud SQL)**; IdP half deferred to tenancy/RBAC (G-C/G-J), Identity Platform the forward option |
 | DEP-5 | **Historical booking guides** + prior-cycle award/contract data (sponsor can locate many) | E-28 contracted-vs-effective backfill; prior-RFP baseline (D11) | Sponsor | OPEN — upload to `reference/samples/` when found |
 | DEP-6 | **Market-price feed — USDA MARS API** (Market Analysis & Reporting Service; series `FVWTRDS-1662`). **Sponsor HAS an API key.** | E-29 formulaic safety reprices (rolling midpoint, tolerance band) | Sponsor/Security | **RESOLVED (access available)** — key goes to the secret store at build time, never chat/repo |
 | DEP-7 | **Award files + round/negotiation analysis** (sponsor to pass later) | understanding the live-negotiation process (round loop, target-setting); E-28 backfill | Sponsor | OPEN — deferred, low urgency |
