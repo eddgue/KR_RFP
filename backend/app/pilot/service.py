@@ -30,6 +30,9 @@ from typing import cast
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.core.audit.events import DomainEvent, EventType
+from app.core.audit.recorder import client_id_for_cycle
+from app.core.audit.writer import AuditWriter
 from app.cycle.loader import load_cycle
 from app.cycle.scope import build_scope_from_cycle
 from app.domain.awd import service as awd_service
@@ -386,6 +389,21 @@ class PilotService:
             config=effective_config,
             incumbents=incumbents,
             run_by="pilot-runner",
+        )
+
+        # Governed decision: the analysis run is sealed. Land a tamper-evident event in the same
+        # transaction as the seal (Gap G-B) — identifiers + status only, no commercial values.
+        AuditWriter(session).append(
+            DomainEvent(
+                event_type=EventType.SEALED,
+                client_id=client_id_for_cycle(session, cycle.cycle_id),
+                entity_type="eng.analysis_run",
+                entity_id=uuid.UUID(run_result.analysis_run_id),
+                cycle_id=uuid.UUID(cycle.cycle_id),
+                actor="pilot-runner",
+                source="worker",
+                after={"round_id": round_id},
+            )
         )
 
         # The booking-guide award isn't frozen yet; the alignment workbook needs an AwardView. Use
@@ -1088,6 +1106,11 @@ class PilotService:
         submission_by_sup: dict[str, str] = {}
         superseded_total = 0
 
+        # Resolve the owning tenant once for this ingest; reused for the IMPORTED + SUPERSEDED
+        # events appended on the caller's transaction (Gap G-B).
+        audit = AuditWriter(session)
+        client_id = client_id_for_cycle(session, cycle.cycle_id)
+
         def _submission_for(supplier_id: str) -> str:
             nonlocal superseded_total
             existing = submission_by_sup.get(supplier_id)
@@ -1114,6 +1137,33 @@ class PilotService:
                 ),
                 keys,
             )
+            # Governed decision: each prior submission is being superseded. Emit one tamper-evident
+            # SUPERSEDED event per prior id BEFORE the status flip, in the same transaction.
+            prior_ids = [
+                pid
+                for (pid,) in session.execute(
+                    text(
+                        "SELECT submission_id FROM bid.bid_submission "
+                        "WHERE cycle_id = :cyc AND round_id = :rnd AND supplier_id = :sup "
+                        "AND overall_status <> 'SUPERSEDED'"
+                    ),
+                    {"cyc": cycle.cycle_id, "rnd": round_id, "sup": supplier_id},
+                ).all()
+            ]
+            for prior_id in prior_ids:
+                audit.append(
+                    DomainEvent(
+                        event_type=EventType.SUPERSEDED,
+                        client_id=client_id,
+                        entity_type="bid.bid_submission",
+                        entity_id=uuid.UUID(prior_id),
+                        cycle_id=uuid.UUID(cycle.cycle_id),
+                        actor="pilot",
+                        source="import",
+                        before={"overall_status": "SUBMITTED"},
+                        after={"overall_status": "SUPERSEDED"},
+                    )
+                )
             session.execute(
                 text(
                     "UPDATE bid.bid_submission SET overall_status = 'SUPERSEDED' "
@@ -1156,6 +1206,20 @@ class PilotService:
                     "aid": artifact_id,
                     "now": now,
                 },
+            )
+            # Governed decision: a bid submission has been imported. Land its tamper-evident event
+            # in the same transaction as the INSERT (Gap G-B) — ids only, no commercial values.
+            audit.append(
+                DomainEvent(
+                    event_type=EventType.IMPORTED,
+                    client_id=client_id,
+                    entity_type="bid.bid_submission",
+                    entity_id=uuid.UUID(submission_id),
+                    cycle_id=uuid.UUID(cycle.cycle_id),
+                    actor="pilot",
+                    source="import",
+                    after={"round_id": round_id, "supplier_id": supplier_id},
+                )
             )
             submission_by_sup[supplier_id] = submission_id
             return submission_id

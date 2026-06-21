@@ -416,20 +416,32 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
     cycle_code = f"CYC-{now:%Y%m%d}-{cycle_id[:4].upper()}"
     effective = target_effective or date(now.year, 12, 31)
 
-    # ref.client / commodity / subcommodity — the FK chain the cyc spine hangs off.
+    # ref.client / commodity / subcommodity — the FK chain the cyc spine hangs off. The client id
+    # is minted explicitly (not gen_random_uuid) so the commodity can carry its owning tenant: the
+    # per-tenant audit chain resolves client_id via commodity.client_id, so it must not be NULL.
+    client_id = _id()
     session.execute(
         text(
             "INSERT INTO ref.client (id, client_code, client_name, is_active) "
-            "VALUES (gen_random_uuid(), :code, :name, true)"
+            "VALUES (:clid, :code, :name, true)"
         ),
-        {"code": f"CLIENT-{cycle_id[:6].upper()}", "name": f"{cycle_label} client"},
+        {
+            "clid": client_id,
+            "code": f"CLIENT-{cycle_id[:6].upper()}",
+            "name": f"{cycle_label} client",
+        },
     )
     session.execute(
         text(
             "INSERT INTO ref.commodity (id, client_id, commodity_code, commodity_name) "
-            "VALUES (:cid, NULL, :code, :name)"
+            "VALUES (:cid, :clid, :code, :name)"
         ),
-        {"cid": commodity_id, "code": f"COMM-{cycle_id[:6].upper()}", "name": commodity_name},
+        {
+            "cid": commodity_id,
+            "clid": client_id,
+            "code": f"COMM-{cycle_id[:6].upper()}",
+            "name": commodity_name,
+        },
     )
     session.execute(
         text(

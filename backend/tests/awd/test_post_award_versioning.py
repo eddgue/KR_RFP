@@ -53,6 +53,7 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
     run_id = _id()
     scenario_id = _id()
     commodity_id = _id()  # text commodity id; subcommodity NULL so the composite FK is skipped
+    client_id = _id()  # the owning tenant the audit chain resolves via ref.commodity.client_id
 
     dc1, dc2 = _id(), _id()
     sup1, sup2 = _id(), _id()
@@ -60,6 +61,28 @@ def _seed_cycle_and_run(session: Session) -> dict[str, str]:
     tf1 = _id()
 
     now = datetime.now(UTC).replace(tzinfo=None)
+
+    # ref.client / commodity — the tenant spine the freeze/adjust audit events resolve through
+    # (cyc.cycle.commodity_id → ref.commodity.client_id). Without it the chain has no tenant.
+    session.execute(
+        text(
+            "INSERT INTO ref.client (id, client_code, client_name, is_active) "
+            "VALUES (:cid, :code, :name, true)"
+        ),
+        {"cid": client_id, "code": f"CLI-{client_id[:8]}", "name": "Test Tenant"},
+    )
+    session.execute(
+        text(
+            "INSERT INTO ref.commodity (id, client_id, commodity_code, commodity_name) "
+            "VALUES (:com, :cli, :code, :name)"
+        ),
+        {
+            "com": commodity_id,
+            "cli": client_id,
+            "code": f"COMM-{commodity_id[:8]}",
+            "name": "Test Berries",
+        },
+    )
 
     # ref.dc / ref.supplier (global reference; names resolved in the doc).
     session.execute(

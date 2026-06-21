@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.3
+version: 1.4
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -35,7 +35,7 @@ The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / 
 | Reproducible / sealed runs + per-run isolation | ✅ Operational |
 | Web console (UI) | 🟡 Partial — dashboard + intake only; engine/award/post-award are MCP-only (G-E) |
 | Flat-13 period model | 🟡 Built, not wired (G-A) |
-| **Audit provenance (decision trail)** | 🔴 Partial — commodities only; **no award-decision events (G-B)** |
+| **Audit provenance (decision trail)** | ✅ Operational — every existing decision chained in-txn (IMPORTED/SEALED/FROZEN/SUPERSEDED/adjustment); **G-B closed v1.4**. Sign-off/send events land with G-D. |
 | RBAC enforcement | 🟠 Defined, not enforced (G-C) |
 | Sign-off workflow | ⬜ Not implemented (G-D) |
 | Contract generation (PBA) | ⬜ Not implemented (G-F) |
@@ -45,18 +45,18 @@ The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / 
 
 **What works end to end (driven by `PilotService` + the MCP harness):** start run → setup ingest (full cycle/scope creation) → bid template → bid intake (strict *and* flexible) → V3 engine (5-factor scoring, 7 scenario lenses A–G, split allocation) → human-selected award freeze → versioned post-award layers → generated workbooks (alignment, booking guide, per-supplier guides, post-award) → close-out (archive→purge). Sealed analysis runs and frozen awards are immutability-guarded. Per-run isolated databases keep runs apart at the harness runtime.
 
-**The six gaps — one CRITICAL, five material** (detail + evidence below):
+**The gaps — the critical one (G-B) is now CLOSED (v1.4); five material remain** (detail + evidence below):
 
 | # | Gap | Severity | Impact | Backlog |
 |---|---|---|---|---|
-| **G-B** | **The audit hash-chain doesn't cover award decisions.** The chained `audit.event_log` is mechanically correct but the **only** caller is commodity creation. Engine seal, award freeze, supersede, ingest emit **no** events. | 🔴 **CRITICAL** (existential) | The tamper-evident provenance (E-05) records **none** of the decisions that matter. The "why did Supplier A get 35%?" trail does not exist. | E-05 |
+| **G-B** | **~~The audit hash-chain doesn't cover award decisions.~~ CLOSED (v1.4).** Decision events now fire in-transaction at ingest (IMPORTED), supersede (SUPERSEDED), engine seal (SEALED), award freeze (FROZEN), and adjustment (CREATED) — `app/core/audit/recorder.py` + emits in `pilot/service.py`, `awd/service.py`. | ✅ **CLOSED** | The "why did Supplier A get 35%?" chain (bid → analysis → freeze → adjustment) is now tamper-evident and recomputable. | E-05 ✓ |
 | **G-A** | **Flat-13 period fan-out is built but NOT wired.** The column, indexes, and fan-out engine exist; the live ingest path never calls it, so bids are stored at the **timeframe** grain (`fiscal_period_id` NULL). | 🟠 Material | The "data flat at 13 periods" model (D35) isn't actually in effect for stored bids. | D35, migrations 0014–0016 |
 | **G-C** | **RBAC is defined but not enforced.** A full permission matrix + separation-of-duties exists; **no route uses it** — every route is bare session auth, and the dev principal holds all roles. | 🟠 Material | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 |
 | **G-D** | **Sign-off is decorative.** It exists only as a workbook tab + an unused permission — no transition, no state, no gate. | 🟠 Material | No portfolio sign-off step (E-22) in the running system. | E-22 |
 | **G-E** | **The HTTP API is front-half only.** `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs. | 🟠 Material | The web console can set up + take bids, but cannot run the engine, award, or adjust — those need the MCP harness. | E-25 |
 | **G-F** | **PBA / contract builder is absent**, and so are external feeds (iTrade/KCMS), the supplier importer, and any deck/letter/email/send path. | 🟠 Material | The post-award final step and supplier master intake the sponsor flagged don't exist yet. | E-33, E-34, E-08/E-09, E-24 |
 
-> **Why G-B is existential, not functional.** The platform's thesis is *AI-generated, not AI-managed* — every number must be defensible by a human-owned, tamper-evident record. The first hard question in production will be **"why did Supplier A receive 35% and Supplier B 15%?"**, and the answer must be a chain: **bid received → analysis run → scenario selected → award frozen → adjustment applied**. That chain's machinery exists and is cryptographically sound, but today it records **only commodity creation** — none of those five events. Until it does, the decisions that carry the commercial and legal weight have **no tamper-evident provenance**. Every other gap is functional (a feature isn't built yet); this one undermines the core governance promise, so it is classified existential.
+> **✅ G-B CLOSED in v1.4 (was the one existential gap).** The platform's thesis is *AI-generated, not AI-managed* — every number must be defensible by a human-owned, tamper-evident record. The first hard question in production is **"why did Supplier A receive 35% and Supplier B 15%?"**, and the answer must be a chain: **bid received → analysis run → scenario selected → award frozen → adjustment applied**. As of v1.4 each of those decisions appends a hash-chained `audit.event_log` row **in the decision's own transaction** — so an award cannot exist without its event — and the chain recomputes/verifies (tamper-evident; see `tests/audit/test_decision_events.py`). The remaining `SIGNED_OFF` / `SENT` event types stay unwired only because those features don't exist yet (G-D / E-24).
 
 **Two runtimes, two isolation models (important):** the **MCP harness** gives each run its *own database* (D30, `kr_rfp_run_<slug>`); the **web console** runs against the *shared* app database with per-run `cycle_id`/`round_id` scoping (D36) and no per-query RLS yet. Both are real and coexist.
 
@@ -239,16 +239,16 @@ There is **no optimisation loop inside the engine** — `run_analysis` is single
 
 The hash-chained `audit.event_log` is **mechanically complete and correct**: `prev_event_hash`→`event_hash = sha256(canonical(fields) || prev)`, per-tenant `seq` taken `FOR UPDATE`, genesis = 64 zeros, written in the caller's transaction (writer.py:46–82). Eight `EventType`s are defined (CREATED, SEALED, FROZEN, SUPERSEDED, SIGNED_OFF, SENT, GATE_APPROVED, IMPORTED).
 
-**But the only caller in `app/` is commodity creation (ref/service.py:53).** Engine seal, award freeze, bid supersede, and ingest emit **no** events; there is no sign-off/send path to emit the rest. So the chain currently records none of the actual award decisions. Today's provenance for decisions = immutable sealed `eng.*`/`awd.*` rows + hashed engine manifests + the vault git history + `run_data.json` — **not** the audit chain. Closing G-B (E-05) = calling `AuditWriter.append` at each seal/freeze/supersede/ingest.
+**✅ Closed in v1.4.** Decision events now fire **in the decision's own transaction** at every governed step: `IMPORTED` + `SUPERSEDED` at bid ingest (`pilot/service._persist_bid_lines`), `SEALED` at engine seal (`pilot/service.run_round`), `FROZEN` at award freeze and `CREATED` at adjustment (`awd/service`). The tenant is resolved via `app/core/audit/recorder.py` (cycle/award → commodity → `client_id`); a decision whose tenant can't be resolved **raises** rather than skipping the event (no decision without provenance). The chain is verified end-to-end in `tests/audit/test_decision_events.py` (contiguous `seq`, prev→hash linkage, `compute_event_hash` recompute, and a savepoint-rollback proving the event rides the decision's transaction). Closing the linkage gap (`ref.commodity.client_id` was NULL in the pilot path) also fixed a latent ownership hole. **Still unwired:** `SIGNED_OFF` / `SENT` / `GATE_APPROVED` — only because those features don't exist yet (G-D, G-C in-gate, E-24).
 
 ---
 
 ## 9. Built · partial · missing (gap analysis → backlog)
 
-**Built (working):** vault scaffold + git + per-run isolated DBs + snapshot/rehydrate · setup ingest → full cycle/scope · bid template gen · strict + flexible intake w/ quarantine · V3 engine (5-factor scoring, eligibility gates, 7 lenses, split allocator, sealed reproducible runs) → **E-18/E-19/E-20** · award freeze + append-only post-award layers → **E-21** · alignment/booking-guide/supplier-guide/post-award workbooks → **E-23 (booking guide part)** · immutability guards · MCP surface covering the full lifecycle · web: auth+2FA, dashboard, run detail, **bid intake** → **E-26 (started)**.
+**Built (working):** vault scaffold + git + per-run isolated DBs + snapshot/rehydrate · setup ingest → full cycle/scope · bid template gen · strict + flexible intake w/ quarantine · V3 engine (5-factor scoring, eligibility gates, 7 lenses, split allocator, sealed reproducible runs) → **E-18/E-19/E-20** · award freeze + append-only post-award layers → **E-21** · alignment/booking-guide/supplier-guide/post-award workbooks → **E-23 (booking guide part)** · immutability guards · **decision-point audit events (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic + tamper-evident → E-05 ✓ (v1.4)** · MCP surface covering the full lifecycle · web: auth+2FA, dashboard, run detail, **bid intake** → **E-26 (started)**.
 
 **Partial / inert:**
-- Audit event emission — writer live, lifecycle steps silent → **E-05**.
+- Audit event emission for **sign-off / send** (`SIGNED_OFF`/`SENT`) — pending those features → **G-D / E-24** (decision events themselves are done, v1.4).
 - RBAC matrix defined, **no route enforces** it → **E-03**.
 - HTTP API front-half only; `cycles`/`awards`/`documents`/`ingest` routers empty → **E-25**.
 - **Flat-13 fan-out built, not invoked** (bids at timeframe grain) → **D35 / migrations 0014–0016**.
@@ -277,10 +277,10 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ## 11. Recommended priorities (to frame the review)
 
-0. **(CRITICAL) Wire audit events into every decision** (G-B, E-05) — emit `IMPORTED` / `SEALED` / `FROZEN` / `SUPERSEDED` **inside the same transaction** as each decision so the event is atomic with it (no frozen award without its event). This is the one existential gap: without it the "AI-generated, not AI-managed" thesis has no tamper-evident trail.
-1. **Wire the flat-13 fan-out into intake** (G-A) — small, high-value, makes D35 real.
+0. **~~(CRITICAL) Wire audit events into every decision~~ ✅ DONE (v1.4)** (G-B, E-05) — decisions now emit `IMPORTED`/`SEALED`/`FROZEN`/`SUPERSEDED`/adjustment events in-transaction; chain verified by tests.
+1. **Wire the flat-13 fan-out into intake** (G-A) — small, high-value, makes D35 real. **← next**
 2. **Build the alignment/scenario web screen + the award/post-award HTTP surface** (G-E, E-25) — the biggest missing UX and the planned centerpiece; unblocks running RFPs end-to-end in the console.
-3. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official".
+3. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official"; wire `SIGNED_OFF`/`SENT` audit events when these land.
 4. **Back the app-layer guards with DB-level enforcement** — immutability triggers + tenant RLS; today both rest on app-layer listeners + edge principal only.
 5. **Spec the PBA/contract builder + supplier importer** (G-F, E-33/E-34) — the sponsor-flagged post-award step and supplier master intake.
 
@@ -316,6 +316,7 @@ A calendar audit is mostly noise; an audit **after meaningful architectural chan
 
 The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
 
+- **v1.4 (2026-06-21)** — *Added:* decision-point audit events (`app/core/audit/recorder.py` + in-txn emits at ingest/seal/freeze/adjust) and `tests/audit/test_decision_events.py`; `ref.commodity.client_id` now populated at setup ingest (latent NULL fixed). *Closed:* **G-B** — the audit chain now covers every existing decision (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic with the decision and tamper-evident. *Introduced:* none. *Note:* `SIGNED_OFF`/`SENT` events remain pending their features (G-D/E-24).
 - **v1.3 (2026-06-21)** — *Added:* re-audit trigger table + five standing questions (§12); release-gate policy (D37, WAYS_OF_WORKING §8); this delta-format history. *Closed:* none. *Introduced:* none.
 - **v1.2 (2026-06-21)** — *Added:* Platform maturity snapshot at the top. *Closed:* none. *Introduced:* none.
 - **v1.1 (2026-06-21)** — *Added:* §4 System of Record hierarchy, §5 Failure domains, "where the project stands" framing. *Reclassified:* G-B → CRITICAL / existential. *Closed:* none. *Introduced:* none.
