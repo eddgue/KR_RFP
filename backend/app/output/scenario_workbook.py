@@ -35,6 +35,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.domain.eng.models import AnalysisRun, AnalysisScenario
+from app.engine.formulas import (
+    awarded_cases,
+    delta_vs_historical,
+    line_spend,
+    savings_dollars,
+    savings_fraction,
+)
 from app.engine.interface import EngineConfig
 from app.output.formatting import (
     _BENCH_FILL,
@@ -405,7 +412,9 @@ def _gather_scenario_rollups(
     # Baseline (incumbent routing) total spend across all cells, and the STLY proxy total.
     baseline_total = Decimal("0")
     for (dc_id, lot_id, _tf_id), cases in vol_by_cell.items():
-        baseline_total += seeded.incumbent_routing.get((dc_id, lot_id), Decimal("0")) * cases
+        baseline_total += line_spend(
+            seeded.incumbent_routing.get((dc_id, lot_id), Decimal("0")), cases
+        )
     stly_total = (baseline_total * _STLY_UPLIFT).quantize(Decimal("0.01"))
 
     rows = session.execute(
@@ -430,7 +439,7 @@ def _gather_scenario_rollups(
     cells_by: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
     for code, dc_id, lot_id, tf_id, supplier_id, share, price, breach in rows:
         cases = vol_by_cell.get((dc_id, lot_id, tf_id), Decimal("1"))
-        line = Decimal(str(price)) * cases * Decimal(str(share))
+        line = line_spend(Decimal(str(price)), awarded_cases(cases, Decimal(str(share))))
         dcn = dc_name.get(dc_id, dc_id[:6])
         name = sup_name.get(supplier_id, supplier_id[:6])
         spend_by[code] += line
@@ -446,8 +455,8 @@ def _gather_scenario_rollups(
     for s in sorted(scenarios, key=lambda x: x.scenario_code):
         code = s.scenario_code
         spend = spend_by.get(code, Decimal("0"))
-        sv_base = (baseline_total - spend) / baseline_total if baseline_total > 0 else Decimal("0")
-        sv_stly = (stly_total - spend) / stly_total if stly_total > 0 else Decimal("0")
+        sv_base = savings_fraction(baseline_total, spend)
+        sv_stly = savings_fraction(stly_total, spend)
         rollups.append(
             ScenarioRollup(
                 code=code,
@@ -567,11 +576,11 @@ def _gather_award_details(
     for code, dc_id, lot_id, tf_id, sup_id, share, price, breach, fallback in award_rows:
         share_d = Decimal(str(share))
         price_d = Decimal(str(price))
-        cases = vol_by_cell.get((dc_id, lot_id, tf_id), Decimal("0")) * share_d
+        cases = awarded_cases(vol_by_cell.get((dc_id, lot_id, tf_id), Decimal("0")), share_d)
         baseline = seeded.incumbent_routing.get((dc_id, lot_id), Decimal("0"))
-        spend = price_d * cases
-        baseline_spend = baseline * cases
-        premium = (price_d - baseline) / baseline if baseline > 0 else Decimal("0")
+        spend = line_spend(price_d, cases)
+        baseline_spend = line_spend(baseline, cases)
+        premium = delta_vs_historical(price_d, baseline) or Decimal("0")
         scores = score_by.get((sup_id, dc_id, lot_id, tf_id), tuple(Decimal("0") for _ in range(6)))
         item = item_for_lot.get(lot_id)
         sup_disp = sup_name.get(sup_id, sup_id[:6])
@@ -595,7 +604,7 @@ def _gather_award_details(
                 spend=spend,
                 baseline_price=baseline,
                 baseline_spend=baseline_spend,
-                savings_vs_baseline=baseline_spend - spend,
+                savings_vs_baseline=savings_dollars(baseline_spend, spend),
                 premium_vs_baseline_frac=premium,
                 price_score=scores[0],
                 coverage_score=scores[1],

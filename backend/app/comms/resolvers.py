@@ -25,7 +25,12 @@ from app.comms.templates import EmailType, get_template
 from app.domain.awd.models import Award, AwardLine
 from app.domain.awd.read import award_detail
 from app.domain.cyc.models import CycleTimeframe
-from app.engine.formulas import construct_price, premium_vs_low
+from app.engine.formulas import (
+    construct_price,
+    premium_dollars,
+    premium_vs_low,
+    weekly_impact,
+)
 from app.engine.interface import BidComponents, BidInput
 from app.engine.scoring import GATE_COVERAGE, GATE_NO_PRICE, GATE_PREMIUM
 from app.output.types import CycleView
@@ -337,7 +342,7 @@ def feedback_drafts(
             above = price > market_low
             if is_elig and not above:  # eligible AND at/below benchmark -> nothing to ask
                 continue
-            prem_dollar = price - market_low
+            prem_dollar = premium_dollars(price, market_low)
             prem_pct = premium_vs_low(price, market_low) or _ZERO
             if not is_elig:
                 # A hard ask fires on INELIGIBILITY regardless of price position — a coverage gate
@@ -366,7 +371,7 @@ def feedback_drafts(
             # The per-DC summary measures the PRICE gap, so it counts above-benchmark lots only (a
             # market-low ineligible lot has no premium to summarize).
             if above:
-                impact = prem_dollar * weekly_cases
+                impact = weekly_impact(prem_dollar, weekly_cases)
                 agg = dc_agg[supplier_id].setdefault(
                     dc_id,
                     {

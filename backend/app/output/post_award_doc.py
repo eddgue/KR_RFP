@@ -36,6 +36,7 @@ from app.domain.awd.service import (
     effective_award,
 )
 from app.domain.cyc.models import CycleLot, CycleTimeframe
+from app.engine.formulas import price_delta
 from app.output.formatting import (
     _SUBTITLE_FONT,
     DECISION_SUPPORT_STRAP,
@@ -242,7 +243,7 @@ def _write_effective_tab(
         ws.cell(row=row, column=4, value=tf_name)
         ws.cell(row=row, column=5, value=float(base))
         ws.cell(row=row, column=6, value=float(eff))
-        ws.cell(row=row, column=7, value=float(eff - base))
+        ws.cell(row=row, column=7, value=float(price_delta(eff, base)))
         row += 1
 
     format_table(

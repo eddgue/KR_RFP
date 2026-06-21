@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.awd.models import Award, AwardAdjustment, AwardLine
 from app.domain.awd.service import award_versions, effective_award
+from app.engine.formulas import price_delta
 from app.output.types import CycleView
 
 
@@ -180,7 +181,7 @@ def award_detail(session: Session, cycle_view: CycleView, award_id: str) -> Awar
                 volume_share=float(volume_share),
                 frozen_price=float(frozen_price),
                 effective_price=float(eff),
-                delta=float(eff - frozen_price),
+                delta=float(price_delta(eff, frozen_price)),
             )
         )
     lines.sort(key=lambda line: (line.dc, line.lot, line.tf, line.supplier))
