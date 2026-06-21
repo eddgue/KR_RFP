@@ -11,7 +11,6 @@ authenticated (`get_current_user`).
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -25,8 +24,9 @@ from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.domain.bid.models import BidLine
 from app.pilot.flex_ingest import ColumnMapping, MappingProposal
+from app.pilot.service import BidIngestResult
 from app.pilot.status import kanban
-from app.pilot.vault import SUBDIR_INPUTS, RunPaths, stage_filename, write_to_run
+from app.pilot.vault import RunPaths
 
 router = APIRouter()
 
@@ -64,9 +64,20 @@ class ProposeImportResponse(BaseModel):
 
 
 class IngestedResponse(BaseModel):
-    """A completed import: how many bid lines persisted + the run's refreshed kanban."""
+    """A completed import: how many bid lines persisted + the run's refreshed kanban.
+
+    The quarantine/supersede/capacity counts are RETURNED here (ADR-0018 Slice 4) instead of being
+    appended to NOTES.md — the web console surfaces them to the buyer and nothing hits disk.
+    `superseded` is how many prior bid lines a re-send replaced; `capacity_loaded` is how many
+    stated per-cell ceilings landed; `quarantined_bids`/`quarantined_capacity` are rows the strict
+    path dropped (key mismatch / bad number), surfaced so they're never silently lost.
+    """
 
     ingested: int
+    superseded: int = 0
+    capacity_loaded: int = 0
+    quarantined_bids: int = 0
+    quarantined_capacity: int = 0
     kanban: dict[str, list[str]]
 
 
@@ -175,46 +186,40 @@ def import_bids(
 ) -> ProposeImportResponse | IngestedResponse:
     """Import a round's bids, strict (owned template) or flexible (supplier's own sheet).
 
-    * `mode=strict` — save the file into inputs/ and ingest via the key-validated path
-      (`ingest_bids`); returns `{ingested, kanban}`.
-    * `mode=flexible`, `confirm=false` — infer the messy file's column mapping (`ingest_any`,
-      confirm=False) and return `{proposal}`; NOTHING is written.
-    * `mode=flexible`, `confirm=true` — apply the confirmed mapping + ingest (`ingest_any`,
-      confirm=True); returns `{ingested, kanban}`.
+    The uploaded file is streamed straight into ingest and NEVER written to disk (ADR-0018 Slice 4):
+
+    * `mode=strict` — ingest the owned-template bytes via the key-validated path
+      (`ingest_bids_bytes`); returns `{ingested, …counts, kanban}`.
+    * `mode=flexible`, `confirm=false` — infer the messy file's column mapping
+      (`ingest_any_bytes`, confirm=False) and return `{proposal}`; NOTHING is written.
+    * `mode=flexible`, `confirm=true` — apply the confirmed mapping + ingest
+      (`ingest_any_bytes`, confirm=True); returns `{ingested, …counts, kanban}`.
 
     404 if the run doesn't exist; 400 if there's no cycle yet / the round is out of range.
     """
 
     svc = service()
     run_row = resolve_run(db, run)  # 404 if no such run (DB-resolved identity, Slice 3)
-    paths = service().run_paths(run)
+    paths = svc.run_paths(run)
     # Validate the round against the cycle up front so a bad round is a clean 400, not a 500 deep
     # in the service (so even flexible-propose, which writes nothing, rejects an impossible round).
     resolve_round_id(db, paths, round)
     data = file.file.read()
 
     if mode == "strict":
-        uploaded = write_to_run(
-            paths, SUBDIR_INPUTS, stage_filename(_stage(round), f"round{round}_bids_uploaded"), data
-        )
-        count = _ingest_bids(svc, db, paths, round, uploaded, actor=user.username)
-        return IngestedResponse(ingested=count, kanban=kanban(db, run_row.cycle_id, paths))
+        strict_result = _ingest_bids_bytes(svc, db, paths, round, data, actor=user.username)
+        return _ingested_response(strict_result, kanban(db, run_row.cycle_id, paths))
 
-    # flexible — write the bytes to a temp scratch path inside inputs/ so the service reads a file.
-    scratch = write_to_run(paths, SUBDIR_INPUTS, f"round{round}_raw_supplier_drop.xlsx", data)
     if not confirm:
-        try:
-            proposal = svc.ingest_any(db, paths, round, scratch, confirm=False, actor=user.username)
-        finally:
-            # Propose writes nothing governed; drop the scratch upload either way (try/finally) so a
-            # rejected — or a FAILED — proposal never leaves a temp file behind in inputs/.
-            scratch.unlink(missing_ok=True)
+        # Propose: infer the mapping from the bytes in memory and return it — nothing is written,
+        # nothing ever touched disk (no scratch file to clean up).
+        proposal = svc.ingest_any_bytes(db, paths, round, data, confirm=False, actor=user.username)
         assert isinstance(proposal, MappingProposal)  # noqa: S101 — confirm=False path returns one
         return ProposeImportResponse(proposal=_mapping_view(proposal))
 
-    result = svc.ingest_any(db, paths, round, scratch, confirm=True, actor=user.username)
-    assert isinstance(result, int)  # noqa: S101 — confirm=True path returns the ingested count
-    return IngestedResponse(ingested=result, kanban=kanban(db, run_row.cycle_id, paths))
+    flex_result = svc.ingest_any_bytes(db, paths, round, data, confirm=True, actor=user.username)
+    assert isinstance(flex_result, BidIngestResult)  # noqa: S101 — confirm=True returns the result
+    return _ingested_response(flex_result, kanban(db, run_row.cycle_id, paths))
 
 
 @router.get("", response_model=list[BidLineView], summary="List a round's ingested bids")
@@ -275,22 +280,31 @@ def list_bids(
     return [_bid_line_view(row) for row in rows]
 
 
-def _ingest_bids(
-    svc: Any, db: Session, paths: RunPaths, round_no: int, uploaded: Path, *, actor: str
-) -> int:
-    """Run the strict key-validated ingest, mapping a malformed/mismatched file to a clean 400."""
+def _ingest_bids_bytes(
+    svc: Any, db: Session, paths: RunPaths, round_no: int, data: bytes, *, actor: str
+) -> BidIngestResult:
+    """Run the strict key-validated bytes ingest, mapping a malformed/mismatched file to a 400."""
 
     try:
-        return int(svc.ingest_bids(db, paths, round_no, uploaded, actor=actor))
+        result = svc.ingest_bids_bytes(db, paths, round_no, data, actor=actor)
     except ValueError as exc:
         raise AppError(
             code=ErrorCode.VALIDATION_ERROR,
             message=f"Could not ingest the Round {round_no} bid file: {exc}",
             status_code=400,
         ) from exc
+    assert isinstance(result, BidIngestResult)  # noqa: S101
+    return result
 
 
-def _stage(round_no: int) -> int:
-    """The normalized workflow stage number for a round's uploaded bids (mirrors PilotService)."""
+def _ingested_response(result: BidIngestResult, board: dict[str, list[str]]) -> IngestedResponse:
+    """Shape a `BidIngestResult` + the refreshed kanban into the response (counts, no NOTES)."""
 
-    return 3 + (round_no - 1) * 3
+    return IngestedResponse(
+        ingested=result.ingested,
+        superseded=result.superseded,
+        capacity_loaded=result.capacity_loaded,
+        quarantined_bids=result.quarantined_bids,
+        quarantined_capacity=result.quarantined_capacity,
+        kanban=board,
+    )

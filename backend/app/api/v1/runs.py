@@ -39,11 +39,8 @@ from app.pilot.models import Run
 from app.pilot.run_repo import list_run_records
 from app.pilot.status import kanban
 from app.pilot.vault import (
-    SUBDIR_INPUTS,
     RunPaths,
     build_run_zip,
-    stage_filename,
-    write_to_run,
 )
 
 router = APIRouter()
@@ -400,20 +397,18 @@ def ingest_setup(
     db: Annotated[Session, Depends(get_db)],
     file: Annotated[UploadFile, File(description="The filled setup/kickoff workbook (.xlsx).")],
 ) -> IngestSetupResponse:
-    """Save the uploaded setup workbook into inputs/ and ingest it into a governed cycle.
+    """Stream the uploaded setup workbook straight into ingest — no file is written (Slice 4).
 
-    The bytes are written into the run's inputs/ via the governed `write_to_run`, then handed to
-    `PilotService.ingest_setup`, which creates the cycle, links cycle_id.txt, and recomputes the
-    kanban. Returns the new cycle id + the refreshed kanban. 404 if the run doesn't exist; 409
-    (conflict) if the run already has a cycle (setup is once-per-run — a second ingest would orphan
-    the prior cycle).
+    The bytes are read into memory and handed to `PilotService.ingest_setup_bytes`, which creates
+    the governed cycle and links it on the run's `pilot.run` row — the uploaded workbook is NEVER
+    persisted to disk (ADR-0018). Returns the new cycle id + the refreshed kanban. 404 if the run
+    doesn't exist; 409 (conflict) if the run already has a cycle (setup is once-per-run — a second
+    ingest would orphan the prior cycle).
     """
 
     svc = service()
     paths = resolve_paths(db, slug)
-    data = file.file.read()
-    uploaded = write_to_run(paths, SUBDIR_INPUTS, stage_filename(1, "setup_kickoff"), data)
-    cycle_id = svc.ingest_setup(db, paths, uploaded)
+    cycle_id = svc.ingest_setup_bytes(db, paths, file.file.read())
     board = _board_for(db, resolve_run(db, slug), paths)
     return IngestSetupResponse(cycle_id=cycle_id, kanban=board)
 

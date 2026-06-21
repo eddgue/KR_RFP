@@ -99,7 +99,7 @@ from app.pilot.run_db import (
     provision_run_database,
     restore_run_database,
 )
-from app.pilot.run_repo import create_run_record, set_run_cycle
+from app.pilot.run_repo import create_run_record, get_run, set_run_cycle
 from app.pilot.setup_ingest import ingest_setup_workbook
 from app.pilot.setup_template import build_setup_workbook
 from app.pilot.vault import (
@@ -160,6 +160,24 @@ class _BookingAward:
     scenario_code: str
     scenario_label: str
     cells: tuple[_BookingCell, ...]
+
+
+@dataclass(frozen=True)
+class BidIngestResult:
+    """The outcome of a console (no-disk) bid ingest — counts the route returns instead of NOTES.
+
+    `ingested` is the logical priced-line count (the API contract); `superseded` is how many prior
+    bid lines a re-send replaced; `capacity_loaded` is how many stated per-cell ceilings landed;
+    `quarantined_bids`/`quarantined_capacity` are rows the strict path dropped (key mismatch / bad
+    number) — surfaced to the buyer, never silently lost. The harness writes these as NOTES.md
+    entries; the web console returns them so nothing is persisted to disk (ADR-0018 Slice 4).
+    """
+
+    ingested: int
+    superseded: int
+    capacity_loaded: int
+    quarantined_bids: int
+    quarantined_capacity: int
 
 
 class PilotService:
@@ -266,6 +284,42 @@ class PilotService:
         git_commit_run(self.vault_root, runpaths.slug, "setup ingested → cycle created")
         return cycle_id
 
+    def ingest_setup_bytes(self, session: Session, runpaths: RunPaths, data: bytes) -> str:
+        """Ingest setup from in-memory BYTES (web console, no-disk path — ADR-0018 Slice 4).
+
+        The UPLOADED workbook is streamed straight into ingest and NEVER written to disk — that is
+        the Slice-4 guarantee (no uploaded file is persisted). The governed cycle is created from
+        `data` and linked on the run's `pilot.run` row (the DB identity). Once-per-run, exactly like
+        `ingest_setup`: a run that already names a cycle refuses (409). Returns the new cycle_id.
+
+        The cycle_id.txt link + RUN.md kanban are still written (vault scaffold) so the downstream
+        service methods that still read `cycle_id.txt` (template/analysis/freeze) keep working until
+        Slice 5-6 move them onto the DB; Slice 6 then removes the scaffold writes entirely. The
+        once-per-run conflict is checked against the DB row (the console's source of truth).
+        """
+
+        existing = self._console_cycle_id(session, runpaths)
+        if existing is not None:
+            raise AppError(
+                code=ErrorCode.CONFLICT,
+                message=(
+                    "This run already has a cycle; re-ingesting setup would orphan it. "
+                    "Start a new run to set up a different cycle."
+                ),
+                status_code=409,
+            )
+
+        cycle_id = ingest_setup_workbook(session, data)
+        set_run_cycle(session, runpaths.slug, cycle_id)
+        # Vault scaffold (removed in Slice 6): keep the cycle link + kanban on disk so the
+        # template/analysis/freeze methods that still read cycle_id.txt resolve the cycle.
+        runpaths.cycle_id_file.write_text(cycle_id, encoding="utf-8")
+        status_mod.set_header_field(runpaths, "Cycle", cycle_id)
+        board = status_mod.kanban(session, cycle_id, runpaths)
+        status_mod.render_run_md(runpaths, board)
+        git_commit_run(self.vault_root, runpaths.slug, "setup ingested → cycle created")
+        return cycle_id
+
     # ------------------------------------------------------------------ #
     # notes + memory
     # ------------------------------------------------------------------ #
@@ -317,6 +371,19 @@ class PilotService:
             return None
         value = runpaths.cycle_id_file.read_text(encoding="utf-8").strip()
         return value or None
+
+    def _console_cycle_id(self, session: Session, runpaths: RunPaths) -> str | None:
+        """The run's cycle id from its `pilot.run` row — the console's DB-resolved link (Slice 2-4).
+
+        The web console reads the cycle from the DB, not `cycle_id.txt`, so the no-disk ingest paths
+        resolve once-per-run conflicts against the governed row. Falls back to the vault file when
+        no row exists (defensive — a console run always has a row from the start_run dual-write).
+        """
+
+        run = get_run(session, runpaths.slug)
+        if run is not None:
+            return run.cycle_id
+        return self._cycle_id(runpaths)
 
     # ================================================================== #
     # PART B — the rest of the cycle loop
@@ -454,6 +521,86 @@ class PilotService:
             f"round {round_no} messy file normalized → owned template",
         )
         return self.ingest_bids(session, runpaths, round_no, normalized_path, actor=actor)
+
+    # ------------------------------------------------------------------ #
+    # web console ingest — uploads stream straight to ingest, no disk (ADR-0018 Slice 4)
+    # ------------------------------------------------------------------ #
+    def ingest_bids_bytes(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        round_no: int,
+        data: bytes,
+        *,
+        actor: str = "pilot",
+    ) -> BidIngestResult:
+        """Strict key-validated bid ingest from in-memory BYTES (web console, no-disk path).
+
+        Mirrors `ingest_bids`'s GOVERNED writes (the strict template + capacity ingest →
+        `_persist_bid_lines`), but the uploaded file is NEVER written to disk and the
+        quarantine/supersede/capacity signals are RETURNED (`BidIngestResult`) for the route to
+        surface, instead of being appended to NOTES.md. No vault file is touched.
+        """
+
+        cycle = self._console_load_cycle(session, runpaths)
+        scope = build_scope_from_cycle(cycle, round_no)
+        round_id = cycle.rounds[round_no - 1].id
+
+        result = ingest_template(data, scope)
+        capacity = ingest_capacity(data, scope)
+        count, superseded, cap_count = self._persist_bid_lines(
+            session, cycle, round_id, result.lines, capacity.lines, actor=actor
+        )
+        return BidIngestResult(
+            ingested=count,
+            superseded=superseded,
+            capacity_loaded=cap_count,
+            quarantined_bids=len(result.quarantined),
+            quarantined_capacity=len(capacity.quarantined),
+        )
+
+    def ingest_any_bytes(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        round_no: int,
+        data: bytes,
+        *,
+        confirm: bool = False,
+        actor: str = "pilot",
+    ) -> MappingProposal | BidIngestResult:
+        """Flexible "take my file as-is" ingest from in-memory BYTES (web console, no-disk path).
+
+        `confirm=False`: infer the messy file's column mapping and RETURN the `MappingProposal` —
+        nothing is written (and nothing was ever on disk). `confirm=True`: apply the confirmed
+        mapping to a clean key-stamped template IN MEMORY and ingest it via the strict bytes path,
+        returning the `BidIngestResult`. No vault file (the raw drop, the normalized template) is
+        ever written — the bytes stream straight through.
+        """
+
+        cycle = self._console_load_cycle(session, runpaths)
+        scope = build_scope_from_cycle(cycle, round_no)
+
+        proposal = infer_bid_mapping(data, cycle)
+        if not confirm:
+            return proposal
+
+        cleaned = apply_mapping(data, proposal, scope)
+        return self.ingest_bids_bytes(session, runpaths, round_no, cleaned, actor=actor)
+
+    def _console_load_cycle(self, session: Session, runpaths: RunPaths) -> CycleView:
+        """Load the run's cycle via the DB-resolved link (`pilot.run`), for the no-disk paths.
+
+        The console reads the cycle from the governed row (Slices 2-4), so the bytes ingest paths
+        never depend on `cycle_id.txt`. Raises if the run has no cycle yet (setup not ingested).
+        """
+
+        cycle_id = self._console_cycle_id(session, runpaths)
+        if cycle_id is None:
+            raise ValueError(
+                f"run {runpaths.slug} has no cycle yet — ingest the setup workbook first"
+            )
+        return load_cycle(session, cycle_id)
 
     def run_round(
         self,
