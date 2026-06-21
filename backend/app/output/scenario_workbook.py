@@ -193,10 +193,13 @@ def _transit_by_lane(session: Session, cycle_id: str) -> dict[tuple[str, str], i
     transit for it (no synthetic proxy; transit is surfaced only when it is real data).
     """
 
+    # ACTIVE rows only (`is_scoreable`): a superseded submission's transit must not win the MAX.
+    # Fan-out is a non-issue here — the per-period rows replicate the transit, so MAX is stable.
     rows = session.execute(
         text(
             "SELECT supplier_id, dc_id, MAX(transit_days) FROM bid.bid_line "
-            "WHERE cycle_id = :cyc AND transit_days IS NOT NULL GROUP BY supplier_id, dc_id"
+            "WHERE cycle_id = :cyc AND transit_days IS NOT NULL AND is_scoreable = true "
+            "GROUP BY supplier_id, dc_id"
         ),
         {"cyc": cycle_id},
     ).all()
@@ -233,11 +236,14 @@ def _gather_cells(
     # (≤13×) period rows to ONE price per (supplier, dc, lot, tf) with DISTINCT ON — the fanned rows
     # are identical, so any one returns the same price (a pure tf-grain row, period NULL, is its own
     # representative). This keeps the grid byte-identical to the pre-fan-out timeframe-grain read.
+    # Only ACTIVE (`is_scoreable`) rows are read — mirrors the engine's `_read_bid_lines` filter,
+    # so a superseded re-submission (prior lines flipped non-scoreable) can't leak a stale price.
     price_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
             "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
@@ -1820,12 +1826,15 @@ def _gather_score_detail(
     # cell). The market stats (esp. the bid COUNT `n`) are TIMEFRAME-grain, so collapse the period
     # rows to ONE price per (supplier, dc, lot, tf) with DISTINCT ON — otherwise every supplier's
     # price would be counted ≤13× and the group count/std would inflate. The fanned rows are
-    # identical, so the deduped read is byte-identical to the pre-fan-out timeframe grain.
+    # identical, so the deduped read is byte-identical to the pre-fan-out timeframe grain. Only
+    # ACTIVE (`is_scoreable`) rows are read — mirrors the engine, so a superseded re-submission
+    # can't inflate the group stats with a stale price.
     price_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
             "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
@@ -2126,11 +2135,14 @@ def _gather_coverage(
     # cell). Coverage is per (supplier × cell), so collapse the period rows to ONE per (supplier,
     # dc, lot, tf) with DISTINCT ON — otherwise every cell would emit ≤13 duplicate coverage rows.
     # The fanned rows are identical, so the deduped read matches the pre-fan-out timeframe grain.
+    # Only ACTIVE (`is_scoreable`) rows are read — mirrors the engine, so a superseded re-submission
+    # can't report stale coverage.
     bid_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
             "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, volume_minimum_cases "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
@@ -2325,10 +2337,14 @@ def _gather_round_evolution(
     sup_name = {sup.id: sup.name for sup in seeded.suppliers}
     tf_name = {tf.id: tf.name for tf in seeded.tfs}
 
+    # ACTIVE rows only (`is_scoreable`): for a re-submitted round the superseded and current prices
+    # share the same (cell, round) key, so without this filter the per-round price would be the
+    # arbitrary last-written row. Fan-out is a non-issue — the per-period rows replicate one price
+    # per (cell, round), so the dict assignment is idempotent.
     rows = session.execute(
         text(
             "SELECT supplier_id, dc_id, lot_id, tf_id, round_id, submitted_all_in_case "
-            "FROM bid.bid_line WHERE cycle_id = :cyc"
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND is_scoreable = true"
         ),
         {"cyc": seeded.cycle_id},
     ).all()
@@ -2836,11 +2852,16 @@ def _gather_fob(session: Session, seeded: CycleView, final_round_id: str) -> lis
     dc_region = {dc.id: _dc_region(i) for i, dc in enumerate(seeded.dcs)}
     transit_lane = _transit_by_lane(session, seeded.cycle_id)
 
+    # ACTIVE rows only (`is_scoreable`) so a superseded re-submission can't surface a stale price;
+    # the ORDER BY makes the "first priced line per (dc, lot, supplier)" DETERMINISTIC and collapses
+    # Option-B fan-out (prefer a real period row, NULL period last, then by id) to one stable pick.
     rows = session.execute(
         text(
             "SELECT dc_id, lot_id, supplier_id, fob_case, delivery_surcharge_case, "
             "vegcool_surcharge_case, submitted_all_in_case FROM bid.bid_line "
-            "WHERE cycle_id = :cyc AND round_id = :rnd AND submitted_all_in_case IS NOT NULL"
+            "WHERE cycle_id = :cyc AND round_id = :rnd AND submitted_all_in_case IS NOT NULL "
+            "AND is_scoreable = true "
+            "ORDER BY dc_id, lot_id, supplier_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
     ).all()

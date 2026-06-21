@@ -234,10 +234,18 @@ def list_bids(
     # tf), so collapse the fanned period rows to ONE representative per cell with DISTINCT ON — the
     # fanned rows share an identical payload, so any one represents the cell (a tf-grain NULL-period
     # row is its own representative). Keeps the listing contract at the identity grain.
+    # Only ACTIVE (`is_scoreable`) rows are listed — mirrors the engine's `_read_bid_lines` filter
+    # so the listing shows the CURRENT submission per cell. A re-submission supersedes prior rows
+    # (flips them non-scoreable, never hard-deletes); without this filter the DISTINCT ON could
+    # surface a superseded row as the cell's representative.
     rows = (
         db.execute(
             select(BidLine)
-            .where(BidLine.cycle_id == cycle_id, BidLine.round_id == round_id)
+            .where(
+                BidLine.cycle_id == cycle_id,
+                BidLine.round_id == round_id,
+                BidLine.is_scoreable.is_(True),
+            )
             .distinct(
                 BidLine.supplier_id,
                 BidLine.dc_id,

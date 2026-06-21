@@ -697,7 +697,9 @@ class PilotService:
         # bid_line counts per round (names not keys: rounds reported by their number).
         # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods, so count the LOGICAL
         # lines (DISTINCT identity cells) — NOT the fanned storage rows — so this stays the priced
-        # count the buyer ingested (matches `ingest_bids`'s returned N and the API contract).
+        # count the buyer ingested (matches `ingest_bids`'s returned N and the API contract). Only
+        # ACTIVE (`is_scoreable`) rows are counted — mirrors the engine's `_read_bid_lines` filter,
+        # so a re-submission that drops a cell (prior rows superseded) doesn't overcount this round.
         bid_counts = [
             {
                 "round": round_number_by_id.get(round_id, 0),
@@ -707,7 +709,8 @@ class PilotService:
                 text(
                     "SELECT round_id, "
                     "count(DISTINCT (supplier_id, dc_id, lot_id, item_id, tf_id)) "
-                    "FROM bid.bid_line WHERE cycle_id = :cyc GROUP BY round_id"
+                    "FROM bid.bid_line WHERE cycle_id = :cyc AND is_scoreable = true "
+                    "GROUP BY round_id"
                 ),
                 {"cyc": cycle_id},
             ).all()

@@ -24,6 +24,7 @@ Uses the potato sample when present (real prices); falls back to synthetic price
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -130,6 +131,32 @@ def _fill_template_full_columns(template_bytes: bytes, pool: list[tuple[float, f
         put(row, BidColumn.TOTAL_VOL_OFFERED, 7800)
         idx += 1
 
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def _fill_all_in(template_bytes: bytes, all_in: float) -> bytes:
+    """Fill EVERY scope row with one All-In price — a clean, unique price marker per submission.
+
+    Used by the supersession regression test: a constant All-In price on every cell means the whole
+    submission is identifiable by one number, so a stale (superseded) price leaking into any read is
+    detectable. FOB is set just below All-In (a valid All-In-basis bid also records FOB).
+    """
+
+    wb = load_workbook(BytesIO(template_bytes))
+    ws = wb[SHEET_BIDS]
+    headers = _header_map(ws)
+    for row in range(BODY_START_ROW, ws.max_row + 1):
+        sup = str(ws.cell(row=row, column=headers[BidColumn.SUPPLIER.value]).value or "").strip()
+        lot = str(ws.cell(row=row, column=headers[BidColumn.LOT.value]).value or "").strip()
+        if not sup or not lot:
+            continue
+        ws.cell(row=row, column=headers[BidColumn.ALL_IN.value], value=all_in)
+        ws.cell(row=row, column=headers[BidColumn.FOB.value], value=round(all_in - 1.0, 2))
+        ws.cell(row=row, column=headers[BidColumn.TRANSIT_DAYS.value], value=3)
+        ws.cell(row=row, column=headers[BidColumn.WEEKLY_VOL_OFFERED.value], value=600)
+        ws.cell(row=row, column=headers[BidColumn.TOTAL_VOL_OFFERED.value], value=7800)
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -379,3 +406,94 @@ def test_unmappable_timeframe_falls_back_to_tf_grain(tmp_path: Path, db_session)
     # Fallback: one tf-grain row per logical cell, ALL with NULL fiscal_period_id (no fan-out).
     assert len(rows) == n_lines
     assert all(r.fiscal_period_id is None for r in rows), "unmappable tf stays at tf-grain (NULL)"
+
+
+@pytest.mark.integration
+def test_resubmission_supersedes_prior_period_rows_in_every_read(
+    tmp_path: Path, db_session
+) -> None:  # type: ignore[no-untyped-def]
+    """A re-submitted round file supersedes prior period rows; NO deduped read shows a stale price.
+
+    Under Option B a re-send supersedes the prior submission — its (fanned) period rows are flipped
+    `is_scoreable=false`, never hard-deleted (ADR-0006). The Option-B dedupe reads collapse the
+    period grain with `DISTINCT ON (supplier, dc, lot, tf)`, so without an active-row filter they
+    could pick a SUPERSEDED period row as a cell's representative and surface a stale price. Each
+    deduped read must therefore filter to ACTIVE rows, like the engine's `_read_bid_lines` does.
+
+    The proof is leak-detection by construction: superseded rows never enter legitimate engine math
+    (the engine reads active rows only), so the OLD price can appear in the sealed scores or the
+    alignment workbook ONLY if a read pulled a superseded row — the bug. We assert it never does,
+    and that the NEW (active) price is present. Distinct, price-implausible markers (far above score
+    or percentage) make the scan unambiguous. Covers the engine input, all three workbook gathers
+    (price grid, Detailed Scoring stats, Coverage) end to end via `run_round`, and the `run_data`
+    count.
+    """
+
+    old_price, new_price = 1311.07, 8742.93
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Colored Potatoes", label="Resubmit Supersede")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup())
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+    cycle = service._load_cycle(db_session, paths)
+    round_id = cycle.rounds[0].id
+
+    tpl_bytes = service.generate_bid_template(db_session, paths, 1).read_bytes()
+
+    # Submission 1: the OLD price on every cell.
+    first = paths.inputs / "round1_first.xlsx"
+    first.write_bytes(_fill_all_in(tpl_bytes, old_price))
+    n_lines = service.ingest_bids(db_session, paths, 1, first)
+    assert n_lines > 0
+
+    # Submission 2 (same round): the NEW price — supersedes submission 1's rows.
+    second = paths.inputs / "round1_second.xlsx"
+    second.write_bytes(_fill_all_in(tpl_bytes, new_price))
+    n_lines2 = service.ingest_bids(db_session, paths, 1, second)
+    assert n_lines2 == n_lines, "the second submission covers the same logical cells"
+
+    def _count(price: float, scoreable: bool) -> int:
+        return int(
+            db_session.execute(
+                text(
+                    "SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c "
+                    "AND submitted_all_in_case = :p AND is_scoreable = :s"
+                ),
+                {"c": cycle_id, "p": price, "s": scoreable},
+            ).scalar_one()
+        )
+
+    # Supersede, never delete: the OLD rows are RETAINED but non-scoreable; the NEW rows are active.
+    assert _count(old_price, scoreable=True) == 0, "no superseded (OLD) row stays active"
+    assert _count(old_price, scoreable=False) > 0, "prior submission's rows retained (superseded)"
+    assert _count(new_price, scoreable=True) > 0, "the current submission's rows are active"
+
+    # (1) ENGINE input: `_read_bid_lines` returns ONLY active rows -> only the NEW price.
+    runner = EngineRunner(db_session)
+    engine_rows = runner._read_bid_lines(cycle_id, round_id)
+    assert engine_rows
+    assert all(r.submitted_all_in_case == Decimal(str(new_price)) for r in engine_rows), (
+        "the engine scores only the active (current) submission"
+    )
+
+    # (2) WORKBOOK end to end: run the round, then scan every tab. The superseded OLD price can only
+    # appear if a workbook gather pulled a non-scoreable row; the NEW price must be present.
+    alignment_path = service.run_round(db_session, paths, 1)
+    wb = load_workbook(alignment_path)
+    saw_new = False
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            for v in row:
+                if isinstance(v, int | float) and not isinstance(v, bool):
+                    assert abs(float(v) - old_price) > 0.01, (
+                        f"superseded OLD price {old_price} leaked into tab '{ws.title}'"
+                    )
+                    if abs(float(v) - new_price) <= 0.01:
+                        saw_new = True
+    assert saw_new, "the alignment workbook renders the active NEW price"
+
+    # (3) run_data snapshot: the per-round count stays the LOGICAL active cell count (not doubled).
+    run_data_path = service.export_run_data(db_session, paths)
+    snapshot = json.loads(run_data_path.read_text(encoding="utf-8"))
+    by_round = {int(r["round"]): int(r["bid_lines"]) for r in snapshot["bid_lines_by_round"]}
+    assert by_round.get(1) == n_lines, "run_data counts the active submission only"
