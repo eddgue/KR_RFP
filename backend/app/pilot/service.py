@@ -341,8 +341,8 @@ class PilotService:
             self._append_note(
                 runpaths,
                 f"Round {round_no} capacity: {cap_count} stated per-cell ceiling(s) loaded "
-                "and stored. Allocation-vs-capacity is not yet surfaced in outputs "
-                "(tracked as G-G / E-38b).",
+                "and stored; over-capacity is flagged in the alignment workbook's Capacity "
+                "Check tab when the round is analyzed (E-38b).",
                 related_file=None,
             )
         if superseded:
