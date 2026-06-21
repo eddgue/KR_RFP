@@ -1,19 +1,28 @@
 ---
-doc: As-Built Process Audit
+doc: As-Built Specification (incorporating the Process Audit)
 id: PM-007
-version: 1.11
-status: Review — feature development HELD pending sign-off
-governance: living model of reality — maintained per the As-Built Audit Governance contract (D39)
+version: 1.18
+status: Living — single source of truth; Phase 1 (pre–Live Run #1) per 08_RELEASE_GOVERNANCE
+governance: living model of reality — maintained per the As-Built rule (no sprint complete until updated); D39 + 08_RELEASE_GOVERNANCE
 created: 2026-06-21
-audited_commit: d563aad (main, immediately after PR #8 merged)
-depends_on: PM-004 (Program Backlog), 03_DECISION_LOG
+audited_commit: main @ PR #19 merged (formula registry); this update is PR #20
+depends_on: PM-004 (Program Backlog), PM-008 (Release Governance), 03_DECISION_LOG
 ---
 
-# As-Built Process Audit — Kroger Produce RFP Platform
+# As-Built Specification — Kroger Produce RFP Platform
 
-A faithful, code-verified snapshot of the **RFP lifecycle as actually implemented today**, so we can see *every gate, every loop, every write-point, and how data is mapped* — and decide what to build next from the truth, not the plan. Every claim is traced to source (`backend/app/...`, file:line as of `d563aad`).
+> **This is the As-Built Specification: the single authoritative source of truth for what the system
+> IS.** The codebase, prompts, workflows, templates, agents, reports, and other docs reconcile to
+> this document. Governance rule (`08_RELEASE_GOVERNANCE.md`): **no sprint is complete until this
+> specification is updated.** Current-state sections (Parts I–II) describe production reality;
+> planned work lives **only** in the Backlog Registry (§20) and Future Roadmap (§21) — current and
+> planned functionality are never mixed in the same section.
 
-It is also a **UX/UI map**: each stage is shown in two layers — the *system* layer (method, tables written, gate) and the *human* layer (who acts, on which screen, doing what) — so the UX/UI build can map screens to the real process and see which surfaces exist vs. are missing.
+A faithful, code-verified snapshot of the **RFP lifecycle as actually implemented today** — *every
+gate, every loop, every write-point, and how data is mapped*. Every claim is traced to source
+(`backend/app/...`, file:line). **Part I** (§1–§13) is the narrative + UX/UI map (system layer +
+human layer per stage); **Part II** (§14–§21) is the reference catalog (inventories + registries +
+roadmap); the **Appendix** is the versioned change log (the delta history).
 
 > **Reading order:** the [Executive summary](#executive-summary) gives the headline + the material gaps; the [flowchart](#1-end-to-end-lifecycle-flowchart) is the one-page picture; everything after is the evidence.
 
@@ -169,13 +178,13 @@ flowchart LR
 | Analysis / scenarios | `eng.analysis_run` (sealed) + `eng.bid_score` / `eng.analysis_scenario(_award)` | alignment workbook |
 | Award decision | `awd.award` + `awd.award_line` (FROZEN) | booking guide, per-supplier guides |
 | Post-award changes | `awd.award_adjustment(_line)` (append-only) | post-award workbook |
-| Provenance / who-did-what-when | `audit.event_log` (hash-chained) — **authoritative only once wired (G-B)** | git history + `run_data.json` (the *interim* stand-in today) |
+| Provenance / who-did-what-when | `audit.event_log` (hash-chained) — **authoritative; G-B closed v1.4** (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED fire in-txn) | git history + `run_data.json` (corroborating, not the SoR) |
 | Generated document (the file itself) | vault filesystem (git-versioned) | — *(authoritative for the artifact, not for the values inside it)* |
 | Official contract | **PBA — future (E-33)** | — |
 
 Two consequences worth stating outright:
 - **The database outranks every workbook.** A booking guide is a render of `awd.award`; an alignment sheet is a render of `eng.analysis_run`. The vault filesystem is authoritative for the *document as an artifact* (what was generated/sent), never for the decision values printed inside it.
-- **Provenance has no real SoR yet.** Because the audit chain isn't wired (G-B), "who did what when" currently rests on immutable sealed rows + git history + `run_data.json`. Those are an *interim* stand-in; `audit.event_log` becomes the system of record for provenance only when G-B is closed — another reason G-B is critical.
+- **Provenance has a real SoR (since v1.4).** `audit.event_log` is the hash-chained system of record for "who did what when" — every decision (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED) appends a row **in the decision's own transaction** (G-B closed v1.4), so an award can't exist without its event and the chain is tamper-evident. Immutable sealed rows + git history + `run_data.json` corroborate it. (The `SIGNED_OFF`/`SENT` event types remain unwired only because those features don't exist yet — G-D/E-24.)
 
 ---
 
@@ -240,7 +249,7 @@ There is **no optimisation loop inside the engine** — `run_analysis` is single
 
 The hash-chained `audit.event_log` is **mechanically complete and correct**: `prev_event_hash`→`event_hash = sha256(canonical(fields) || prev)`, per-tenant `seq` taken `FOR UPDATE`, genesis = 64 zeros, written in the caller's transaction (writer.py:46–82). Eight `EventType`s are defined (CREATED, SEALED, FROZEN, SUPERSEDED, SIGNED_OFF, SENT, GATE_APPROVED, IMPORTED).
 
-**✅ Closed in v1.4.** Decision events now fire **in the decision's own transaction** at every governed step: `IMPORTED` + `SUPERSEDED` at bid ingest (`pilot/service._persist_bid_lines`), `SEALED` at engine seal (`pilot/service.run_round`), `FROZEN` at award freeze and `CREATED` at adjustment (`awd/service`). The tenant is resolved via `app/core/audit/recorder.py` (cycle/award → commodity → `client_id`); a decision whose tenant can't be resolved **raises** rather than skipping the event (no decision without provenance). The chain is verified end-to-end in `tests/audit/test_decision_events.py` (contiguous `seq`, prev→hash linkage, `compute_event_hash` recompute, and a savepoint-rollback proving the event rides the decision's transaction). Closing the linkage gap (`ref.commodity.client_id` was NULL in the pilot path) also fixed a latent ownership hole. **Still unwired:** `SIGNED_OFF` / `SENT` / `GATE_APPROVED` — only because those features don't exist yet (G-D, G-C in-gate, E-24).
+**✅ Closed in v1.4.** Decision events now fire **in the decision's own transaction** at every governed step: `IMPORTED` + `SUPERSEDED` at bid ingest (`pilot/service._persist_bid_lines`), `SEALED` at engine seal (`pilot/service.run_round`), `FROZEN` at award freeze and `CREATED` at adjustment (`awd/service`). The tenant is resolved via `app/core/audit/recorder.py` (cycle/award → commodity → `client_id`); a decision whose tenant can't be resolved **raises** rather than skipping the event (no decision without provenance). The chain is verified end-to-end in `tests/audit/test_decision_events.py` (contiguous `seq`, prev→hash linkage, `compute_event_hash` recompute, and a savepoint-rollback proving the event rides the decision's transaction). Closing the linkage gap (`ref.commodity.client_id` was NULL in the pilot path) also fixed a latent ownership hole. **Still unwired:** `SIGNED_OFF` / `SENT` / `GATE_APPROVED` — only because those features don't exist yet (G-D sign-off, **G12 / E-17 in-gate**, E-24 send).
 
 ---
 
@@ -275,14 +284,9 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ---
 
-## 11. Recommended priorities (to frame the review)
+## 11. Build authorization → governed by `08_RELEASE_GOVERNANCE.md`
 
-0. **~~(CRITICAL) Wire audit events into every decision~~ ✅ DONE (v1.4)** (G-B, E-05) — decisions now emit `IMPORTED`/`SEALED`/`FROZEN`/`SUPERSEDED`/adjustment events in-transaction; chain verified by tests.
-1. **~~Wire the flat-13 fan-out into intake~~ ✅ DONE (v1.6)** (G-A, D35/D38) — bids stored flat at 13 periods; engine/award stay timeframe-grain via representative collapse; output proven byte-identical.
-2. **Alignment ✅ (v1.8); post-award read ✅ (v1.9); adjustment-write API ✅ (v1.10); adjustment form UI ✅ (v1.11)** (G-E, E-25) — the console now runs the full lifecycle browser-side: run/compare/inspect/freeze, view the award, and record a governed adjustment via a form. **Remaining for G-E:** the **`documents`** HTTP surface (generate/send) + draft→sent (with G-D) → **← next**.
-3. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official"; wire `SIGNED_OFF`/`SENT` audit events when these land.
-4. **Back the app-layer guards with DB-level enforcement** — immutability triggers + tenant RLS; today both rest on app-layer listeners + edge principal only.
-5. **Spec the PBA/contract builder + supplier importer** (G-F, E-33/E-34) — the sponsor-flagged post-award step and supplier master intake.
+Build sequencing is **not** decided here (this is a current-state record, per the front matter). The authoritative gate is the **Release Governance** file (PM-008): in **Phase 1 (pre–Live Run #1)** only **Category-A fixes** and the **E-38 capacity accuracy-core** are buildable; everything else — RBAC enforcement (G-C), sign-off/send (G-D/E-24), the `documents` surface, PBA (E-33), supplier importer (E-34), DB-level immutability/RLS, etc. — is recorded in the Backlog Registry (§20) and deferred to the post–Live-Run consolidation review. The historical priority ladder that lived here is superseded by governance; for "what's next," read `08`.
 
 ---
 
@@ -325,7 +329,7 @@ The objective: any future developer, operator, auditor, or stakeholder can answe
 
 ### 12.4 Pre-merge audit-impact review (the review requirement)
 
-On **every** change (PR review, incl. Codex), verify whether it affects: **workflow · state transitions · persistence · runtime boundaries · permissions · governance · auditability · user-visible behavior · failure domains**. If **any** answer is **yes**, `07_AS_BUILT_PROCESS_AUDIT.md` (and the gap register) **must be reviewed and updated before merge** — the audit moves with the code in the same change. This check is part of the Definition of Done (`02_WAYS_OF_WORKING` §8).
+On **every** change (PR review — now **agent self-review** at each control point; Codex is no longer in the loop, see `08` Review cadence), verify whether it affects: **workflow · state transitions · persistence · runtime boundaries · permissions · governance · auditability · user-visible behavior · failure domains**. If **any** answer is **yes**, `07_AS_BUILT_PROCESS_AUDIT.md` (and the gap register) **must be reviewed and updated before merge** — the audit moves with the code in the same change. This check is part of the Definition of Done (`02_WAYS_OF_WORKING` §8).
 
 ---
 
@@ -335,7 +339,7 @@ What actually runs, where, and where the trust lines fall. Two runtimes wrap the
 
 | Runtime / boundary | What it is | Isolation / trust |
 |---|---|---|
-| **Web console API** (FastAPI, `app/api`) | The browser-facing surface (auth+2FA, dashboard, run detail, bid intake). Front-half only today (G-E). | Runs against the **shared** app DB; per-run `cycle_id`/`round_id` scoping (D36); auth at the edge (`get_current_user`), **no per-query RLS yet**. |
+| **Web console API** (FastAPI, `app/api`) | The browser-facing surface: auth+2FA, dashboard, run detail, bid intake, **alignment/scenario compare + freeze, frozen-award read + post-award adjustment write, and the comms draft reads**. Remaining gap: the `documents` generate/send surface + sign-off/send lifecycle (G-D/E-24). | Runs against the **shared** app DB; per-run `cycle_id`/`round_id` scoping (D36); auth at the edge (`get_current_user`), **no per-query RLS yet (G-C)**. |
 | **MCP harness** (`PilotService(isolate_db=True)`) | The full-lifecycle execution surface (engine/award/post-award/close-out). | Each run gets its **own database** `kr_rfp_run_<slug>` (D30) — strong runtime isolation. |
 | **Engine** (`app/engine`, clean-room v3) | Deterministic single-pass scoring/allocation. **Not an agent**, no optimisation loop, no autonomy. | **Purity boundary**: stdlib + pydantic only; the purity test forbids importing SQLAlchemy here. `app/domain/eng` adapts DB ↔ engine. |
 | **Immutability guards** | Sealed analysis runs + frozen awards. | **App-layer** SQLAlchemy listeners (wired at `main.py`); DB-level triggers/RLS are Platform-team-owned and **not present here**. |
@@ -346,10 +350,135 @@ What actually runs, where, and where the trust lines fall. Two runtimes wrap the
 
 ---
 
+# Part II — As-Built Inventories & Registries
+
+*Reference catalog (current state). Code-verified via inventory sweep 2026-06-21. Planned work is in §20–§21 only.*
+
+## 14. Functional inventory (HTTP surface)
+
+Every route is bare session-auth (RBAC defined, not enforced — G-C) except `/health`, `/ready`, `/auth/login`.
+
+| Area | Endpoint | Purpose |
+|---|---|---|
+| Health | `GET /health`, `GET /ready` | liveness; readiness (probes the store) |
+| Auth | `POST /auth/login` · `/logout` · `GET /auth/me` · `POST /auth/2fa/enroll` · `/2fa/verify` | password + optional TOTP 2FA; session cookie |
+| Runs | `GET /runs` · `POST /runs` · `GET /runs/{slug}` · `…/files` · `…/files/{name}` · `…/archive` | list/create runs; kanban; file list/download; zip |
+| Setup | `POST /runs/{slug}/setup` | ingest setup workbook → cycle creation |
+| Template | `POST /runs/{slug}/rounds/{round}/template` | generate owned bid template for a round |
+| Bids | `POST /bids/import` (strict / flexible propose+confirm) · `GET /bids` | ingest round bids; list persisted lines |
+| Analysis | `POST /runs/{slug}/rounds/{round}/analysis` · `GET …/analysis` · `…/analysis/{id}/scenarios` · `…/scenarios/{code}` | seal a run; list; compare 7 lenses; lens detail |
+| Awards | `POST /runs/{slug}/awards/freeze` · `GET …/awards` · `…/awards/{id}` · `POST …/awards/{id}/adjustments` | freeze a lens → award; list; detail (effective+history); post-award layer |
+| Comms (E-37) | `GET …/awards/{id}/comms/award` · `…/comms/rejection` · `…/analysis/{id}/comms/feedback` | draft-only template-merge email drafts |
+
+Source: `backend/app/api/v1/*.py`; lifecycle logic in `backend/app/pilot/service.py`.
+
+## 15. Agent inventory
+
+**No autonomous in-loop AI agent runs at runtime** — the platform is human-in-the-loop; every governed decision (freeze, adjustment, approval) is explicitly actor-asserted (ADR-0006). The only agent surface is the **RFP Pilot MCP server** (`backend/rfp_mcp/rfp_pilot_server.py`), a thin FastMCP wrapper exposing ~17 tools over `PilotService` (run lifecycle + a read-only `history`/`feedback` + a `remember`/`add_memory` notes facility = the "secretary/read-only memory"). Write tools (`setup_ingest`, `ingest_bids`, `ingest_any[confirm]`, `run_round`, `select_award`, `record_adjustment`, `remember`, `add_memory`, `close_run`, `purge_run`) write the run vault + (where DB-touched) the run's **isolated** Postgres DB (D30); the rest are read-only. No recurring scheduler, no background loop.
+
+## 16. Data model (persisted state)
+
+System-of-record per artifact is in §4. **The complete, authoritative schema DDL is `db/baseline/schema.sql`** (Alembic revision `0001` — the reconciled **M0 baseline: 64 `CREATE TABLE`s** (the as-built core + net-new enterprise tables such as `ref.client` / `audit.event_log`) across the eight logical schemas `ref/norm/cyc/bid/eng/awd/perf/audit`, clean-room re-expressed per ADR-0001; *verified count = 64, even though the file's own header comment says "63 as-built"*), **plus** the additive migrations `backend/alembic/versions/0002–0018` (notably: `auth.app_user` [0017], `ref.fiscal_period` [0014], `bid_line.fiscal_period_id` [0015], the **sealed decision-support spine** `eng.analysis_run/bid_score/analysis_scenario/analysis_scenario_award` [0008], the post-award `awd.*` adjustment tables, and `cyc`/tenancy backfills). This section is the *map*, not a re-typing of the DDL (re-typing 64 tables in prose is itself a drift risk — the SQL is the source of truth).
+
+**Crucial distinction — provisioned ≠ wired.** The baseline provisions all 64 tables, but the running app only *writes* a subset today; the rest are **provisioned-but-dormant** (created by the baseline migration, not yet read/written by app code). Follow-on work (esp. E-38) must target the EXISTING table, never create a duplicate store.
+
+**Actively written by the running app** (ORM-mapped under `backend/app/domain/*/models.py`, written by `PilotService`):
+
+| Schema | Active tables |
+|---|---|
+| **ref** | `client`, `commodity` (tenant root + scoping demonstrator; `client_id`) · masters `dc`, `supplier`, `item` (+ `*_alias`) reused by natural key at setup ingest (D36) · `fiscal_period` (flat-13, mig 0014) |
+| **auth** | `app_user` (login + TOTP, mig 0017) |
+| **cyc** | `cycle`, `cycle_round`, `cycle_lot`, `cycle_lot_item`, `cycle_timeframe`, `cycle_projected_volume`, `cycle_invited_supplier`, `cycle_item_scope` (+ kickoff term tables where populated) |
+| **norm** | `source_artifact` (intake provenance) · `normalization_run`(`_source`) (written at setup ingest) |
+| **bid** | `bid_line` (priced line; **flat at 13 fiscal periods**, `fiscal_period_id`; components fob/delivery/vegcool/lot_discount; `is_scoreable`/`is_awardable`; supersede flips `is_scoreable`) · `bid_submission` |
+| **perf** | `historical_award_assignment` + `historical_awarded_price_basis` — incumbents + the routing/iTrade baseline (D11), **written at setup ingest** (`setup_ingest.py`) and **read by `load_cycle`** into engine inputs (the `delta_vs_historical` baseline) |
+| **eng** | `analysis_run` (sealed; hashed manifests + engine version) · `bid_score` (5 factors→rec_score, `is_eligible`, `gate_flags`) · `analysis_scenario` (A–G headers) · `analysis_scenario_award` (split rows: `volume_share`, `awarded_price`, `is_fallback`, `cap_breach_flag`) — **append-only, immutable once sealed** |
+| **awd** | `award` (FROZEN) · `award_line` (immutable baseline; `frozen_price` never updated, ADR-0014) · `award_adjustment` (append-only v1..N) · `award_adjustment_line` (per-cell prior→new→delta) |
+| **audit** | `event_log` (hash-chained, append-only; per-tenant `seq`; `prev_event_hash`/`event_hash`; G-B closed v1.4) |
+
+**Provisioned-but-dormant** (in the baseline schema, **not yet wired** by app code — available to adopt, not to duplicate):
+
+- **Capacity (directly relevant to E-38):** `bid.capacity_statement` (per cycle/round/supplier/submission header — status, effective_at) + `bid.capacity_constraint` (`scope_type` ∈ CELL/DC_TF/LOT_TF/SUPPLIER_TF/TOTAL_CYCLE, with `max_weekly_cases` / `max_period_cases` + CHECKs). These FK only to **active** tables (cyc/ref/norm/bid_submission), so **E-38 ingests the Capacity sheet into them** — no new store. ⚠️ `eng.scenario_capacity_usage` also exists but its `scenario_run_id` FK targets the **dormant** solver spine (`eng.calculation_run`), **not** the active `eng.analysis_scenario` — so E-38 computes allocation-vs-capacity **usage against the active `eng.analysis_scenario_award`** (read-side), and does **not** persist to that table as-is (using it would require either `calculation_run` rows or a schema change — out of scope for the B-core).
+- **The M0 governed-solver spine:** `eng.calculation_run(_input)`, `eng.scenario(_award)`, `eng.scenario_line_detail`, `eng.round_analysis_snapshot`, `eng.engine_release`, `eng.metric_definition_version`, `eng.scenario_config_version` (the heavy solver; the app instead writes the lightweight sealed spine above).
+- **Intake/eligibility detail:** `bid.eligibility_result`/`eligibility_gate_result`/`eligibility_exception`, `bid.landed_cost_result`, `bid.supplier_capability`, `bid.normalized_volume_scope`/`volume_scope_*`.
+- **Modeled but not populated (not in the baseline DDL):** `cyc.cycle_timeline_event` (ORM-mapped `cyc/models.py` + migration **0002**, but **no app code writes it** — the timeline is populated by the future **E-16/E-37 invite** work) and the `cyc` kickoff-term satellites where a cycle doesn't populate them.
+- **Commercial / market / future-feed:** `perf.commercial_*` (pricing model/window/formula audit/market reference/QDP/…), `perf.itrade_receipt` + `perf.historical_awarded_cost_ingestion_issue` (raw feed; importer is future E-08). `ref.fiscal_calendar`, `ref.subcommodity`, `ref.loading_location`, `ref.master_data_quarantine`. `audit.decision_note`, `audit.round_*`. *(NB: `perf.historical_award_assignment`/`historical_awarded_price_basis` and `norm.normalization_run` are NOT here — they are ACTIVE, written at setup ingest / read by `load_cycle`; see the active table above.)*
+
+## 17. Analysis-engine inventory
+
+Clean-room v3 (`backend/app/engine/`); **purity boundary**: stdlib + `Decimal` only (no float/I/O/ORM/clock). Strategy-agnostic — every band/weight/threshold/rule is `EngineConfig`-driven (ADR-0016). Labels screened for banned award-assertion verbs (`assert_decision_support`, `guards.py`).
+
+- **Five scoring factors → RecScore** (`scoring.py`, banded): Price (premium vs cell-low), Coverage (offered/required), Historical (vs incumbent baseline), Z-Risk (price outlier), Continuity (incumbent tie-break). Weighted by a preset (`BALANCED` default; `PRICE_FOCUS`/`COVERAGE_FOCUS`/`RISK_AVERSE`), renormalized to a convex sum.
+- **Eligibility gates** (`scoring.py`): hard — `GATE_NO_PRICE`, `GATE_PREMIUM` (premium > ceiling, default 12%, per-lot overrideable), `GATE_COVERAGE` (coverage < floor, default 80%, As-Needed exempt); advisory — `GATE_LOW_OUTLIER`/`GATE_HIGH_OUTLIER` (|z|>2), `GATE_LOW_BIDDER` (<3 bids).
+- **Seven scenario lenses A–G** (`allocation.py`): A lowest-cost · **B risk-adjusted (the recommendation, `is_recommended`)** · C incumbent-defense · D max-N-per-DC split (`max_sup_dc`, `is_fallback`, `cap_breach_flag`) · E exclusion · F custom override · G preferred supplier. Plus §4.5 category-concentration flag.
+- **Canonical formulas** (`formulas.py`, E-39 — the single "table of calcs"): `construct_price_from_parts`/`construct_price` (§7), `premium_vs_low`, `z_score`, `coverage_ratio`, `delta_vs_historical`, `awarded_cases`, `line_spend`, `savings_dollars`, `savings_fraction`, `premium_dollars`, `weekly_impact`, `price_delta`. Referenced by the scorer, the bid ingester, the scenario workbook + read layer, the booking guide, the award read/service + post-award doc, and the comms drafts.
+
+## 18. Template & generated-output inventory
+
+All generators read **governed sealed records** and render by NAME (D23), deterministically (no clock in body). Source: `backend/app/output/*`, `backend/app/comms/*`, `backend/app/domain/bid/template_generator.py`.
+
+| Artifact | Type | Trigger | Notes |
+|---|---|---|---|
+| Bid template | xlsx (3 sheets: Instructions / Bids / **Capacity**) | template gen (per round) | the Capacity sheet is collected but **not yet ingested** (E-38) |
+| Scenario alignment workbook | xlsx (multi-tab) | analysis seal | 7 lenses + live custom + per-cell grid; numbers shared with the app read layer |
+| Booking guide (internal) | xlsx | award freeze | buyers/pricing master, one row per awarded cell |
+| Per-supplier award guides (combined) | xlsx (1 sheet/supplier) | award freeze | internal only — **not** safe to send (all suppliers in one file) |
+| Per-supplier award guide **files** | xlsx (1 file/supplier) | award freeze | the **sendable** artifact; award-id-stamped filename; attached to the award draft |
+| Post-award workbook | xlsx (versions / effective / changes) | adjustment | `Version N · as of DATE` |
+| 7 supplier email drafts | draft-only (E-37) | rendered on GET | invitation, template, incomplete-bid, round-feedback, award, non-selection, PBA — **never auto-sent**; visible `[#Placeholder]` holes if data missing |
+
+## 19. Workflow maps
+
+The end-to-end lifecycle, approval points, and data-flow are mapped in **§1 (flowchart)**, **§2 (stage-by-stage, system + human layers)**, and **§3 (data flow & write-points)**. Ordered as-built steps: start run (isolated DB) → setup ingest (cycle/scope) → bid template → bid intake (strict/flexible, supersede flips `is_scoreable` + emits `SUPERSEDED`) → engine seal (`SEALED`) → human scenario select + **freeze** (`FROZEN`) → post-award adjustment layer (`CREATED`) → close-out → purge. **Human decision/approval points** (§6): flexible-mapping confirm (enforced), scenario selection + award freeze (governed, audit-evented), post-award adjustment (governed). **Modeled-but-not-wired:** in-gate G12, sign-off transition + `SIGNED_OFF`, draft→`SENT`, timeline events.
+
+## 20. Registries
+
+### 20.1 Backlog registry (classification per `08_RELEASE_GOVERNANCE.md`)
+
+| Status | Items |
+|---|---|
+| **Approved for Phase 1 build** | **E-38 capacity accuracy-core** (B: ingest + persist + engine/custom cap flag + workbook control tab) — **wires the EXISTING `bid.capacity_statement` + `bid.capacity_constraint` baseline tables (§16), not a new store**; usage computed against the active `eng.analysis_scenario_award` (the `eng.scenario_capacity_usage` table is keyed to the dormant solver spine, so not used as-is); the only net-new build approved now |
+| **Deferred (Category C — Phase-4 review)** | E-38 in-app dashboard · G-D/E-24 sign-off + draft→SENT · E-33 PBA/contract builder · E-34 supplier importer + E-08/09 feeds · E-35 discovery view · E-36 progressive timeframe / continuation RFP · E-28 contracted-vs-effective analytics |
+| **Deferred (Category B — Live-Run cycles)** | G-C RBAC route enforcement · misc reporting/validation/UX enhancements |
+| **Rejected** | *(none)* |
+
+Full item descriptions: `04_PROGRAM_BACKLOG.md`.
+
+### 20.2 Technical-debt register
+
+| Item | Risk | Status |
+|---|---|---|
+| RBAC defined but no route enforces it (G-C) | author≠approver / send restrictions not gated | Open — Category B |
+| Immutability is app-layer only (SQLAlchemy listeners); no DB triggers/RLS | a direct-DB write could bypass guards | Open — Platform-owned |
+| `bid_line.fiscal_period_id` is `varchar(36)` nullable, not a typed FK | weak referential integrity on period grain | Open — low-risk (D38) |
+| `cycle_timeline_event` modeled, not populated at kickoff | invite/timeline comms gated | Open — feeds E-37 remainder |
+| Sign-off is decorative (tab + unused permission) | no portfolio sign-off step | Open — G-D |
+| Incomplete-bid lines classified but not persisted/itemized | incomplete-bid comms gated | Open — feeds E-37 remainder |
+
+### 20.3 Audit-findings register
+
+| Finding | Severity | Resolution |
+|---|---|---|
+| **G-B** audit chain didn't cover decisions | Critical | ✅ Closed v1.4 (in-txn events) |
+| **G-A** flat-13 period storage not wired | Material | ✅ Closed v1.6 |
+| Codex PR #18 — superseded-row leaks, alignment race, cross-run award, actor/duplicate-cell, comms stale/leaky guide, market-low hard-gate, sealed-run prices, explicit-zero ceiling, award-id filename (9 across 4 rounds) | P1–P2 | ✅ All resolved (PRs #13–#18) |
+| Codex PR #19 — formula registry | — | ✅ Clean (behavior-preserving; byte-identical golden) |
+| **Open critical findings** | — | **None** |
+
+## 21. Future roadmap (planned — NOT current state)
+
+The platform target is production-ready execution of live sourcing events, validated over **Live Run #1** then **#2**, followed by a **Feature Consolidation Review** (evaluate every deferred Category-C item → approve/defer/reject), a **Final Audit**, and **Production Lock** (V1 baseline frozen). Major work beyond V1 requires a formal **Version 2** planning cycle. Phases, gates, and the change-classification rules are defined in `08_RELEASE_GOVERNANCE.md`. **Nothing in this section is implemented** — it is the approved direction, kept separate from the current-state catalog above.
+
+---
+
 ## Appendix — version history (track the delta)
 
 The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
 
+- **v1.18 (2026-06-21)** — *Corrections (PR #20, full self-audit — an external deep-research report's findings, each independently re-verified against the code/schema; all 9 confirmed true, none false):* (1) **§16 table count** `63 → 64` — `db/baseline/schema.sql` has 64 `CREATE TABLE`s (the file's own header says "63 as-built"); stated the verified 64. (2) **`cycle_timeline_event` reclassified** — it is in migration 0002 + an ORM model but **no app code writes it**; moved out of the active cyc list into the modeled-but-not-populated note. (3) **§11 priority ladder removed** — it contradicted governance (it said "documents surface / RBAC next" while `08` defers those); replaced with a pointer to `08` (build authorization is governed there, not in this current-state doc). (4) **§13 web-console row refreshed** — was "front-half only (G-E)"; now lists the real browser surface (alignment/freeze/awards/adjustments/comms) with the remaining `documents`+sign-off gap. (5) **§8 mislabel** `G-C in-gate → G12/E-17 in-gate`. (6) **Review cadence de-Codex'd** — `08` Review cadence + §12.4 now describe **agent self-review** (Codex retired from the loop); push-basic Codex was used through PR #20. (7) **`04` E-38 split annotated** (B accuracy-core = build now; in-app dashboard = C, deferred) and **`04` status `Draft → Living`**. *Governance:* the **Decision Doctrine** (7 principles) was codified in `08`. *Introduced:* none (documentation accuracy + process).
+- **v1.17 (2026-06-21)** — *Corrections (PR #20, second push-basic review round — two more Codex P2):* (1) **Incumbent-baseline tables were mis-bucketed as dormant** — `perf.historical_award_assignment`, `perf.historical_awarded_price_basis`, and `norm.normalization_run` are in fact **active** (written at setup ingest `setup_ingest.py`, read by `load_cycle` into the engine's `delta_vs_historical` baseline, D11); moved to the active table in §16. (2) **`eng.scenario_capacity_usage` is mis-keyed for E-38** — its `scenario_run_id` FK targets the **dormant** solver spine (`eng.calculation_run`), not the active `eng.analysis_scenario`; corrected §16 + §20.1 + `08` + `04` so E-38 ingests into `bid.capacity_statement`/`capacity_constraint` (active-keyed) and computes usage against the **active** `eng.analysis_scenario_award` — it does NOT persist to `scenario_capacity_usage` as-is. *Process:* added the **Review cadence & control points** protocol to `08` — two tiers (push-basic Codex review = automatic on push; the **detailed full-suite auditor = manual**, called by the agent at control points: pre-merge / sprint-close / phase-gate / backstop). *Introduced:* none (documentation accuracy + process).
+- **v1.16 (2026-06-21)** — *Corrections (PR #20 review — Codex P2 + the external auditor):* (1) **§16 data-model catalog completed** — the first pass (scoped to ORM models) under-reported the schema; the authoritative source is `db/baseline/schema.sql` (the **63-table M0 baseline**, Alembic 0001) + migrations 0002–0018. §16 now points to the DDL as SoR and splits **actively-written** vs **provisioned-but-dormant** tables — and surfaces that the capacity model **already exists** (`bid.capacity_statement` + `bid.capacity_constraint` + `eng.scenario_capacity_usage`), so **E-38 wires those, not a new store** (08 + 04 corrected to match). Caught a real duplicate-store risk before building. (2) **Front-matter drift fixed** — `version 1.11 → 1.16`, title/status reconciled to "As-Built Specification / Phase 1." (3) **§4 G-B contradiction fixed** — the System-of-Record table + note said provenance "has no real SoR / not wired," contradicting G-B closed v1.4; corrected to state `audit.event_log` IS the authoritative, in-txn, tamper-evident provenance SoR. *Introduced:* none (documentation accuracy).
+- **v1.15 (2026-06-21)** — *Governance (sponsor-ratified frameworks):* adopted the **Release Management & Change-Classification framework** (`08_RELEASE_GOVERNANCE.md` — default-to-backlog, A/B/C classification, the 7 phases, decision rules; current phase = **Phase 1, pre–Live Run #1**) and the **Configuration-Management / As-Built rule** (*no sprint is complete until this specification is updated*). This document is **retitled the As-Built Specification — the single source of truth**, restructured into **Part I** (§1–§13 narrative + UX map), **Part II** (§14–§21 reference catalog), and the change-log appendix, with current-state and planned work kept strictly separate. *Added (Part II, code-verified inventory sweep via four scoped read-only agents):* §14 Functional inventory (HTTP surface), §15 Agent inventory (no autonomous runtime AI; the MCP tool surface + read-only memory), §16 Data model (table catalog by schema), §17 Analysis-engine inventory (5 factors · gates · 7 lenses · the canonical formulas), §18 Template & generated-output inventory, §19 Workflow maps, §20 Registries (Backlog classification · Technical-debt · Audit-findings), §21 Future roadmap. *Standing ruling recorded:* E-38 split — build the capacity **accuracy-core** (B), backlog the in-app **dashboard** (C). *Introduced:* none (governance + documentation only).
 - **v1.14 (2026-06-21)** — *Advanced (E-39 sweep, sponsor-directed):* the **canonical formula registry** (`app/engine/formulas.py`) is now the single home for the platform's cross-layer calculations, each defined once and referenced everywhere. Beyond the v1.13 seed (`construct_price` + `premium_vs_low`), it now also holds: the **price arithmetic** `construct_price_from_parts` — which **unified the two `construct_price` implementations** (the engine's §7 and the bid ingester's component-price; the ingester keeps only its ingest-side basis classification + double-subtract quarantine guard around the shared formula); the **scoring ratios** `z_score` (§2.3), `coverage_ratio` (§2.2), `delta_vs_historical` (§2.5) — pulled out of the scorer's inline loop; the **spend/savings family** `awarded_cases`, `line_spend`, `savings_dollars`, `savings_fraction` — referenced by the scenario-comparison rollups, the lens detail, the alignment-workbook award details, the scenario read layer, and the booking guide (so the workbook and the app can't report a different savings %); and the **post-award/comms deltas** `premium_dollars`, `weekly_impact`, `price_delta` (effective−frozen / new−prior). Call sites updated across the engine scorer, the bid ingester, `scenario_workbook`, `eng/read`, `booking_guide`, `awd/read`, `awd/service`, `post_award_doc`, and the comms resolvers. **Every migration is behavior-preserving** — the engine golden/reproducibility + alignment-workbook tests pass byte-identical — and the registry is covered by pure unit tests (`tests/engine/test_formulas.py`). Full gate green (ruff/format/mypy/**207 pytest**). *Audit-impact:* a pure refactor — no new write path, stored state, or workflow surface; it **reduces** divergence risk (the root cause of the PR #18 comms price bug). *Left inline by design:* bare single-operation expressions that carry no logic and can't diverge (e.g. `delta_vs_a = spend − a_spend`) and the synthetic `_STLY_UPLIFT` proxy constant — over-abstracting these would cost readability for no correctness gain. *Next (E-39 remainder, optional):* none material — the meaningful cross-layer formulas are centralized.
 - **v1.13 (2026-06-21)** — *Added (architecture, sponsor-directed E-39):* a **canonical formula registry** — `app/engine/formulas.py`, a pure (stdlib + `Decimal`) "table of calcs" in the engine purity layer so **any** layer can import it. Every cross-layer calculation is defined ONCE and referenced everywhere, so no view/draft/document re-derives a value inline and drifts. Seeded with `construct_price` (V3 §7 price construction, moved here from `scoring.py`) and the new `premium_vs_low` (§2.4); the engine scorer and the comms drafts both import them now (the scorer's inline premium ratio is gone). *Codex review (PR #18, round 2 — both P2 addressed):* (1) **comms used the canonical price** — `_round_prices` now builds each supplier's price with `construct_price` instead of requiring a non-NULL All-In, so a **component-basis bid** (FOB + surcharges, no All-In) still counts in the market-low benchmark + the supplier rows (it was silently dropped, skewing feedback/rejection); (2) **every breached hard gate is reported** — `_hard_ask_rows` emits one row per gate, so a bid over BOTH the premium ceiling and the coverage floor tells the supplier to fix price AND raise volume (it previously named only the premium). New pure unit tests (`tests/comms/test_formulas.py`); the engine reproducibility suite proves the formula extraction is byte-identical. *Codex review (PR #18, round 3 — P1 + P2 addressed):* (1) **comms drafts render the SEALED run's prices** — `_round_prices` now joins the run's `eng.bid_score` to the exact `bid.bid_line` it scored (by `bid_line_id`) rather than reloading "current scoreable by round", so a resubmission that supersedes the scored rows after a seal can't make a sealed run's feedback/rejection draft show newer prices/market-lows or a different supplier set (price + eligibility now both come from the same sealed run); (2) **explicit-zero thresholds honored** — the premium-ceiling / coverage-floor fallbacks use `is not None` (not truthiness), so a cycle that sets a `0` ceiling — which the engine honors — gets that threshold in the hard-ask guidance instead of the 12% default. A **resubmission-after-seal regression test** (`tests/api/test_comms.py`) proves a sealed run's feedback draft is byte-identical before/after a later higher-priced resubmission. *Codex review (PR #18, round 4 — P2):* the per-supplier guide filename now carries the **award_id** (the unique PK), not just the `award_code` — two awards in a run can reuse a code (it isn't enforced unique), which would have let a later same-coded freeze overwrite the earlier award's guide and misdirect its draft's attachment; a duplicate-code regression test locks it. Full gate green (ruff/format/mypy/**198 pytest**). *Introduced (tracked, E-39):* the registry is seeded but not yet exhaustive — the scorer's other inline ratios (`z_score`/coverage/`delta_vs_hist`), the alignment/scenario view formulas (spend, Δ-vs-A, savings %), the award formulas (line spend/effective/delta), and the **duplicate `construct_price`** (engine §7 vs the bid ingester's component-price) remain to be migrated into the registry (each behavior-preserving, verified by reproducibility tests). *Audit-impact:* no new write path or stored state (pure refactor + comms read fixes).
 - **v1.12 (2026-06-21)** — *Added:* the **supplier communications layer (E-37)** — a deterministic, author-owned email **template-merge** engine (NOT AI): a pure scalar merge (`app/comms/merge.py`, `[#Name]` tokens), a table-aware render (`app/comms/render.py`, expands `[#XxxTable]` blocks + a machine-readable subject with bracket routing tags first — `[RFP:[#CycleID]] [SUP:[#SupplierID]] <Type> – [#CycleName]` — so a downstream parser, e.g. Power Automate, routes on a stable key even if the wording moves), the 7 buyer-authored templates stored verbatim as `.txt` data (`app/comms/templates/`), and per-touchpoint resolvers (`app/comms/resolvers.py`) that fill the context from the governed store. **The 3 data-ready touchpoints are wired end to end as draft-only HTTP reads:** **award notification** (`GET /runs/{slug}/awards/{award_id}/comms/award`, one draft per awarded supplier — DC/lot counts, delivery window, and the supplier's OWN **individual** award-guide file as the attachment — see the per-supplier files note below), **round feedback** (`…/analysis/{analysis_run_id}/comms/feedback`, one draft per supplier above the cell market-low — hard asks = ineligible "fix to keep participating" via the engine's GATE_PREMIUM/GATE_COVERAGE, soft asks = eligible-but-above, + a per-DC $/% premium summary), and **non-selection / "RFP Results"** (`…/awards/{award_id}/comms/rejection`, one draft per supplier with a lot they did not win — their price, the anonymous market-low benchmark, the % gap, a data-centered reason). Each draft carries the supplier's OWN data + an anonymous benchmark only (never a competitor's name/price); the authenticated user is the draft's `[#BuyerName]`; PilotService wrappers + the same cycle-scope/404 guards as the post-award reads; API tests in `tests/api/test_comms.py` (per-supplier drafts, machine-tag subject, data-filled body, `BuyerTitle` left in `missing`, auth + unknown-id 404). Full backend gate green (ruff/format/mypy/**189 pytest**). *New output (per-supplier award files):* freezing an award now also writes one **individual** award-guide workbook **per awarded supplier** (`write_supplier_award_guide_files`, award-code-stamped filename) carrying only that supplier's data — so the award notification can attach a supplier's OWN guide and never the combined all-suppliers workbook (which would leak every supplier's awarded volumes/prices); the combined internal workbook is still written for the buyer/pricing master. *Codex review (PR #18, both addressed):* (1) the award draft now attaches the per-supplier file (above) instead of globbing the fixed-name combined guide — which was both a confidentiality leak and, across multiple awards on one run, a stale-filename bug (regression test added); (2) round-feedback now fires a HARD ask on **ineligibility regardless of price position**, so a market-low bidder that fails a coverage gate still gets "fix to keep participating" feedback (previously the above-benchmark guard skipped them before the eligibility check). *Governance:* **draft-only — no send, no DB write, no audit event** (the buyer reviews/edits/sends; the `SENT` event lands with G-D/E-24); the merge is reproducible/byte-stable, no model in the loop. *Audit-impact (new outward-facing workflow surface + new HTTP runtime, per D39):* the maturity snapshot (new comms row), §9 (Partial), and §13 (trust boundary — outward draft content crosses only on a human send) updated. *Introduced:* none — no new write path or stored state. *Remaining (E-37):* invite/template/incomplete-bid/PBA touchpoints (gated on cycle-timeline population, incomplete-line capture, and capacity ingest), and the draft-review/edit/send UI + draft→SENT lifecycle.
