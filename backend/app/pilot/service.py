@@ -518,13 +518,16 @@ class PilotService:
         analysis_run_id: str,
         scenario_code: str = "B",
         award_code: str,
+        actor: str = "pilot",
     ) -> str:
         """Freeze a selected scenario into awd.* + the booking guide(s) (step 4); returns award_id.
 
         Promotes the human-selected scenario (default B — the risk-adjusted recommendation) to a
         FROZEN award (`awd.freeze_award`), then writes the two-audience booking guide into outputs/
         (`0X_award_booking_guide.xlsx` + the per-supplier guides). Decision-support: the HUMAN
-        asserts the award (ADR-0006). Commits. Returns the award_id.
+        asserts the award (ADR-0006). `actor` is who froze it — recorded as `frozen_by` and on the
+        FROZEN audit event (the HTTP path passes the authenticated user; the MCP path defaults to
+        "pilot"). Commits. Returns the award_id.
         """
 
         cycle = self._load_cycle(session, runpaths)
@@ -534,7 +537,7 @@ class PilotService:
             analysis_run_id=analysis_run_id,
             scenario_code=scenario_code,
             award_code=award_code,
-            frozen_by="pilot",
+            frozen_by=actor,
         )
 
         booking = self._frozen_award_view(session, cycle, award_id, scenario_code)
@@ -568,6 +571,7 @@ class PilotService:
         effective_date: date,
         reason: str,
         line_changes: list[tuple[str, str, str, str, Decimal]],
+        actor: str = "pilot",
     ) -> Path:
         """Record a post-award adjustment as the next VERSION + its doc (step 5, ADR-0014).
 
@@ -575,6 +579,8 @@ class PilotService:
         workbook (`write_post_award_adjustments_xlsx`, which carries the `Version N · as of DATE`
         heading) into outputs/ as `0X_post_award_v{N}.xlsx`. Updates the kanban + commits. Returns
         the written path. `line_changes` are (dc_id, lot_id, tf_id, supplier_id, new_price) tuples.
+        `actor` is who recorded it — stored as the version's `created_by` and on the CREATED audit
+        event (the HTTP path passes the authenticated user; the MCP path defaults to "pilot").
         """
 
         version_no = awd_service.add_adjustment(
@@ -583,7 +589,7 @@ class PilotService:
             adjustment_type=adjustment_type,
             effective_date=effective_date,
             reason=reason,
-            created_by="pilot",
+            created_by=actor,
             line_changes=line_changes,
         )
 
