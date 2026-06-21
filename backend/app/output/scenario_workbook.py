@@ -228,10 +228,17 @@ def _gather_cells(
     item_for_lot = {seeded.lots[i].id: seeded.items[i] for i in range(len(seeded.lots))}
 
     # Final-round prices per (supplier, dc, lot, tf) from the persisted bid lines.
+    # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (one row per period in a
+    # timeframe's span, identical payload). The competitive grid is TIMEFRAME-grain, so collapse the
+    # (≤13×) period rows to ONE price per (supplier, dc, lot, tf) with DISTINCT ON — the fanned rows
+    # are identical, so any one returns the same price (a pure tf-grain row, period NULL, is its own
+    # representative). This keeps the grid byte-identical to the pre-fan-out timeframe-grain read.
     price_rows = session.execute(
         text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
-            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+            "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
     ).all()
@@ -1809,10 +1816,17 @@ def _gather_score_detail(
     inc_by = dict(seeded.incumbent_by_dc_lot)
 
     # Final-round prices per (supplier, dc, lot, tf) → per-group market stats (min/avg/std/count).
+    # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (≤13 identical rows per
+    # cell). The market stats (esp. the bid COUNT `n`) are TIMEFRAME-grain, so collapse the period
+    # rows to ONE price per (supplier, dc, lot, tf) with DISTINCT ON — otherwise every supplier's
+    # price would be counted ≤13× and the group count/std would inflate. The fanned rows are
+    # identical, so the deduped read is byte-identical to the pre-fan-out timeframe grain.
     price_rows = session.execute(
         text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
-            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+            "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
     ).all()
@@ -2108,10 +2122,16 @@ def _gather_coverage(
     ).all()
     elig_by = {(s, d, lo, t): bool(e) for s, d, lo, t, e in elig_rows}
 
+    # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (≤13 identical rows per
+    # cell). Coverage is per (supplier × cell), so collapse the period rows to ONE per (supplier,
+    # dc, lot, tf) with DISTINCT ON — otherwise every cell would emit ≤13 duplicate coverage rows.
+    # The fanned rows are identical, so the deduped read matches the pre-fan-out timeframe grain.
     bid_rows = session.execute(
         text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, "
-            "volume_minimum_cases FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd"
+            "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, volume_minimum_cases "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
     ).all()

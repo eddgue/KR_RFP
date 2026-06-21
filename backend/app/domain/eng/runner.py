@@ -243,6 +243,33 @@ class EngineRunner:
         )
 
     # ------------------------------------------------------- input assembly
+    @staticmethod
+    def _representative_lines(bid_lines: list[BidLine]) -> list[BidLine]:
+        """Collapse Option-B period rows to ONE representative bid line per (dc, lot, tf, supplier).
+
+        Bids are stored flat at the 13 fiscal periods (period-grain rows that share an identical
+        payload). The engine is timeframe-grain, so we keep exactly one row per cell×supplier. The
+        pick is deterministic — lowest `fiscal_period_id` first (NULL sorts last so a real period
+        row is preferred over a stray tf-grain NULL), then lowest `bid_line_id` — so the input-hash
+        manifest is reproducible run to run. A pure tf-grain cycle (all NULL periods) is unaffected:
+        each cell already has one row, returned as-is.
+        """
+
+        best: dict[tuple[str, str, str, str], BidLine] = {}
+
+        def _rank(line: BidLine) -> tuple[int, str, str]:
+            # NULL period sorts AFTER any real period (prefer a fanned period row); then by ids.
+            fp = line.fiscal_period_id
+            return (0, fp, line.bid_line_id) if fp is not None else (1, "", line.bid_line_id)
+
+        for line in bid_lines:
+            key = (line.dc_id, line.lot_id, line.tf_id, line.supplier_id)
+            current = best.get(key)
+            if current is None or _rank(line) < _rank(current):
+                best[key] = line
+        # Stable order by the PK, mirroring `_read_bid_lines`'s ordering.
+        return sorted(best.values(), key=lambda line: line.bid_line_id)
+
     def _assemble_bids(
         self,
         bid_lines: list[BidLine],
@@ -254,7 +281,17 @@ class EngineRunner:
 
         A bid is flagged `is_incumbent` when its (dc, lot, supplier) is the cycle's incumbent for
         that cell, so the §2.5 continuity factor (incumbent -> 100) actually fires.
+
+        OPTION B COLLAPSE (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (one row per
+        period in a timeframe's span, identical payload). The engine stays TIMEFRAME-grain, so we
+        first collapse to ONE representative row per (dc, lot, tf, supplier) — the fanned rows share
+        an identical payload, so any one is representative. The pick is DETERMINISTIC (lowest
+        `fiscal_period_id`, then `bid_line_id`) so the sealed input-hash manifest is reproducible.
+        Period rows are preferred over a stray NULL-period row for the same cell. The engine sees
+        exactly what it saw at the timeframe grain — scoring/allocation/award code is UNTOUCHED.
         """
+
+        bid_lines = self._representative_lines(bid_lines)
 
         bids: list[BidInput] = []
         for line in bid_lines:

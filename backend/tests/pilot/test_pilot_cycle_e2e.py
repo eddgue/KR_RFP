@@ -319,6 +319,13 @@ def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # t
     assert n2 == 8
 
     # The engine must see only ONE submission's worth of scoreable lines for the round.
+    # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods — each of the 8 logical
+    # priced cells is fanned out to one row per period in its timeframe's span. "Spring 2026"
+    # (2026-04-01..2026-06-30) covers fiscal periods 3..6 = 4 periods, so the RAW storage row count
+    # is 8 × 4 = 32 per submission (the logical-line count `ingested == 8` is unchanged above). The
+    # supersede flip still partitions cleanly: the latest submission's 32 rows stay scoreable, the
+    # prior submission's 32 rows are superseded, not deleted.
+    n_periods = 4  # "Spring 2026" -> fiscal periods 3,4,5,6
     scoreable = db_session.execute(
         text("SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = true"),
         {"c": cycle_id},
@@ -327,8 +334,19 @@ def test_resubmission_supersedes_prior(tmp_path: Path, db_session) -> None:  # t
         text("SELECT count(*) FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = false"),
         {"c": cycle_id},
     ).scalar_one()
-    assert scoreable == 8, "only the latest submission's lines stay scoreable"
-    assert superseded == 8, "the prior submission's lines are superseded, not deleted"
+    # Distinct identity cells (the LOGICAL grain) stay at 8 — only the storage row count fanned out.
+    scoreable_cells = db_session.execute(
+        text(
+            "SELECT count(DISTINCT (supplier_id, dc_id, lot_id, item_id, tf_id)) "
+            "FROM bid.bid_line WHERE cycle_id = :c AND is_scoreable = true"
+        ),
+        {"c": cycle_id},
+    ).scalar_one()
+    assert scoreable == 8 * n_periods, "only the latest submission's period rows stay scoreable"
+    assert superseded == 8 * n_periods, (
+        "the prior submission's period rows are superseded, not deleted"
+    )
+    assert scoreable_cells == 8, "the LOGICAL line count (distinct cells) is unchanged by fan-out"
     # The supersession is surfaced in the run's notes (never silent).
     assert "superseded" in paths.notes_md.read_text().lower()
 

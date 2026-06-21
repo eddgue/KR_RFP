@@ -242,6 +242,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D38 — Flat-13 period storage: bids stored per-period; engine/awards stay timeframe-grain (Option B) · **RATIFIED 2026-06-21**
+**Why.** D35 requires the database to store offers FLAT at the 13 fiscal periods (the invariant the platform reads); timeframes are the supplier-facing groupings the buyer prices against. But the engine/scenario/award spine is timeframe-grain and is the FROZEN clean-room v3 — rewriting it to score per-period (Option A) is high-risk, breaks reproducibility, and no spec requires it (the as-built specifies "engine logic unchanged"). Sponsor principle for the call: reach the period-storage intent with the LEAST margin for error.
+**Decision (Option B).** Bids are STORED at the period grain: intake fans each timeframe-priced line out to one `bid.bid_line` per fiscal period in the timeframe's span (`fiscal_period_id` set, payload replicated verbatim) — `app/pilot/service.py::_persist_bid_lines`. The ENGINE, SCENARIOS, and AWARDS stay timeframe-grain: `runner._assemble_bids` collapses the period rows to ONE representative row per (dc, lot, tf, supplier) before scoring (deterministic pick → reproducible), so scoring/allocation/award code is UNTOUCHED. The renders that show the competitive grid dedupe period rows back to the tf grain (`scenario_workbook._gather_cells` + the Detailed-Scoring / Coverage gathers, via `DISTINCT ON`). The API contract is unchanged: `ingested` and the bid list count LOGICAL lines, not the fanned rows.
+**Safety invariant (proven).** The engine output — scores, scenarios, awards, and the alignment workbook numbers — is IDENTICAL before/after; only `bid.bid_line`'s storage grain + row count change. `tests/bid/test_period_import.py` proves it: the period-grain rows assemble to byte-identical engine inputs vs a tf-grain control, the engine scores exactly the logical cells (no doubling), and the workbook tabs are not inflated. A timeframe whose dates fall outside the seeded FY16–36 calendar falls back to a single tf-grain row (NULL period). Migrations 0015/0016's dual filtered indexes were built for exactly this coexistence.
+**Future cleanup.** `bid_line.fiscal_period_id` is `varchar(36)` vs `ref.fiscal_period.id uuid` (stored as text, joined `::text`) — a later migration can make it a real uuid + FK.
+**Linked:** D35 (the flat-13 calendar/storage intent), INTAKE_TEMPLATE_DESIGN §1a, the as-built audit **G-A**, E-35 (the per-period discovery view this unlocks), E-36 (timeframe-grain awards → partial/split + continuation RFP), `app/pilot/service.py` / `app/domain/eng/runner.py` / `app/output/scenario_workbook.py`.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.5
+version: 1.6
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -34,7 +34,7 @@ The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / 
 | Document generation (workbooks) | ✅ Operational |
 | Reproducible / sealed runs + per-run isolation | ✅ Operational |
 | Web console (UI) | 🟡 Partial — dashboard + intake only; engine/award/post-award are MCP-only (G-E) |
-| Flat-13 period model | 🟡 Built, not wired (G-A) |
+| Flat-13 period model | ✅ Operational — bids stored flat at 13 periods (G-A closed v1.6) |
 | **Audit provenance (decision trail)** | ✅ Operational — every existing decision chained in-txn (IMPORTED/SEALED/FROZEN/SUPERSEDED/adjustment); **G-B closed v1.4**. Sign-off/send events land with G-D. |
 | RBAC enforcement | 🟠 Defined, not enforced (G-C) |
 | Sign-off workflow | ⬜ Not implemented (G-D) |
@@ -45,12 +45,12 @@ The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / 
 
 **What works end to end (driven by `PilotService` + the MCP harness):** start run → setup ingest (full cycle/scope creation) → bid template → bid intake (strict *and* flexible) → V3 engine (5-factor scoring, 7 scenario lenses A–G, split allocation) → human-selected award freeze → versioned post-award layers → generated workbooks (alignment, booking guide, per-supplier guides, post-award) → close-out (archive→purge). Sealed analysis runs and frozen awards are immutability-guarded. Per-run isolated databases keep runs apart at the harness runtime.
 
-**The gaps — the critical one (G-B) is now CLOSED (v1.4); five material remain** (detail + evidence below):
+**The gaps — the critical one (G-B) CLOSED (v1.4) and G-A CLOSED (v1.6); four material remain** (detail + evidence below):
 
 | # | Gap | Severity | Impact | Backlog |
 |---|---|---|---|---|
 | **G-B** | **~~The audit hash-chain doesn't cover award decisions.~~ CLOSED (v1.4).** Decision events now fire in-transaction at ingest (IMPORTED), supersede (SUPERSEDED), engine seal (SEALED), award freeze (FROZEN), and adjustment (CREATED) — `app/core/audit/recorder.py` + emits in `pilot/service.py`, `awd/service.py`. | ✅ **CLOSED** | The "why did Supplier A get 35%?" chain (bid → analysis → freeze → adjustment) is now tamper-evident and recomputable. | E-05 ✓ |
-| **G-A** | **Flat-13 period fan-out is built but NOT wired.** The column, indexes, and fan-out engine exist; the live ingest path never calls it, so bids are stored at the **timeframe** grain (`fiscal_period_id` NULL). | 🟠 Material | The "data flat at 13 periods" model (D35) isn't actually in effect for stored bids. | D35, migrations 0014–0016 |
+| **G-A** | **~~Flat-13 period fan-out is built but NOT wired.~~ CLOSED (v1.6).** Intake now fans each priced line out to one `bid.bid_line` per fiscal period in the timeframe's span (`fiscal_period_id` populated); the engine/award builder stay timeframe-grain via a deterministic representative-row collapse (Option B, **D38**). Unmappable timeframes fall back to a single tf-grain NULL-period row. | ✅ **CLOSED** | The "data flat at 13 periods" model (D35) is now in effect for stored bids, with engine/workbook output proven byte-identical to the pre-fan-out grain. | D35/D38, migrations 0014–0016 |
 | **G-C** | **RBAC is defined but not enforced.** A full permission matrix + separation-of-duties exists; **no route uses it** — every route is bare session auth, and the dev principal holds all roles. | 🟠 Material | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 |
 | **G-D** | **Sign-off is decorative.** It exists only as a workbook tab + an unused permission — no transition, no state, no gate. | 🟠 Material | No portfolio sign-off step (E-22) in the running system. | E-22 |
 | **G-E** | **The HTTP API is front-half only.** `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs. | 🟠 Material | The web console can set up + take bids, but cannot run the engine, award, or adjust — those need the MCP harness. | E-25 |
@@ -79,7 +79,7 @@ flowchart TD
     G0 --> B["Setup ingest → cycle<br/>writes ref.* / cyc.* / perf.*"]:::built
     B --> C["Generate bid template (round n)"]:::built
     C --> D["Bid intake"]:::built
-    D -->|"strict (our template)"| E["bid.bid_line<br/>(timeframe grain; period NULL)"]:::built
+    D -->|"strict (our template)"| E["bid.bid_line<br/>(stored flat at 13 periods)"]:::built
     D -->|"flexible (messy file)"| P{"Mapping proposal<br/>propose → confirm"}:::enforced
     P -->|"confirm"| E
     E --> F["Engine run_round<br/>seal eng.* — scores + 7 scenarios"]:::built
@@ -133,9 +133,8 @@ flowchart LR
     SW["Setup workbook<br/>(7 tabs)"] --> REF["ref.client / commodity /<br/>subcommodity / item / dc / supplier"]
     SW --> CYC["cyc.cycle / cycle_lot /<br/>cycle_item_scope / timeframe /<br/>round / invited_supplier /<br/>projected_volume"]
     SW --> PERF["perf.historical_award_*<br/>(routing baseline)"]
-    BF["Bid file (.xlsx)"] --> BL["bid.bid_line<br/>(cycle + round + supplier grain)"]
-    BL -. "fan-out BUILT, NOT WIRED" .-> FP["fiscal_period_id (flat-13)<br/>— NULL today"]:::missing
-    BL --> ENG["eng.bid_score +<br/>analysis_scenario(_award)"]
+    BF["Bid file (.xlsx)"] --> BL["bid.bid_line<br/>(stored flat at 13 periods —<br/>one row per period in span)"]
+    BL --> ENG["eng.bid_score +<br/>analysis_scenario(_award)<br/>(timeframe-grain via<br/>representative collapse)"]
     CYC --> ENG
     ENG --> AWD["awd.award + award_line<br/>(FROZEN)"]
     AWD --> ADJ["awd.award_adjustment(_line)<br/>(append-only layers)"]
@@ -148,7 +147,7 @@ flowchart LR
 | Write point | file:line | Tables | Scoping |
 |---|---|---|---|
 | Cycle creation | setup_ingest.py:387–693 | `ref.*`, `cyc.*`, `perf.*`, `norm.normalization_run` | `cycle_id` on all cyc/perf rows; **`ref.dc`/`ref.supplier` reused by natural key** (shared master, D36); `ref.item` per-RFP with collision-safe codes |
-| Bid lines | service.py:1071–1199 | `norm.source_artifact`, `bid.bid_submission`, `bid.bid_line` | every row carries `cycle_id`+`round_id`+`supplier_id` |
+| Bid lines | service.py:1071–1199 | `norm.source_artifact`, `bid.bid_submission`, `bid.bid_line` | every row carries `cycle_id`+`round_id`+`supplier_id`; **each priced line fanned to one row per fiscal period in its timeframe span** (`fiscal_period_id`; D38) — `ingested` counts logical lines, not fanned rows |
 | Engine seal | runner.py:154–413 | `eng.analysis_run`/`bid_score`/`analysis_scenario`/`analysis_scenario_award` | `cycle_id`+`round_id`; children FK to run/scenario |
 | Award freeze | awd/service.py:90–138 | `awd.award`, `awd.award_line` | idempotent on `cycle_id`+`analysis_run_id`+`scenario_code` |
 | Post-award layer | awd/service.py:172–203 | `awd.award_adjustment`, `awd.award_adjustment_line` | `award_id`+`version_no` (unique) |
@@ -245,13 +244,12 @@ The hash-chained `audit.event_log` is **mechanically complete and correct**: `pr
 
 ## 9. Built · partial · missing (gap analysis → backlog)
 
-**Built (working):** vault scaffold + git + per-run isolated DBs + snapshot/rehydrate · setup ingest → full cycle/scope · bid template gen · strict + flexible intake w/ quarantine · V3 engine (5-factor scoring, eligibility gates, 7 lenses, split allocator, sealed reproducible runs) → **E-18/E-19/E-20** · award freeze + append-only post-award layers → **E-21** · alignment/booking-guide/supplier-guide/post-award workbooks → **E-23 (booking guide part)** · immutability guards · **decision-point audit events (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic + tamper-evident → E-05 ✓ (v1.4)** · MCP surface covering the full lifecycle · web: auth+2FA, dashboard, run detail, **bid intake** → **E-26 (started)**.
+**Built (working):** vault scaffold + git + per-run isolated DBs + snapshot/rehydrate · setup ingest → full cycle/scope · bid template gen · strict + flexible intake w/ quarantine · **flat-13 period storage (bids fanned to one row per fiscal period; engine/award stay timeframe-grain via representative collapse) → D35/D38 ✓ (v1.6)** · V3 engine (5-factor scoring, eligibility gates, 7 lenses, split allocator, sealed reproducible runs) → **E-18/E-19/E-20** · award freeze + append-only post-award layers → **E-21** · alignment/booking-guide/supplier-guide/post-award workbooks → **E-23 (booking guide part)** · immutability guards · **decision-point audit events (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic + tamper-evident → E-05 ✓ (v1.4)** · MCP surface covering the full lifecycle · web: auth+2FA, dashboard, run detail, **bid intake** → **E-26 (started)**.
 
 **Partial / inert:**
 - Audit event emission for **sign-off / send** (`SIGNED_OFF`/`SENT`) — pending those features → **G-D / E-24** (decision events themselves are done, v1.4).
 - RBAC matrix defined, **no route enforces** it → **E-03**.
 - HTTP API front-half only; `cycles`/`awards`/`documents`/`ingest` routers empty → **E-25**.
-- **Flat-13 fan-out built, not invoked** (bids at timeframe grain) → **D35 / migrations 0014–0016**.
 - Outputs: workbooks only — **no deck/letter/email** → **E-23 (remainder)**.
 - `is_awardable` set unconditionally true at ingest — no awardability logic.
 - DB-level immutability triggers + tenant RLS — referenced as Platform-team-owned, **not present** here.
@@ -278,8 +276,8 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 ## 11. Recommended priorities (to frame the review)
 
 0. **~~(CRITICAL) Wire audit events into every decision~~ ✅ DONE (v1.4)** (G-B, E-05) — decisions now emit `IMPORTED`/`SEALED`/`FROZEN`/`SUPERSEDED`/adjustment events in-transaction; chain verified by tests.
-1. **Wire the flat-13 fan-out into intake** (G-A) — small, high-value, makes D35 real. **← next**
-2. **Build the alignment/scenario web screen + the award/post-award HTTP surface** (G-E, E-25) — the biggest missing UX and the planned centerpiece; unblocks running RFPs end-to-end in the console.
+1. **~~Wire the flat-13 fan-out into intake~~ ✅ DONE (v1.6)** (G-A, D35/D38) — bids stored flat at 13 periods; engine/award stay timeframe-grain via representative collapse; output proven byte-identical.
+2. **Build the alignment/scenario web screen + the award/post-award HTTP surface** (G-E, E-25) — the biggest missing UX and the planned centerpiece; unblocks running RFPs end-to-end in the console. **← next** *(backend read layer + endpoints landed in PR #12; frontend remaining)*
 3. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official"; wire `SIGNED_OFF`/`SENT` audit events when these land.
 4. **Back the app-layer guards with DB-level enforcement** — immutability triggers + tenant RLS; today both rest on app-layer listeners + edge principal only.
 5. **Spec the PBA/contract builder + supplier importer** (G-F, E-33/E-34) — the sponsor-flagged post-award step and supplier master intake.
@@ -316,6 +314,7 @@ A calendar audit is mostly noise; an audit **after meaningful architectural chan
 
 The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
 
+- **v1.6 (2026-06-21)** — *Added:* flat-13 period storage wired into intake (Option B, **D38**) — `_persist_bid_lines` fans each priced line to one `bid.bid_line` per fiscal period in its timeframe span (`fiscal_period_id` populated), `_representative_lines` collapses period rows back to timeframe grain for the engine, and the workbook/list/read paths dedupe per cell (`DISTINCT ON`); `tests/bid/test_period_import.py` proves engine + workbook output is byte-identical to the pre-fan-out grain, plus an unmappable-timeframe NULL-period fallback. Caught two latent workbook dedupe bugs (Detailed Scoring stats, Coverage rows) that would otherwise have inflated ×n_periods. *Closed:* **G-A** — bids are now stored flat at the 13 fiscal periods (D35 in effect); the engine/award builder stay timeframe-grain by construction. *Introduced:* (minor, tracked in D38) `bid_line.fiscal_period_id` is `varchar(36)` nullable rather than a `uuid` FK — a deliberate low-risk choice (matches the existing text-id convention; no engine change); future cleanup to a typed FK + NOT NULL once tf→period mapping is universal. *Triggers:* New write-location grain change (scoped: §3 data flow + §2 stages re-verified). Next State/write-location + UX-visibility audit fires with the scenario screen frontend (G-E).
 - **v1.5 (2026-06-21)** — *Added:* `RunSummary.has_cycle` (durable post-setup unlock signal); migration 0018 backfilling pre-G-B commodities' `client_id` (a per-orphan legacy client, so duplicate codes don't collide). *Closed:* the G-B backward-compat hole (pre-G-B cycles are no longer stranded by the now-mandatory tenant resolver); three Codex P2 intake findings (soft-gating signal, template-list source, round-error labeling). *Introduced:* none. *Triggers:* none major — the next State/write-location + UX-visibility audit fires with the engine/award HTTP surface + scenario screen (G-E).
 - **v1.4 (2026-06-21)** — *Added:* decision-point audit events (`app/core/audit/recorder.py` + in-txn emits at ingest/seal/freeze/adjust) and `tests/audit/test_decision_events.py`; `ref.commodity.client_id` now populated at setup ingest (latent NULL fixed). *Closed:* **G-B** — the audit chain now covers every existing decision (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic with the decision and tamper-evident. *Introduced:* none. *Note:* `SIGNED_OFF`/`SENT` events remain pending their features (G-D/E-24).
 - **v1.3 (2026-06-21)** — *Added:* re-audit trigger table + five standing questions (§12); release-gate policy (D37, WAYS_OF_WORKING §8); this delta-format history. *Closed:* none. *Introduced:* none.
