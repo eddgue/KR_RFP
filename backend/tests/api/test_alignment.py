@@ -229,6 +229,41 @@ def test_freeze_emits_frozen_audit_event(client, seed_user, vault_root, db_sessi
     assert events == 1
 
 
+@pytest.mark.integration
+def test_freeze_unknown_scenario_rejected_and_writes_nothing(
+    client, seed_user, vault_root, db_session
+) -> None:  # type: ignore[no-untyped-def]
+    """An unknown scenario code is a clean 400 — and leaves NO award + NO FROZEN event behind.
+
+    Guards the Codex P2: the scenario's award rows are read BEFORE anything is written, so a typo
+    can't leave a bogus zero-line FROZEN award (immutable!) or a spurious FROZEN audit event.
+    """
+
+    from sqlalchemy import text
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+
+    resp = client.post(
+        f"{RUNS}/{slug}/awards/freeze",
+        json={
+            "analysis_run_id": analysis_run_id,
+            "scenario_code": "Z",  # not a sealed lens
+            "award_code": "AWD-BAD-1",
+        },
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["code"] == "validation_error"
+
+    # Nothing governed was written for the bogus code: no frozen award row exists for it.
+    awards = db_session.execute(
+        text("SELECT count(*) FROM awd.award WHERE analysis_run_id = :rid AND scenario_code = 'Z'"),
+        {"rid": analysis_run_id},
+    ).scalar_one()
+    assert awards == 0
+
+
 # --------------------------------------------------------------------------- #
 # gates + error paths
 # --------------------------------------------------------------------------- #

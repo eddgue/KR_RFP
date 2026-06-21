@@ -78,6 +78,10 @@ def freeze_award(
     `awd.award_line` per cell with `frozen_price = awarded_price` (ADR-0014: this baseline is never
     overwritten). Idempotent: if an award already exists for that (cycle, run, scenario), the
     existing `award_id` is returned and nothing new is written. Add + flush only.
+
+    Raises `ValueError` if the scenario has NO award rows (an unknown / typo `scenario_code`, or a
+    code not sealed on this run): the read happens BEFORE anything is written, so a bad code can
+    never leave a bogus zero-line FROZEN award or a spurious FROZEN audit event behind.
     """
 
     existing = session.execute(
@@ -90,22 +94,8 @@ def freeze_award(
     if existing is not None:
         return existing
 
-    award_id = _new_id()
-    session.add(
-        Award(
-            award_id=award_id,
-            cycle_id=cycle_id,
-            analysis_run_id=analysis_run_id,
-            scenario_code=scenario_code,
-            award_code=award_code,
-            frozen_at=_now(),
-            frozen_by=frozen_by,
-            status="FROZEN",
-        )
-    )
-    session.flush()
-
     # The selected scenario's split award rows (per-supplier cell grain) -> the frozen baseline.
+    # Read FIRST and refuse an empty set, so nothing is written for an unknown/unsealed scenario.
     rows = session.execute(
         select(
             AnalysisScenarioAward.dc_id,
@@ -124,6 +114,26 @@ def freeze_award(
             AnalysisScenario.scenario_code == scenario_code,
         )
     ).all()
+    if not rows:
+        raise ValueError(
+            f"scenario {scenario_code!r} has no awards on run {analysis_run_id!r} — "
+            "nothing to freeze (unknown or unsealed scenario code)."
+        )
+
+    award_id = _new_id()
+    session.add(
+        Award(
+            award_id=award_id,
+            cycle_id=cycle_id,
+            analysis_run_id=analysis_run_id,
+            scenario_code=scenario_code,
+            award_code=award_code,
+            frozen_at=_now(),
+            frozen_by=frozen_by,
+            status="FROZEN",
+        )
+    )
+    session.flush()
 
     for dc_id, lot_id, tf_id, supplier_id, volume_share, awarded_price in rows:
         session.add(
