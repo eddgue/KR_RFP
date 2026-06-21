@@ -780,6 +780,29 @@ def get_award_comms_drafts(
         ) from exc
 
 
+@router.get(
+    "/{slug}/analysis/{analysis_run_id}/comms/feedback",
+    response_model=list[SupplierEmailDraft],
+    summary="Round-feedback email drafts (one per above-benchmark supplier)",
+)
+def get_feedback_comms_drafts(
+    slug: str,
+    analysis_run_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierEmailDraft]:
+    """One template-merge round-feedback DRAFT per supplier above the market-low benchmark (E-37).
+
+    Splits hard asks (ineligible — fix to keep participating) from soft asks (eligible but above the
+    benchmark) over the sealed analysis's scored round; the authenticated user is the draft's
+    `[#BuyerName]`. 400 (`gate_required`) before any cycle; 404 for an unknown run / analysis run.
+    """
+
+    paths = resolve_paths(slug)
+    _ensure_analysis(db, paths, slug, analysis_run_id)
+    return service().feedback_email_drafts(db, paths, analysis_run_id, buyer_name=user.username)
+
+
 def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: str) -> None:
     """Guard the scenario/award reads: a cycle must exist (400) and the run must be one of its
     SEALED analyses (404) — so an unknown / other-run analysis id is never silently served.

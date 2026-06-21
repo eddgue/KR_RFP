@@ -59,3 +59,56 @@ def test_award_comms_unknown_award_404(client, seed_user, vault_root) -> None:  
     _seed_sealed_run(client, slug)
     resp = client.get(f"{RUNS}/{slug}/awards/no-such-award/comms/award")
     assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_feedback_comms_requires_auth(client, vault_root) -> None:  # type: ignore[no-untyped-def]
+    assert client.get(f"{RUNS}/x/analysis/run-1/comms/feedback").status_code == 401
+
+
+@pytest.mark.integration
+def test_feedback_comms_drafts_above_benchmark_suppliers(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """A sealed round → a round-feedback draft per supplier above the market-low benchmark.
+
+    The synthetic seed splits each DC's two lots across the two suppliers, so on its weaker lot each
+    supplier sits above the other's market low — both get a draft with a machine-tag subject and a
+    data-filled body (DC summary + hard/soft ask sections, tables expanded, no visible holes).
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+
+    resp = client.get(f"{RUNS}/{slug}/analysis/{analysis_run_id}/comms/feedback")
+    assert resp.status_code == 200, resp.text
+    drafts = resp.json()
+    assert len(drafts) >= 1
+
+    for draft in drafts:
+        assert draft["email_type"] == "Round Feedback"
+        # Subject: machine-readable routing tags first, then the round-feedback infix + cycle.
+        assert draft["subject"].startswith("[RFP:")
+        assert "[SUP:" in draft["subject"]
+        assert "Feedback –" in draft["subject"]
+        assert "[#RoundNumber]" not in draft["subject"]
+        # Body merged from governed data: greeting + the three authored sections.
+        assert f"Dear {draft['supplier_name']}," in draft["body"]
+        assert "DC Summary" in draft["body"]
+        assert "Items Requiring Action" in draft["body"]
+        assert "Additional Improvement Opportunities" in draft["body"]
+        # Every table block expanded (even an empty one renders a header, never a leftover token).
+        assert "[#DCSummaryTable]" not in draft["body"]
+        assert "[#HardAskTable]" not in draft["body"]
+        assert "[#SoftAskTable]" not in draft["body"]
+        # The authenticated user is the draft's buyer; the title is left for the buyer to complete.
+        assert seed_user["username"] in draft["body"]
+        assert "BuyerTitle" in draft["missing"]
+
+
+@pytest.mark.integration
+def test_feedback_comms_unknown_run_404(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    _login(client, seed_user)
+    slug = _create_run(client)
+    _seed_sealed_run(client, slug)
+    resp = client.get(f"{RUNS}/{slug}/analysis/no-such-run/comms/feedback")
+    assert resp.status_code == 404

@@ -11,17 +11,26 @@ separately in the body.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.comms.render import render
 from app.comms.templates import EmailType, get_template
 from app.domain.awd.read import award_detail
 from app.domain.cyc.models import CycleTimeframe
+from app.engine.scoring import GATE_COVERAGE, GATE_PREMIUM
 from app.output.types import CycleView
+
+# Engine eligibility defaults (mirror the pilot wiring) when the cycle sets no override.
+_DEFAULT_PREMIUM_CEILING = Decimal("0.12")
+_DEFAULT_COVERAGE_FLOOR = Decimal("0.80")
+
+_Cell = tuple[str, str, str]  # (dc_id, lot_id, tf_id)
 
 
 class SupplierEmailDraft(BaseModel):
@@ -99,6 +108,232 @@ def award_drafts(
             "BuyerTitle": buyer_title,
         }
         rendered = render(template, context)
+        drafts.append(
+            SupplierEmailDraft(
+                supplier_id=supplier_id,
+                supplier_name=supplier_name,
+                email_type=template.email_type,
+                subject=rendered.subject,
+                body=rendered.body,
+                missing=list(rendered.missing),
+            )
+        )
+    drafts.sort(key=lambda d: d.supplier_name)
+    return drafts
+
+
+# --------------------------------------------------------------------------- #
+# Round feedback (E-37): per-supplier standing vs the market-low benchmark.
+# --------------------------------------------------------------------------- #
+def _money(value: Decimal, *, cents: bool = True) -> str:
+    return f"${value:,.2f}" if cents else f"${value:,.0f}"
+
+
+def _pct(value: Decimal) -> str:
+    return f"{value * 100:.1f}%"
+
+
+def _round_id_and_number(session: Session, analysis_run_id: str) -> tuple[str, int]:
+    """The round this analysis scored: its id + 1-based number. Raises ValueError if unknown."""
+
+    row = session.execute(
+        text(
+            "SELECT r.round_id, cr.round_number FROM eng.analysis_run r "
+            "JOIN cyc.cycle_round cr ON cr.round_id = r.round_id "
+            "WHERE r.analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).first()
+    if row is None:
+        raise ValueError(f"analysis run {analysis_run_id!r} not found")
+    return str(row[0]), int(row[1])
+
+
+def _round_prices(
+    session: Session, cycle_id: str, round_id: str
+) -> dict[_Cell, dict[str, Decimal]]:
+    """The round's ACTIVE all-in price per cell -> {supplier_id: price} (one per supplier×cell)."""
+
+    rows = session.execute(
+        text(
+            "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
+            "AND is_scoreable = true AND submitted_all_in_case IS NOT NULL "
+            "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
+        ),
+        {"cyc": cycle_id, "rnd": round_id},
+    ).all()
+    by_cell: dict[_Cell, dict[str, Decimal]] = defaultdict(dict)
+    for supplier_id, dc_id, lot_id, tf_id, price in rows:
+        by_cell[(dc_id, lot_id, tf_id)][supplier_id] = Decimal(str(price))
+    return by_cell
+
+
+def _eligibility(
+    session: Session, analysis_run_id: str
+) -> dict[tuple[str, str, str, str], tuple[bool, str]]:
+    """Per (supplier, dc, lot, tf): the sealed (is_eligible, gate_flags) from the bid_score."""
+
+    rows = session.execute(
+        text(
+            "SELECT supplier_id, dc_id, lot_id, tf_id, is_eligible, COALESCE(gate_flags, '') "
+            "FROM eng.bid_score WHERE analysis_run_id = :run"
+        ),
+        {"run": analysis_run_id},
+    ).all()
+    return {(s, d, lo, t): (bool(e), g) for s, d, lo, t, e, g in rows}
+
+
+def _weekly_volume(session: Session, cycle_id: str) -> dict[_Cell, Decimal]:
+    """Weekly required cases per (dc, lot, tf): projected weekly volume aggregated item -> lot."""
+
+    rows = session.execute(
+        text(
+            "SELECT pv.dc_id, li.lot_id, pv.tf_id, COALESCE(SUM(pv.projected_weekly_cases), 0) "
+            "FROM cyc.cycle_projected_volume pv "
+            "JOIN cyc.cycle_lot_item li ON li.cycle_id = pv.cycle_id AND li.item_id = pv.item_id "
+            "WHERE pv.cycle_id = :cyc GROUP BY pv.dc_id, li.lot_id, pv.tf_id"
+        ),
+        {"cyc": cycle_id},
+    ).all()
+    return {(d, lo, t): Decimal(str(v)) for d, lo, t, v in rows}
+
+
+def _hard_ask_reason(
+    flags: str, prem_pct: Decimal, ceiling: Decimal, floor: Decimal
+) -> tuple[str, str, str]:
+    """(Issue, Current Value, Required Improvement) for an INELIGIBLE lot, from its gate flags."""
+
+    if GATE_PREMIUM in flags:
+        return ("Price premium exceeds threshold", _pct(prem_pct), f"at or below {_pct(ceiling)}")
+    if GATE_COVERAGE in flags:
+        return (
+            "Insufficient volume offered",
+            f"below {_pct(floor)} of requirement",
+            f"at least {_pct(floor)}",
+        )
+    return ("Not eligible for award", _pct(prem_pct), "review submission")
+
+
+def feedback_drafts(
+    session: Session,
+    cycle_view: CycleView,
+    analysis_run_id: str,
+    *,
+    buyer_name: str = "",
+    buyer_title: str = "",
+) -> list[SupplierEmailDraft]:
+    """One ROUND-FEEDBACK draft per supplier with lots ABOVE the market-low benchmark (E-37).
+
+    Per supplier, per cell they bid where their price is above the cell's market low: classify the
+    lot HARD (ineligible — premium over the ceiling or coverage under the floor: "fix to keep
+    participating") vs SOFT (eligible but above the benchmark: "improve your position"), and roll up
+    the per-DC summary ($ / % premium + estimated weekly impact). Only suppliers with at least one
+    above-benchmark lot get a draft. Draft-only; the supplier's OWN data only (no competitor names).
+    """
+
+    cycle_id = cycle_view.cycle_id
+    round_id, round_number = _round_id_and_number(session, analysis_run_id)
+    prices = _round_prices(session, cycle_id, round_id)
+    eligibility = _eligibility(session, analysis_run_id)
+    weekly = _weekly_volume(session, cycle_id)
+    ceiling = cycle_view.premium_ceiling or _DEFAULT_PREMIUM_CEILING
+    floor = cycle_view.coverage_floor or _DEFAULT_COVERAGE_FLOOR
+
+    dc_name = {d.id: d.name for d in cycle_view.dcs}
+    lot_name = {lot.id: lot.name for lot in cycle_view.lots}
+    sup_name = {s.id: s.name for s in cycle_view.suppliers}
+
+    # Per supplier: the hard/soft ask rows + per-DC aggregates over above-benchmark lots.
+    hard: dict[str, list[dict[str, str]]] = defaultdict(list)
+    soft: dict[str, list[dict[str, str]]] = defaultdict(list)
+    dc_agg: dict[str, dict[str, dict[str, Decimal]]] = defaultdict(lambda: defaultdict(dict))
+
+    for (dc_id, lot_id, tf_id), sup_prices in prices.items():
+        if not sup_prices:
+            continue
+        market_low = min(sup_prices.values())
+        if market_low <= 0:
+            continue
+        weekly_cases = weekly.get((dc_id, lot_id, tf_id), Decimal("0"))
+        for supplier_id, price in sup_prices.items():
+            if price <= market_low:  # at or below benchmark -> no ask (only include lots above)
+                continue
+            prem_dollar = price - market_low
+            prem_pct = prem_dollar / market_low
+            impact = prem_dollar * weekly_cases
+            agg = dc_agg[supplier_id].setdefault(
+                dc_id,
+                {
+                    "count": Decimal("0"),
+                    "dollar": Decimal("0"),
+                    "pct": Decimal("0"),
+                    "impact": Decimal("0"),
+                },
+            )
+            agg["count"] += Decimal("1")
+            agg["dollar"] += prem_dollar
+            agg["pct"] += prem_pct
+            agg["impact"] += impact
+
+            is_elig, flags = eligibility.get((supplier_id, dc_id, lot_id, tf_id), (True, ""))
+            dc_label = dc_name.get(dc_id, dc_id[:6])
+            lot_label = lot_name.get(lot_id, lot_id[:6])
+            if not is_elig:
+                issue, current, target = _hard_ask_reason(flags, prem_pct, ceiling, floor)
+                hard[supplier_id].append(
+                    {
+                        "DC": dc_label,
+                        "Lot": lot_label,
+                        "IssueReason": issue,
+                        "CurrentMetric": current,
+                        "TargetMetric": target,
+                    }
+                )
+            else:
+                soft[supplier_id].append(
+                    {
+                        "DC": dc_label,
+                        "Lot": lot_label,
+                        "PremiumPct": _pct(prem_pct),
+                        "BenchmarkPrice": _money(market_low),
+                        "SuggestedTarget": f"match {_money(market_low)} to compete",
+                    }
+                )
+
+    template = get_template(EmailType.ROUND_FEEDBACK)
+    drafts: list[SupplierEmailDraft] = []
+    for supplier_id, agg_by_dc in dc_agg.items():
+        supplier_name = sup_name.get(supplier_id, supplier_id[:8])
+        dc_rows = [
+            {
+                "DC": dc_name.get(dc_id, dc_id[:6]),
+                "LotsAboveTarget": str(int(a["count"])),
+                "AvgDollarPremium": _money(a["dollar"] / a["count"]),
+                "AvgPercentPremium": _pct(a["pct"] / a["count"]),
+                "EstWeeklyImpact": _money(a["impact"], cents=False),
+            }
+            for dc_id, a in sorted(agg_by_dc.items(), key=lambda kv: dc_name.get(kv[0], kv[0]))
+        ]
+        context = {
+            "SupplierName": supplier_name,
+            "SupplierID": supplier_id,
+            "CycleName": cycle_view.cycle_name,
+            "CycleID": cycle_view.cycle_id,
+            "RoundNumber": str(round_number),
+            "BuyerName": buyer_name,
+            "BuyerTitle": buyer_title,
+        }
+        rendered = render(
+            template,
+            context,
+            tables={
+                "DCSummaryTable": dc_rows,
+                "HardAskTable": sorted(hard[supplier_id], key=lambda r: (r["DC"], r["Lot"])),
+                "SoftAskTable": sorted(soft[supplier_id], key=lambda r: (r["DC"], r["Lot"])),
+            },
+        )
         drafts.append(
             SupplierEmailDraft(
                 supplier_id=supplier_id,

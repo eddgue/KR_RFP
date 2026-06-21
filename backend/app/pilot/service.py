@@ -30,7 +30,7 @@ from typing import cast
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.comms.resolvers import SupplierEmailDraft, award_drafts
+from app.comms.resolvers import SupplierEmailDraft, award_drafts, feedback_drafts
 from app.core.audit.events import DomainEvent, EventType
 from app.core.audit.recorder import client_id_for_cycle
 from app.core.audit.writer import AuditWriter
@@ -1542,6 +1542,32 @@ class PilotService:
             buyer_name=buyer_name,
             buyer_title=buyer_title,
             award_file_name=award_file,
+        )
+
+    def feedback_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        analysis_run_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One round-feedback email DRAFT per supplier with above-benchmark lots (E-37).
+
+        Loads the run's cycle (names + the eligibility overrides) and renders the round-feedback
+        template per supplier whose round bid sits above the market-low benchmark on any cell —
+        with hard asks (ineligible) and soft asks (eligible but above) split into separate tables.
+        Raises ValueError on an unknown analysis run (router -> 404).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        return feedback_drafts(
+            session,
+            cycle,
+            analysis_run_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
         )
 
     def scenario_comparison(
