@@ -59,7 +59,7 @@ no new core workflows. **Anything that fails these is C.**
 |---|---|---|---|
 | **E-37** comms email drafts (award/feedback/non-selection) | shipped (PR #18) | B (within existing output/render) | ✅ delivered |
 | **E-39** canonical formula registry | shipped/in-review (PR #19) | A-adjacent (systemic fix for a calc-divergence defect; behavior-preserving) | ✅ delivered |
-| **E-38** supplier capacity | ingest + persist + engine/custom cap flag + workbook control tab | **B** | **BUILD now** (accuracy: never recommend an award beyond stated capacity) |
+| **E-38** supplier capacity | ingest + persist + engine/custom cap flag + workbook control tab | **B** | **BUILD now** (accuracy: never recommend an award beyond stated capacity). **Wires the EXISTING baseline tables `bid.capacity_statement` + `bid.capacity_constraint` + `eng.scenario_capacity_usage` (As-Built §16) — NOT a new store.** |
 | **E-38** supplier capacity | the in-app allocation-vs-capacity **dashboard** | **C** (new app section) | **Backlog** → Phase-4 review |
 | **G-C** RBAC enforcement | call `require_permission` on routes | B (within existing auth) | Backlog/Live-Run (not speculative now) |
 | **G-D / E-24** sign-off + draft→SENT lifecycle | new transition/state/gate + `SIGNED_OFF`/`SENT` events | **C** (new workflow family) | Backlog |
