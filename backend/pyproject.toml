@@ -12,6 +12,9 @@ dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
     "openpyxl>=3.1",        # bid intake module: owned-template xlsx generation + ingest (D20)
+    "passlib[argon2]>=1.7",  # web console auth: argon2 password hashing (constant-time verify)
+    "pyotp>=2.9",            # web console auth: TOTP 2FA (provisioning URI + verify)
+    "pyjwt>=2.8",            # web console auth: signed session JWT in the kr_session cookie
 ]
 
 [project.optional-dependencies]
@@ -70,6 +73,12 @@ ignore_errors = true
 # ignore_errors, which we reserve for generated/migration code.
 [[tool.mypy.overrides]]
 module = ["openpyxl.*", "pyxlsb.*"]
+ignore_missing_imports = true
+
+# passlib ships no type stubs (the auth password-hash helpers use it). Treat it as an untyped
+# import; our wrappers (app/auth/security.py) cast its results back to concrete types.
+[[tool.mypy.overrides]]
+module = ["passlib.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

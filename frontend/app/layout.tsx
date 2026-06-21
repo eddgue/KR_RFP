@@ -1,22 +1,18 @@
+import "./globals.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 export const metadata: Metadata = {
   title: "KR_RFP Console",
-  description: "Enterprise RFP system of record — web console (stub, built last per ADR-0002).",
+  description: "Enterprise RFP sourcing console — pure client of the FastAPI backend.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          margin: 0,
-          fontFamily:
-            "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-        }}
-      >
-        {children}
+      <body className="min-h-screen bg-surface-subtle text-ink">
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import awards, bids, cycles, documents, health, ingest, runs
+from app.api.v1 import auth, awards, bids, cycles, documents, health, ingest, runs
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(cycles.router, prefix="/cycles", tags=["cycles"])
 api_router.include_router(bids.router, prefix="/bids", tags=["bids"])
 api_router.include_router(runs.router, prefix="/runs", tags=["runs"])
