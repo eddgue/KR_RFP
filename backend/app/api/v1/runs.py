@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.pilot_common import resolve_paths, service
+from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.pilot.status import read_status
@@ -341,26 +341,16 @@ def generate_bid_template(
 ) -> GenerateTemplateResponse:
     """Generate the round's owned bid template into inputs/ (downloadable via the file endpoint).
 
-    Wraps `PilotService.generate_bid_template`; the run must already have a cycle (setup ingested
-    first) — if it doesn't, a clean 400 (`gate_required`) is surfaced rather than a 500. Returns the
-    generated filename + the refreshed kanban. 404 if the run doesn't exist.
+    Wraps `PilotService.generate_bid_template`. The round is pre-validated (shared with the bids
+    endpoints) so the two failure modes are DISTINCT clean 400s: `gate_required` when there's no
+    cycle yet (setup not ingested), `validation_error` when the round is out of range — never a 500,
+    and an out-of-range round is never mislabeled "no cycle yet". Returns the generated filename +
+    the refreshed kanban. 404 if the run doesn't exist.
     """
 
     svc = service()
     paths = resolve_paths(slug)
-    try:
-        generated = svc.generate_bid_template(db, paths, round)
-    except ValueError as exc:
-        raise _no_cycle_yet(slug, exc) from exc
+    resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
+    generated = svc.generate_bid_template(db, paths, round)
     board = svc.status(db, paths)
     return GenerateTemplateResponse(filename=generated.name, kanban=board)
-
-
-def _no_cycle_yet(slug: str, exc: Exception) -> AppError:
-    """A clean 400 for the 'no cycle yet' gate (service raises ValueError before setup ingest)."""
-
-    return AppError(
-        code=ErrorCode.GATE_REQUIRED,
-        message=f"Run {slug!r} has no cycle yet — ingest the setup workbook first.",
-        status_code=400,
-    )

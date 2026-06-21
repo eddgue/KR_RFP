@@ -13,8 +13,11 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from sqlalchemy.orm import Session
+
 from app.core.config.settings import get_settings
 from app.core.errors.taxonomy import AppError, ErrorCode
+from app.cycle.loader import load_cycle
 from app.pilot.service import PilotService
 from app.pilot.vault import RunPaths
 
@@ -46,3 +49,34 @@ def resolve_paths(slug: str) -> RunPaths:
             status_code=404,
         )
     return paths
+
+
+def resolve_round_id(db: Session, paths: RunPaths, round_no: int) -> str:
+    """The cycle `round_id` for a 1-based round on the run's cycle, with DISTINCT errors.
+
+    `gate_required` (400) when the run has no cycle yet (setup not ingested); `validation_error`
+    (400) when the round is beyond the cycle's round count. Shared by the bids endpoints AND the
+    bid-template endpoint so an out-of-range round is never mislabeled as "no cycle yet".
+    """
+
+    cycle_id_value = (
+        paths.cycle_id_file.read_text(encoding="utf-8").strip()
+        if paths.cycle_id_file.exists()
+        else ""
+    )
+    if not cycle_id_value:
+        raise AppError(
+            code=ErrorCode.GATE_REQUIRED,
+            message=f"Run {paths.slug!r} has no cycle yet — ingest the setup workbook first.",
+            status_code=400,
+        )
+    cycle = load_cycle(db, cycle_id_value)
+    if round_no > len(cycle.rounds):
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=(
+                f"Round {round_no} is out of range — the cycle has {len(cycle.rounds)} round(s)."
+            ),
+            status_code=400,
+        )
+    return cycle.rounds[round_no - 1].id

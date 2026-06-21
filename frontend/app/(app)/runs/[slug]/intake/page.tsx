@@ -51,12 +51,18 @@ export default function RunIntakePage({
 
   // Soft gating: the backend is the source of truth (it returns `gate_required`
   // when a step is run too early). Locally we unlock a step once the user has
-  // completed the prior one this session, OR when the run folder already shows
-  // it progressed server-side — so a returning user is never stuck behind a
-  // session-only flag. Output files only appear after setup has produced them.
-  const hasOutputFiles = files.some((f) => f.kind === "output");
-  const setupDone = setupDoneThisSession || hasOutputFiles;
-  const templateDone = templateDoneThisSession || hasOutputFiles;
+  // completed the prior one this session, OR from durable server-side state. A
+  // generated bid template lives in inputs/ and implies the cycle exists, so it
+  // — not output files, which only appear later after analysis — is the signal a
+  // returning user has finished setup and this round's template.
+  const hasAnyTemplate = files.some(
+    (f) => f.kind === "input" && f.name.includes("bid_template"),
+  );
+  const hasRoundTemplate = files.some(
+    (f) => f.kind === "input" && f.name.includes(`round${round}_bid_template`),
+  );
+  const setupDone = setupDoneThisSession || hasAnyTemplate;
+  const templateDone = templateDoneThisSession || hasRoundTemplate;
 
   const loadRun = useCallback(async () => {
     setLoading(true);

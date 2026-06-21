@@ -28,7 +28,11 @@ export function TemplateSection({
   const [gate, setGate] = useState<string | null>(null);
   const [lastFilename, setLastFilename] = useState<string | null>(null);
 
-  const outputFiles = files.filter((f) => f.kind === "output");
+  // The generated template lands in inputs/ (not outputs/), so show THIS round's template from the
+  // input files — it persists across a reload, unlike the session-only lastFilename.
+  const templateFiles = files.filter(
+    (f) => f.kind === "input" && f.name.includes(`round${round}_bid_template`),
+  );
 
   async function onGenerate() {
     setError(null);
@@ -87,8 +91,8 @@ export function TemplateSection({
 
         <RunFilesTable
           slug={slug}
-          files={outputFiles}
-          emptyLabel="No generated templates yet — generate one above."
+          files={templateFiles}
+          emptyLabel="No generated template yet — generate one above."
         />
       </div>
     </Panel>

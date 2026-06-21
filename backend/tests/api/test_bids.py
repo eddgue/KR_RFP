@@ -375,6 +375,23 @@ def test_import_before_setup_is_gated(client, seed_user, vault_root) -> None:  #
 
 
 @pytest.mark.integration
+def test_template_out_of_range_round_is_validation_error(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """After setup, a round beyond the cycle's count is validation_error — NOT 'no cycle yet'.
+
+    Guards the Codex P2: generate_bid_template used to map every ValueError to gate_required, so an
+    out-of-range round wrongly told the user to redo setup. The round is now pre-validated.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    _ingest_setup(client, slug)  # a cycle now exists
+
+    resp = client.post(f"{RUNS}/{slug}/rounds/99/template")
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "validation_error"
+
+
+@pytest.mark.integration
 def test_import_bad_mode_is_422(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
     """An unknown mode fails request validation (422) before any work."""
 
