@@ -108,11 +108,57 @@ is a real call.) → captured as **backlog E-40**.
   closes G-I) and the decision-rationale capture (**E-40**), which has a governance sub-decision.
 - **Fix (now-ish):** STLY "synthetic" labelling wherever the UI shows vs-STLY.
 
+## Auditor design feedback — verified (2026-06-21)
+
+An external auditor reviewed the design; per the program rule we **verify before actioning**, and the
+sponsor's steer is *"I love the current design — take them with a grain of salt."* The auditor's
+**central verdict reinforces keeping the design**: *"preserve the calm lifecycle/navigation/card
+language; introduce higher operational density only around exceptions, capacity, audit status,
+freezes, and post-award changes — do not turn this into a dense procurement dashboard."* That is
+**additive, not a redesign.** Verification against the actual `.dc.html`:
+
+**Factual correction**
+- Auditor lists **six** lenses (A–F). The design has **seven (A–G)** — it missed **G "Preferred
+  supplier."** The engine has 7 scenarios; the design is right.
+
+**Already addressed (do NOT rebuild — the auditor reviewed the calm default screens, not the modals)**
+- *"Freeze should be a formal decision moment"* → the **freeze modal already** shows selected
+  scenario, **Total spend**, **Save vs incumbent**, **Cells · suppliers**, the awarded-cell list,
+  the caution acknowledgement, the **decision-rationale** field, and the **"I, Dana Ellison,
+  assert … recorded against my name, baseline becomes immutable"** assertion. Residual (minor):
+  add an explicit **version-being-frozen** label + an **"a FROZEN event will be written"** preview,
+  and a **capacity-status** line.
+- *"Post-award adjustments need the highest control"* → the **adjustment form already** has reason,
+  type, affected cell/supplier, current value, resulting version (v2), and the **CREATED-event**
+  assertion. Residual (minor): a clearer **before→after delta**.
+
+**Verified net-new and worth doing (additive; data already exists)**
+- **Scenario-level capacity feasibility** — replace the icon-only marker with a plain status per
+  scenario ("Feasible against stated capacity" / "Exceeds stated capacity in X cells") + a path to
+  the affected cells; also surface it in the freeze modal. Backed by **E-38** (`capacity_check.py`).
+  → folds into the E-38 surface (E-38b/c) + the Alignment restyle.
+- **Persistent run-status strip** — one quiet strip across the run workspace: **Run state ·
+  Analysis state (sealed vN) · Award state (frozen?) · Audit state (hash-chain current)**. All four
+  states already exist in the system; quiet when normal, stronger when blocked. → folds into E-26.
+- **Intake exception queue** — surface the messy-reality cases explicitly (old template, missing
+  Capacity tab, duplicate file, rejected line, low-confidence mapping, partial import, imported with
+  warnings), shown only when a file needs attention. Quarantine + mapping-confidence data already
+  exist; a few detections (old-template, missing-tab) need backend work. → folds into the Intake
+  restyle + E-37 t3 (incomplete-bid capture).
+
+**Design principle to honour (auditor + sponsor agree):** *calm workflow, escalating gravity* —
+routine work stays soft; exceptions become visually explicit; governed decisions become formal. Do
+**not** densify the routine screens.
+
 ## Next steps
 
-1. Tell the design team the one real correction — **label "vs STLY" as synthetic / modeled** (and
-   optionally soften its visual weight vs the real vs-incumbent savings).
+1. Tell the design team **two corrections**: (a) **label "vs STLY" as synthetic / modeled** (soften
+   its weight vs the real vs-incumbent savings); (b) the lenses are **A–G (seven)**, not A–F.
 2. Adopt this package as the frontend implementation target (E-26) and groom **E-40** + **E-41** at
    phase entry.
 3. Resolve the E-40 governance sub-decision (where decision-rationale lives; whether it is
    hash-chained) before building it — it touches the audit envelope.
+4. Fold the **verified auditor additions** into the relevant work, keeping "calm by default, gravity
+   at exceptions": scenario-level **capacity feasibility** (E-38 surface) · **persistent run-status
+   strip** (E-26) · **intake exception queue** (Intake restyle + E-37 t3) · minor freeze-modal +
+   adjustment-form polish. Do **not** densify routine screens.
