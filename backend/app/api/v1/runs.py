@@ -307,7 +307,9 @@ def create_run(
     """
 
     svc = service()
-    paths = svc.start_run(commodity=body.commodity, label=body.label, rehearsal=body.rehearsal)
+    paths = svc.start_run(
+        commodity=body.commodity, label=body.label, rehearsal=body.rehearsal, session=db
+    )
     board = svc.status(db, paths)
     summary = _summary(paths, board)
     return RunDetail(**summary.model_dump(), kanban=board)

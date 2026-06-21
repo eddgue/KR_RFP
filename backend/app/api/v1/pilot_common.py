@@ -32,10 +32,15 @@ def _vault_root() -> Path:
 
 
 def service() -> PilotService:
-    """A PilotService on the configured vault; `isolate_db=False` shares the request session."""
+    """A PilotService on the configured vault; `isolate_db=False` shares the request session.
+
+    `db_runs=True` (ADR-0018 Slice 2): the console dual-writes run identity to `pilot.run` so the
+    stateless web path can resolve/list runs from the DB. The MCP harness builds its own service
+    (no `db_runs`) and keeps its file vault.
+    """
 
     # isolate_db=False: the console shares the request's governed session, no per-run DB.
-    return PilotService(_vault_root(), isolate_db=False)
+    return PilotService(_vault_root(), isolate_db=False, db_runs=True)
 
 
 def resolve_paths(slug: str) -> RunPaths:

@@ -99,6 +99,7 @@ from app.pilot.run_db import (
     provision_run_database,
     restore_run_database,
 )
+from app.pilot.run_repo import create_run_record, set_run_cycle
 from app.pilot.setup_ingest import ingest_setup_workbook
 from app.pilot.setup_template import build_setup_workbook
 from app.pilot.vault import (
@@ -164,16 +165,28 @@ class _BookingAward:
 class PilotService:
     """Orchestrates the per-RFP run vault + the governed cycle store for the pilot loop."""
 
-    def __init__(self, vault_root: Path, *, isolate_db: bool = True) -> None:
+    def __init__(self, vault_root: Path, *, isolate_db: bool = True, db_runs: bool = False) -> None:
         self.vault_root = Path(vault_root)
         # D30: each run gets its OWN blank database. On by default (the compliant runtime); unit
         # tests that share a rolled-back session pass isolate_db=False.
         self.isolate_db = isolate_db
+        # ADR-0018 Slice 2: when on (the WEB CONSOLE only), the run identity is dual-written to the
+        # governed `pilot.run` table alongside the vault files, so the stateless console can resolve
+        # runs from the DB. OFF for the MCP harness (it keeps its file vault) and for tests that
+        # don't opt in. Dual-write rides the session passed to start_run/ingest_setup.
+        self.db_runs = db_runs
 
     # ------------------------------------------------------------------ #
     # step 0 — start run + setup
     # ------------------------------------------------------------------ #
-    def start_run(self, *, commodity: str, label: str, rehearsal: bool = False) -> RunPaths:
+    def start_run(
+        self,
+        *,
+        commodity: str,
+        label: str,
+        rehearsal: bool = False,
+        session: Session | None = None,
+    ) -> RunPaths:
         """Create the run scaffold + its OWN blank database, write the Setup/Kickoff workbook.
 
         D30: when `isolate_db` is on, the run is born with a freshly created + migrated database of
@@ -183,6 +196,10 @@ class PilotService:
         `rehearsal=True` marks the run SYNTHETIC (every artifact is stamped so, never "LIVE CYCLE
         DATA") — see `is_rehearsal`. If any step after the scaffold/DB is created fails, the partial
         run is torn down (folder removed + DB dropped) so a failed start never leaves an orphan.
+
+        ADR-0018 Slice 2: when `db_runs` is on (the web console) AND a `session` is given, the run
+        identity is also written to `pilot.run` (dual-write) so the stateless console can resolve
+        the run from the DB. The MCP harness passes no session, `db_runs` off — unchanged.
         """
 
         paths = create_run(self.vault_root, commodity=commodity, label=label, rehearsal=rehearsal)
@@ -195,6 +212,15 @@ class PilotService:
             board = status_mod.kanban(None, None, paths)
             status_mod.render_run_md(paths, board)
             git_commit_run(self.vault_root, paths.slug, "setup/kickoff workbook generated")
+            # Dual-write the DB-backed run identity (web console only).
+            if self.db_runs and session is not None:
+                create_run_record(
+                    session,
+                    slug=paths.slug,
+                    commodity=commodity,
+                    label=label,
+                    rehearsal=rehearsal,
+                )
         except Exception:
             # A failed start must not leave an orphan run (vault folder + provisioned database).
             if self.isolate_db:
@@ -234,6 +260,9 @@ class PilotService:
         status_mod.set_header_field(runpaths, "Cycle", cycle_id)
         board = status_mod.kanban(session, cycle_id, runpaths)
         status_mod.render_run_md(runpaths, board)
+        # Dual-write the cycle link to the DB-backed run identity (web console only).
+        if self.db_runs:
+            set_run_cycle(session, runpaths.slug, cycle_id)
         git_commit_run(self.vault_root, runpaths.slug, "setup ingested → cycle created")
         return cycle_id
 

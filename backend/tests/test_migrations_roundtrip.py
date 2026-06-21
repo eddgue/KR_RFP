@@ -34,13 +34,23 @@ def test_migrations_roundtrip(engine, database_url: str) -> None:
             ).scalars()
             return set(rows)
 
+    # The non-spine schemas hand-written migrations add (auth identity, pilot run identity) must
+    # round-trip cleanly too — created at head, gone at base (ADR-0018 Slice 2: pilot.run).
+    non_spine = {"auth", "pilot"}
+
     # Start from a known floor, then exercise the round-trip.
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
-    assert set(SCHEMAS).issubset(schemas_present())
+    present = schemas_present()
+    assert set(SCHEMAS).issubset(present)
+    assert non_spine.issubset(present)
 
     command.downgrade(cfg, "base")
-    assert not (set(SCHEMAS) & schemas_present()), "schemas should be gone after downgrade base"
+    present = schemas_present()
+    assert not (set(SCHEMAS) & present), "schemas should be gone after downgrade base"
+    assert not (non_spine & present), "auth/pilot schemas should be gone after downgrade base"
 
     command.upgrade(cfg, "head")
-    assert set(SCHEMAS).issubset(schemas_present())
+    present = schemas_present()
+    assert set(SCHEMAS).issubset(present)
+    assert non_spine.issubset(present)
