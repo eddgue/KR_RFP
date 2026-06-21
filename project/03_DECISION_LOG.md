@@ -282,4 +282,6 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ## Ratified
 
-*(none yet — `D-gaps` interpretation confirmed by sponsor 2026-06-18: "gsps" = gaps.)*
+Ratified: D1–D39 are recorded above with their status; see each decision's status line. (This section formerly tracked a separate ratification queue, now superseded by per-decision status.)
+
+*(`D-gaps` interpretation confirmed by sponsor 2026-06-18: "gsps" = gaps.)*

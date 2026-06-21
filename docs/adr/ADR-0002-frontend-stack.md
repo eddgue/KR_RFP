@@ -17,6 +17,8 @@ The mandate is an **enterprise-level web app**. The AS-BUILT front end is **Stre
 - Auth/RBAC integrated at the edge (provider per Security squad + DEP-4); tenant context threaded through every request.
 - **Built last** (ADR-001) — design and the design system start early, implementation begins at Phase F once the store and outward-facing half are proven.
 
+> **STATUS / SUPERSESSION (2026-06-21):** The "built last / implementation at Phase F" phasing is **superseded**. The frontend was brought forward and is **operational** (login, dashboard, intake, alignment, awards) per PM-007 (`project/07_AS_BUILT_PROCESS_AUDIT.md`). The stack decision (React/Next.js + TypeScript, pure client of the FastAPI backend) stands; only the late-phasing is superseded.
+
 ## Consequences
 
 - Clean API boundary; the same store renders live and historic cycles identically.

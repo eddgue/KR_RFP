@@ -12,3 +12,5 @@ Run the engagement as **plan-then-scaffold**: the squads produce detailed plans,
 - There is runnable ground from day one, but breadth follows the phase gates (roadmap `PM-005`).
 - Ratified decisions (D1, D6, D7) are binding; D2 is treated as in-spike and the engine internals are stubbed behind an interface until the spike resolves.
 - The scaffold targets the as-built schema baseline (ADR-0001), not the brief's thinner schema.
+
+> **STATUS (2026-06-21):** The "D2 in-spike / engine internals stubbed" language is **superseded**. **D2 is RATIFIED and ADR-0006 accepted**; the clean-room **v3 engine is implemented and operational** behind the frozen `run()` interface (5-factor scoring, 7 lenses, split allocation) — see PM-007 (`project/07_AS_BUILT_PROCESS_AUDIT.md`). The plan-then-scaffold / backend-first model itself stands.

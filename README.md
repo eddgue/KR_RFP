@@ -25,7 +25,7 @@ project/               PHASE 2 — the build, run as an enterprise program (PM-o
   00_PROJECT_CHARTER.md          vision, scope, success criteria S1..S8, governance
   01_TEAM_STRUCTURE_AND_RACI.md  6 delivery squads + leadership; RACI; staffing
   02_WAYS_OF_WORKING.md          cadence, engineering standards, governance invariants, DoR/DoD
-  03_DECISION_LOG.md             D1..D7 (D1/D6/D7 ratified; D2 spike→Option A) + deps DEP-1..4
+  03_DECISION_LOG.md             D1..D39 (D2 ratified — v3 adopted, ADR-0006) + deps DEP-1..7
   04_PROGRAM_BACKLOG.md          gaps G1..G12 → epics E-00..E-27, mapped to phases & squads
   05_MILESTONE_ROADMAP.md        phases 0/A..F, gates, dependency graph, squad load
   06_MOBILIZATION_REPORT.md      integration of all 6 squad plans + the D2 spike outcome
@@ -33,27 +33,28 @@ project/               PHASE 2 — the build, run as an enterprise program (PM-o
 
 docs/adr/              Architecture Decision Records (0001 clean-room, 0002 frontend, 0003 exec model)
 
-— Phase 0/A scaffold (running ground) —
+— Operational platform (current state; see project/07 for the full as-built picture) —
 backend/               FastAPI + SQLAlchemy 2.x + Alembic system of record (the only writer)
   app/core/                config · db (unit-of-work owns commit) · security (tenant+RBAC) · audit (hash-chain) · errors
-  app/domain/<layer>/      8 logical layers as PG schemas; ref wired end-to-end, others stubbed
-  app/engine/              frozen run() interface + deterministic stub (D2-independent)
-  app/api/v1/              health live; cycle/bid/run/award/document/ingest routers present (empty)
+  app/domain/<layer>/      8 logical layers as PG schemas; ref/cyc/bid/eng/awd/perf/norm wired
+  app/engine/              frozen run() interface + operational v3 engine (5-factor, 7 lenses, split; ADR-0006)
+  app/api/v1/              ~28 live routes (health/auth/runs/bids); cycles/awards/documents/ingest stubs remain
   alembic/                 0001 applies db/baseline/schema.sql; tests/ incl. clean-room import guard
 db/baseline/           the as-built schema re-expressed as clean PG (migration baseline) + NAMING_MAP
 infra/                 docker-compose (postgres+backend+adminer) + schema init
-frontend/              Next.js + TypeScript stub (built last, ADR-0002); proves the API seam
+frontend/              Next.js + TypeScript console (ADR-0002); 6 screens operational (login/dashboard/intake/alignment/awards/run-detail)
 reference/             clean-room quarantine — input only; never imported (CI-enforced)
 .github/workflows/     CI: lint · types · clean-room guard · migration roundtrip · tests · frontend
 ```
 
 The project moved **audit → build**. Decisions D1 (clean-room reconciliation), D6 (React/Next.js),
-and D7 (plan-then-scaffold) are ratified; **D2 (engine brain) — the spike recommends adopting v3's
-scoring + split — awaits sponsor ratification.** The **Phase 0/A scaffold is in and verified**: the
-six database-free checks pass (clean-room import guard + engine-stub purity), ruff + mypy are clean,
-the FastAPI app builds, and the baseline schema was proven idempotent on real PostgreSQL. What gates
-the next phase is sponsor input — the golden v3 input/output pair and the pilot data set
-(`project/06_MOBILIZATION_REPORT.md` §5).
+and D7 (plan-then-scaffold) are ratified; **D2 (engine brain) is RATIFIED — v3 adopted (ADR-0006)**.
+The platform is well past scaffold: the **v3 engine is operational** (5-factor scoring, 7 lenses A–G,
+split allocation); the backend exposes **~28 live API routes**; the web app ships **6 screens**
+(login, dashboard, intake, alignment, awards, run-detail); supplier **capacity ingest is persisted**
+to `bid.capacity_statement`/`capacity_constraint`. For the authoritative, code-verified picture of
+current state — what is built, partial, and missing, with the gap register — see
+**`project/07_AS_BUILT_PROCESS_AUDIT.md`** (the single source of truth for current state).
 
 ## The one-line conclusion
 

@@ -1,11 +1,11 @@
 ---
 doc: As-Built Specification (incorporating the Process Audit)
 id: PM-007
-version: 1.19
+version: 1.20
 status: Living — single source of truth; Phase 1 (pre–Live Run #1) per 08_RELEASE_GOVERNANCE
 governance: living model of reality — maintained per the As-Built rule (no sprint complete until updated); D39 + 08_RELEASE_GOVERNANCE
 created: 2026-06-21
-audited_commit: claude/wizardly-pasteur-n4acb8 @ e28f57f (E-38 capacity slices 1+2a+6c merged after PR #20)
+audited_commit: SOURCE code-verified at e28f57f (the sweep basis; E-38 capacity slices 1+2a+6c merged after PR #20); this SPEC document is committed later on the same branch (claude/wizardly-pasteur-n4acb8). Source/doc trees outside this doc (07) + DESIGN_BRIEF match e28f57f's parent.
 depends_on: PM-004 (Program Backlog), PM-008 (Release Governance), 03_DECISION_LOG
 ---
 
@@ -25,8 +25,11 @@ visible**. **Part I** (§1–§13) is the narrative + UX/UI map; **Part II** (§
 catalog; the **Appendix** is the versioned change log (the delta history).
 
 > **Verification basis (v1.19):** rebuilt from three independent, read-only, file:line-traced sweeps
-> (lifecycle/UX · data/schema · runtime/API/gaps) over HEAD `e28f57f`, cross-checked against each
-> other and against `db/baseline/schema.sql` + migrations `0001–0018`. Stale v1.18 line refs corrected.
+> (lifecycle/UX · data/schema · runtime/API/gaps) over `e28f57f` — the **source code-verified sweep basis** —
+> cross-checked against each other and against `db/baseline/schema.sql` + migrations `0001–0018`. Stale
+> v1.18 line refs corrected. **Commit distinction:** SOURCE was code-verified at `e28f57f`; this SPEC
+> document is committed **later on the same branch** (`claude/wizardly-pasteur-n4acb8`); the source/doc
+> trees outside this doc (07) + DESIGN_BRIEF match `e28f57f`'s parent.
 
 > **Reading order:** the [Executive summary](#executive-summary) gives the headline + the gap register; the [flowchart](#1-end-to-end-lifecycle-flowchart) is the one-page picture; everything after is the evidence.
 
@@ -41,7 +44,7 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 | Domain | Status |
 |---|---|
 | Bid intake (strict + flexible, key-validated + quarantine) | ✅ Operational |
-| **Supplier capacity intake (E-38)** | 🟡 Partial — Capacity sheet **ingested + persisted** to `bid.capacity_statement`/`capacity_constraint` (active); the allocation-vs-capacity **check evaluator exists + is tested but is NOT wired** to any workbook/route/engine path (gap **G-G**) |
+| **Supplier capacity intake (E-38)** | ✅ Operational (file) — Capacity sheet ingested + persisted; allocation-vs-capacity now surfaced as the alignment-workbook **Capacity Check** tab (E-38b, G-G closed v1.20). In-app read endpoint/dashboard deferred (E-38c, Category C). |
 | Analysis engine (5-factor scoring) | ✅ Operational |
 | Scenario generation (7 lenses A–G) | ✅ Operational |
 | Award freezing + immutability | ✅ Operational |
@@ -51,7 +54,7 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 | Web console (UI) | 🟡 Partial — dashboard, run detail, intake, **alignment/scenario/freeze**, **awards (view + record adjustment)** all wired; **the alignment screen surfaces only a slice of the Excel alignment workbench** (gap **G-I**); sign-off, close-out, documents, comms-review, capacity surfaces still missing |
 | Reproducible / sealed runs + per-run isolation | ✅ Operational |
 | Flat-13 period model | ✅ Operational (G-A closed v1.6) |
-| **Audit provenance (decision trail)** | ✅ Operational — ingest/seal/freeze/supersede/adjustment chained in-txn; **G-B closed v1.4**. Sign-off/send events land with G-D/E-24. |
+| **Audit provenance (decision trail)** | ✅ Operational — **decision** audit chain operational (ingest/seal/freeze/supersede/adjustment chained in-txn; **G-B closed v1.4**); the **FULL write-point chain is NOT** — setup ingest and capacity ingest emit **no event**. Sign-off/send events land with G-D/E-24. |
 | RBAC enforcement | 🟠 Defined, not enforced (G-C) — **zero routes call `require_permission`** |
 | Sign-off workflow | ⬜ Not implemented (G-D) |
 | Contract generation (PBA) | ⬜ Not implemented (G-F) |
@@ -61,17 +64,18 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 
 ### Gap register (description · severity · impact · recommended action · status)
 
-| # | Gap | Severity | Impact | Recommended action | Status |
-|---|---|---|---|---|---|
-| **G-A** | Flat-13 period fan-out wired into intake | 🟠 Material | bids stored flat at 13 periods; engine output byte-identical | D35/D38 | ✅ **Closed v1.6** (`service.py:1402,1412-1444`) |
-| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | ✅ **Closed v1.4** (emits `service.py:452/1313/1381`, `awd/service.py:156/245`; `tests/audit/test_decision_events.py`) |
-| **G-C** | RBAC defined but **not enforced** — no route calls `require_permission` (`rbac.py:131`, referenced only at `api/deps.py:10`); dev principal holds all roles (`main.py:34-47`) | 🟠 Material | author≠approver, freeze/import/adjust not gated | E-03 — add `Depends(require_permission(...))`; real principals | 🔴 Open |
-| **G-D** | Sign-off decorative — unused permission + workbook tab; no transition/state/gate; `SIGNED_OFF` never emitted | 🟠 Material | no portfolio sign-off step | E-22 | 🔴 Open |
-| **G-E** | HTTP API mostly wired; **`documents` router empty** (0 routes); draft→SENT absent | 🟠 Material | console runs/compares/freezes/views/adjusts/drafts; doc-gen/send surface missing | E-25 remainder + E-24 | 🟡 Partial |
-| **G-F** | PBA/contract absent; feeds (`ingest` router empty); supplier importer; deck/letter/send path absent | 🟠 Material | post-award final step + supplier-master intake missing | E-33, E-34, E-08/09, E-24 | 🔴 Open |
-| **G-G** *(new v1.19)* | **E-38 capacity check built but not surfaced** — `evaluate_capacity`/`load_active_capacity` (`output/capacity_check.py`) have **zero call sites** (no workbook tab, no endpoint, no engine hook) | 🟠 Material | the "never recommend beyond stated capacity" safety check is dark — an over-capacity allocation reaches the buyer un-flagged | E-38 slice 2b — render a capacity control tab (and/or read endpoint) calling `evaluate_capacity` vs the active `eng.analysis_scenario_award` | 🔴 Open |
-| **G-H** *(new v1.19)* | **Comms no-send / no draft-review UI** — drafts render on GET only; 4 of 7 touchpoints (invite/template/incomplete-bid/PBA) still data-gated | 🟠 Material | comms are read-only; no provenance for outward sends | E-37 remainder + E-24 (couples to G-D) | 🔴 Open |
-| **G-I** *(new v1.19)* | **Web alignment screen ≠ alignment workbook** — the screen surfaces the 7-lens compare + cell detail + freeze, but the workbook's analytical workbench (Supplier Comparison centerpiece, Custom Scenario builder, drill-downs, Lowest-Cost Check, Coverage, Detailed Scoring, Landed & Hidden Costs, Incumbent Retention, Share & Relationships, Negotiation Dynamics, Data-pivot) is **Excel-only** | 🟠 Material | the deep alignment/comparison experience is relegated to the output file; the screen is a thin slice | design review → migrate the high-value workbench surfaces onto the screen (Category C — Phase-4) | 🔴 Open |
+| # | Gap | Severity | Impact | Recommended action | Owner | Status |
+|---|---|---|---|---|---|---|
+| **G-A** | Flat-13 period fan-out wired into intake | 🟠 Material | bids stored flat at 13 periods; engine output byte-identical | D35/D38 | — | ✅ **Closed v1.6** (`service.py:1402,1412-1444`) |
+| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | — | ✅ **Closed v1.4** (emits `service.py:452/1313/1381`, `awd/service.py:156/245`; `tests/audit/test_decision_events.py`) |
+| **G-C** | RBAC defined but **not enforced** — no route calls `require_permission` (`rbac.py:131`, referenced only at `api/deps.py:10`); dev principal holds all roles (`main.py:34-47`) | 🟠 Material | author≠approver, freeze/import/adjust not gated | E-03 — add `Depends(require_permission(...))`; real principals | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
+| **G-D** | Sign-off decorative — unused permission + workbook tab; no transition/state/gate; `SIGNED_OFF` never emitted | 🟠 Material | no portfolio sign-off step | E-22 | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
+| **G-E** | HTTP API mostly wired; **`documents` router empty** (0 routes); draft→SENT absent | 🟠 Material | console runs/compares/freezes/views/adjusts/drafts; doc-gen/send surface missing | E-25 remainder + E-24 | Ed (sponsor — accepted, Phase 1) | 🟡 Partial |
+| **G-F** | PBA/contract absent; feeds (`ingest` router empty); supplier importer; deck/letter/send path absent | 🟠 Material | post-award final step + supplier-master intake missing | E-33, E-34, E-08/09, E-24 | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
+| **G-G** *(new v1.19)* | **E-38 capacity check now surfaced** — `evaluate_capacity`/`load_active_capacity` (`output/capacity_check.py`) are wired into the alignment workbook via `scenario_workbook._gather_capacity_check` + `_write_capacity_check_tab` (c362f6c), rendering a **Capacity Check** tab (allocation vs stated period/weekly ceiling; OVER CAPACITY flagged) | 🟠 Material | the "never recommend beyond stated capacity" safety check is surfaced in the alignment workbook's Capacity Check tab; residual is the in-app read endpoint/screen (E-38c) | E-38b shipped (workbook surface); residual in-app surface = E-38c (deferred, Category C) | Build (Phase 1 / Live-Run) | ✅ **Closed v1.20 (workbook)** |
+| **G-H** *(new v1.19)* | **Comms no-send / no draft-review UI** — drafts render on GET only; 4 of 7 touchpoints (invite/template/incomplete-bid/PBA) still data-gated | 🟠 Material | comms are read-only; no provenance for outward sends | E-37 remainder + E-24 (couples to G-D) | Build (Phase 1 / Live-Run) | 🔴 Open |
+| **G-I** *(new v1.19)* | **Web alignment screen ≠ alignment workbook** — the screen surfaces the 7-lens compare + cell detail + freeze, but the workbook's analytical workbench (Supplier Comparison centerpiece, Custom Scenario builder, drill-downs, Lowest-Cost Check, Coverage, Detailed Scoring, Landed & Hidden Costs, Incumbent Retention, Share & Relationships, Negotiation Dynamics, Data-pivot) is **Excel-only** | 🟠 Material | the deep alignment/comparison experience is relegated to the output file; the screen is a thin slice | design review → migrate the high-value workbench surfaces onto the screen (Category C — Phase-4) | Build (Phase 1 / Live-Run) | 🔴 Open |
+| **G-J** *(new v1.20 — tenancy)* | **Tenancy under-documented** — `auth.app_user` has no tenant/role field, and the run/vault listing is **not tenant-scoped** | 🟠 Material | acceptable for the single-operator Phase 1, but a real gap for multi-tenant (no per-user tenant/role; cross-tenant run visibility) | defer to multi-tenant work (Category C); add tenant/role to `auth.app_user` + tenant-scope the run/vault listing | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
 
 ---
 
@@ -107,7 +111,7 @@ flowchart TD
     I --> FRZ{"Freeze seal (immutability guard)"}:::enforced
     FRZ --> J{"Sign-off gate"}:::missing
     J --> K["Outputs: booking guide + per-supplier guides<br/>(service.py:578-600)"]:::built
-    K --> CAPCHK{"Capacity check<br/>evaluator BUILT, NOT WIRED (G-G)<br/>(capacity_check.py:87/154)"}:::missing
+    K --> CAPCHK["Capacity check → alignment workbook 'Capacity Check' tab (E-38b)<br/>(capacity_check.py:87/154)"]:::built
     CAPCHK --> COMMS["E-37 comms drafts (draft-only HTTP reads)<br/>award · feedback · rejection<br/>(runs.py:754/788/823)"]:::built
     COMMS --> SENT{"Draft → SENT"}:::missing
     SENT --> L["Post-award adjustments<br/>append-only layers v1..vN<br/>(service.py:612 → awd/service.py:175)"]:::built
@@ -157,7 +161,7 @@ flowchart LR
     ENG --> AWD["awd.award + award_line (FROZEN)"]
     AWD --> ADJ["awd.award_adjustment(_line)<br/>(append-only layers)"]
     AWD --> OUT["alignment / booking guide /<br/>supplier guides / post-award workbooks"]
-    CAP -. "reader load_active_capacity tested,<br/>NOT wired to any output (G-G)" .-> CK["output/capacity_check.py"]:::dormant
+    CAP --> CK["output/capacity_check.py → alignment workbook 'Capacity Check' tab (E-38b)"]
     ART --> AUD["audit.event_log (hash-chained)"]
     ENG --> AUD
     AWD --> AUD
@@ -222,7 +226,7 @@ Two structural facts shape every blast radius: **(a)** every governed write is `
 | **Double-subtract** price guard | ✅ enforced (app + DB CHECK) | bid_ingester.py:288-302; DB `ck_bid_line_no_double_discount` (migration 0007:57-66) |
 | Premium-ceiling / coverage-floor eligibility | ✅ enforced (engine-internal) | `GATE_PREMIUM` scoring.py:320, `GATE_COVERAGE` scoring.py:325; per-cycle overrides service.py:534-537 |
 | Propose→confirm before flexible write | ✅ enforced | `ingest_any` returns proposal unless confirm (service.py:385) |
-| **Capacity check** (allocation vs stated ceiling) | ⚠️ **built, NOT wired (G-G)** — fails loud on bad data but is never called | `evaluate_capacity` (capacity_check.py:87) + `load_active_capacity` (:154) exist; **zero call sites** |
+| **Capacity check** (allocation vs stated ceiling) | ✅ **surfaced (workbook)** — over-capacity flagged in the alignment workbook's Capacity Check tab (E-38b); advisory, never blocks | `scenario_workbook._gather_capacity_check` calls `evaluate_capacity` (capacity_check.py:87) + `load_active_capacity` (:154); rendered by `_write_capacity_check_tab` |
 | Concentration / max-suppliers-per-DC | ⚠️ **advisory flag only** — never blocks | `cap_breach_flag` (v3.py:282); category-concentration (v3.py:113) |
 | Tenant scoping | ✅ at the edge (no per-query RLS) | principal-derived; commodity create stamps `client_id` (ref/service.py:46) |
 | **RBAC separation of duties** | ❌ defined, **not enforced (G-C)** | matrix `ROLE_PERMISSIONS`+`require_permission` (rbac.py:64/131); **0 routes apply it** |
@@ -261,13 +265,13 @@ Mechanics (`core/audit/writer.py`): `prev_event_hash → event_hash = sha256(can
 | `SENT` | — | ⬜ unwired | feature absent (E-24) |
 | `GATE_APPROVED` | — | ⬜ unwired | G12 in-gate absent (E-17) |
 
-Chain covers **ingest / seal / freeze / supersede / adjustment** ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`). **Note:** setup ingest (cycle creation) emits **no** event; capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable rows + git + `run_data.json`.
+**Decision audit chain operational** (ingest/seal/freeze/supersede/adjustment) ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`); **the FULL write-point chain is NOT** — setup ingest (cycle creation) emits **no** event, and capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable rows + git + `run_data.json`.
 
 ## 9. Built · partial · missing (gap analysis → backlog)
 
-**Built (working):** vault + per-run isolated DB + snapshot/rehydrate · setup ingest → cycle/scope · bid template · strict+flexible intake w/ quarantine · flat-13 storage (G-A) · V3 engine (5 factors, gates, 7 lenses, split, sealed runs) · award freeze + append-only layers · alignment/booking/supplier/post-award workbooks · immutability guards · decision audit events (G-B) · MCP 17-tool surface · web: auth+2FA, dashboard, run detail, bid intake, **alignment screen, awards screen (read + adjustment form)**, comms draft reads · **E-38 capacity ingest+persist** (`bid.capacity_statement`/`capacity_constraint`) + pure evaluator (`output/capacity_check.py`).
+**Built (working):** vault + per-run isolated DB + snapshot/rehydrate · setup ingest → cycle/scope · bid template · strict+flexible intake w/ quarantine · flat-13 storage (G-A) · V3 engine (5 factors, gates, 7 lenses, split, sealed runs) · award freeze + append-only layers · alignment/booking/supplier/post-award workbooks · immutability guards · decision audit events (G-B) · MCP 17-tool surface · web: auth+2FA, dashboard, run detail, bid intake, **alignment screen, awards screen (read + adjustment form)**, comms draft reads · **E-38 capacity ingest+persist** (`bid.capacity_statement`/`capacity_constraint`) + pure evaluator (`output/capacity_check.py`) · capacity check surfaced in the alignment workbook (Capacity Check tab, E-38b).
 
-**Partial / inert:** RBAC matrix defined, no route enforces (G-C) · `documents` router empty (G-E) · comms draft-only/no-send (G-H) · **E-38 evaluator built but never called (G-G)** · **web alignment screen ≠ alignment workbook (G-I)** · `is_awardable` set unconditionally `True` at ingest (service.py:1441) — no awardability logic · DB-level immutability triggers/RLS absent.
+**Partial / inert:** RBAC matrix defined, no route enforces (G-C) · `documents` router empty (G-E) · comms draft-only/no-send (G-H) · **web alignment screen ≠ alignment workbook (G-I)** · `is_awardable` set unconditionally `True` at ingest (service.py:1441) — no awardability logic · DB-level immutability triggers/RLS absent.
 
 **Missing:** PBA/contract (E-33) · supplier importer / feeds (E-34, E-08/09 — `ingest` router empty) · send/draft→SENT (E-24) · sign-off transition (E-22) · in-gate G12 / round-close (E-17/E-16).
 
@@ -279,7 +283,7 @@ Chain covers **ingest / seal / freeze / supersede / adjustment** ✅ (G-B closed
 
 ## 11. Build authorization → governed by `08_RELEASE_GOVERNANCE.md`
 
-What may be built and when is governed by `08_RELEASE_GOVERNANCE.md` (default-to-backlog; A/B/C classification; the 7 phases; current phase = **Phase 1, pre–Live Run #1**). This document is current-state only; it does not authorize work. Approved Phase-1 build: the **E-38 capacity accuracy-core** (slice 2b — surface the check — is the open remainder, G-G).
+What may be built and when is governed by `08_RELEASE_GOVERNANCE.md` (default-to-backlog; A/B/C classification; the 7 phases; current phase = **Phase 1, pre–Live Run #1**). This document is current-state only; it does not authorize work. Approved Phase-1 build: the **E-38 capacity accuracy-core** (slice 2b — the workbook Capacity Check tab — shipped v1.20; the in-app surface is E-38c, deferred).
 
 ## 12. Governance — triggers, questions, and the release gate
 
@@ -312,7 +316,7 @@ The objective: any future developer/operator/auditor/stakeholder can answer *how
 
 Implementation complete · review complete · this audit updated · gap register updated · critical findings reviewed. The gate yields: ✅ **PASS** (audit reflects implementation; no critical control missing) · 🟡 **CONDITIONAL** (known risks documented + explicitly accepted in the gap register with an owner) · 🔴 **FAIL** (audit doesn't reflect implementation, or a critical control is missing — do not ship).
 
-**Current release-gate read (v1.19):** 🟡 **CONDITIONAL** — the audit now reflects implementation, and the open gaps (G-C/D/E/F/G/H/I) are documented + owner-assigned. Not ✅ because G-C (RBAC) leaves freeze/adjust/import un-gated and G-G leaves the capacity safety check dark.
+**Current release-gate read (v1.20):** 🟡 **CONDITIONAL** — the audit now reflects implementation, and the open gaps (G-C/D/E/F/H/I and G-J) are documented + owner-assigned. Not ✅ because G-C (RBAC) leaves freeze/adjust/import un-gated.
 
 ### 12.4 Pre-merge audit-impact review
 
@@ -452,7 +456,7 @@ Clean-room v3 (`app/engine/`); **purity boundary**: stdlib + `Decimal` only. Str
 - **Eligibility gates** (`scoring.py`): hard — `GATE_NO_PRICE` (:364), `GATE_PREMIUM` (:320, default 12%), `GATE_COVERAGE` (:325, default 80%, As-Needed exempt); advisory — `GATE_LOW_OUTLIER`/`GATE_HIGH_OUTLIER` (|z|>2), `GATE_LOW_BIDDER` (<3 bids).
 - **Seven scenario lenses A–G** (`allocation.py`): A lowest-cost · **B risk-adjusted (the recommendation)** · C incumbent-defense · D max-N-per-DC split (`max_sup_dc`, `is_fallback`, `cap_breach_flag`) · E exclusion · F custom · G preferred. Plus §4.5 category-concentration flag.
 - **Canonical formulas** (`formulas.py`, E-39 — 13 fns): `construct_price_from_parts`/`construct_price`, `premium_vs_low`, `z_score`, `coverage_ratio`, `delta_vs_historical`, `awarded_cases`, `line_spend`, `savings_dollars`, `savings_fraction`, `premium_dollars`, `weekly_impact`, `price_delta`. Referenced by scorer, bid ingester, scenario workbook + read layer, booking guide, award read/service + post-award doc, comms drafts.
-- **Capacity check** (`output/capacity_check.py`, E-38): `evaluate_capacity` (allocation vs stated ceiling — period + weekly), `load_active_capacity` (reads active CELL constraints, MIN per dimension). **Built + tested, fails loud on non-positive weeks, but NOT wired to any caller (G-G).**
+- **Capacity check** (`output/capacity_check.py`, E-38): `evaluate_capacity` (allocation vs stated ceiling — period + weekly), `load_active_capacity` (reads active CELL constraints, MIN per dimension). **Built + tested; now wired to the alignment-workbook Capacity Check tab via `scenario_workbook._gather_capacity_check` (E-38b).**
 
 ## 18. Template & generated-output inventory
 
@@ -461,7 +465,7 @@ All generators read **governed sealed records**, render by NAME (D23), determini
 | Artifact | Type | Trigger | Notes |
 |---|---|---|---|
 | Bid template | xlsx (3 sheets: Instructions / Bids / **Capacity**) | template gen | Capacity sheet now **ingested** (E-38) — key-validated, embeds key IDs |
-| **Scenario alignment workbook** | xlsx (~18 tabs) | analysis seal | the analytical **workbench**: Summary · Scenario Comparison · **Supplier Comparison (centerpiece)** · Lowest-Cost Check · Coverage · Detailed Scoring · TF Comparison · Round Evolution · Data Quality · **Custom Scenario** · Custom Dashboard · Data (pivot) · Landed & Hidden Costs · Incumbent Retention · Share & Relationships · Negotiation Dynamics · Controls · Award Summary. **The web alignment screen surfaces only Scenario Comparison + a lens detail (G-I).** |
+| **Scenario alignment workbook** | xlsx (18-tab: 17 visible + 1 hidden `_Prices` helper) | analysis seal | the analytical **workbench**: Summary · Scenario Comparison · **Supplier Comparison (centerpiece)** · Lowest-Cost Check · Coverage · **Capacity Check** · Detailed Scoring · TF Comparison · Round Evolution · Data Quality · **Custom Scenario** · Custom Dashboard · Data (pivot) · Landed & Hidden Costs · Incumbent Retention · Share & Relationships · Negotiation Dynamics · Controls · Award Summary. **The web alignment screen surfaces only Scenario Comparison + a lens detail (G-I).** |
 | Booking guide (internal) | xlsx | award freeze | buyers/pricing master, one row per awarded cell |
 | Per-supplier award guides (combined) | xlsx (1 sheet/supplier) | award freeze | internal only — **not** safe to send |
 | Per-supplier award guide **files** | xlsx (1 file/supplier) | award freeze | the **sendable** artifact; award-id-stamped filename |
@@ -470,7 +474,7 @@ All generators read **governed sealed records**, render by NAME (D23), determini
 
 ## 19. Workflow maps
 
-The end-to-end lifecycle, approval points, and data-flow are mapped in **§1 (flowchart)**, **§2 (stage-by-stage, system + human)**, **§3 (data flow & write-points)**. As-built steps: start run → setup ingest → bid template → bid intake (strict/flexible, **+ capacity**, supersede flips `is_scoreable`/`SUPERSEDED`) → engine seal (`SEALED`) → human scenario select + freeze (`FROZEN`) → post-award adjustment (`CREATED`) → close-out → purge. **Human decision points** (§6): flexible-mapping confirm (enforced), scenario selection + award freeze (governed, audit-evented), post-award adjustment (governed). **Modeled-but-not-wired:** in-gate G12, sign-off + `SIGNED_OFF`, draft→`SENT`, timeline events, the capacity check surface (G-G).
+The end-to-end lifecycle, approval points, and data-flow are mapped in **§1 (flowchart)**, **§2 (stage-by-stage, system + human)**, **§3 (data flow & write-points)**. As-built steps: start run → setup ingest → bid template → bid intake (strict/flexible, **+ capacity**, supersede flips `is_scoreable`/`SUPERSEDED`) → engine seal (`SEALED`) → human scenario select + freeze (`FROZEN`) → post-award adjustment (`CREATED`) → close-out → purge. **Human decision points** (§6): flexible-mapping confirm (enforced), scenario selection + award freeze (governed, audit-evented), post-award adjustment (governed). **Modeled-but-not-wired:** in-gate G12, sign-off + `SIGNED_OFF`, draft→`SENT`, timeline events.
 
 ## 20. Registries
 
@@ -478,8 +482,8 @@ The end-to-end lifecycle, approval points, and data-flow are mapped in **§1 (fl
 
 | Status | Items |
 |---|---|
-| **Approved for Phase 1 build** | **E-38 capacity accuracy-core** (B): ingest + persist ✅ done; **slice 2b — surface the check (workbook control tab / read endpoint) — open (G-G)**. Wires the EXISTING `bid.capacity_statement`/`capacity_constraint`; usage computed vs the active `eng.analysis_scenario_award`. |
-| **Deferred (Category C — Phase-4 review)** | E-38 in-app dashboard · **alignment-workbench → screen migration (G-I)** · G-D/E-24 sign-off + draft→SENT · E-33 PBA/contract · E-34 supplier importer + E-08/09 feeds · E-35 discovery view · E-36 progressive timeframe / continuation RFP · E-28 contracted-vs-effective analytics |
+| **Approved for Phase 1 build** | **E-38 capacity accuracy-core** (B): ingest + persist ✅ done; **slice 2b — surface the check (workbook control tab) — ✅ shipped v1.20 (E-38b, G-G closed; Capacity Check tab)**. Wires the EXISTING `bid.capacity_statement`/`capacity_constraint`; usage computed vs the active `eng.analysis_scenario_award`. Residual in-app read endpoint/screen = E-38c (deferred). |
+| **Deferred (Category C — Phase-4 review)** | E-38 in-app dashboard · **alignment-workbench → screen migration (G-I)** · G-D/E-24 sign-off + draft→SENT · E-33 PBA/contract · E-34 supplier importer + E-08/09 feeds · E-35 discovery view · E-36 progressive timeframe / continuation RFP · E-28 contracted-vs-effective analytics · **tenancy: `auth.app_user` tenant/role + tenant-scoped run/vault listing (G-J)** |
 | **Deferred (Category B — Live-Run cycles)** | G-C RBAC route enforcement · comms review/send UI (G-H) · misc reporting/validation/UX |
 | **Rejected** | *(none)* |
 
@@ -496,20 +500,22 @@ Full item descriptions: `04_PROGRAM_BACKLOG.md`.
 | Sign-off decorative | no portfolio sign-off | Open — G-D |
 | Incomplete-bid lines classified, not persisted | incomplete-bid comms gated | Open — feeds E-37 |
 | `is_awardable` unconditionally `True` at ingest (service.py:1441) | no awardability logic | Open — latent |
-| **E-38 evaluator un-called (G-G)** | capacity safety check dark | Open — slice 2b |
+| **E-38 evaluator wired (G-G)** | capacity safety check surfaced in the alignment workbook (Capacity Check tab) | ✅ Closed v1.20 (workbook, E-38b); in-app surface = E-38c (deferred) |
 | **Web alignment screen ≠ workbook (G-I)** | deep alignment relegated to Excel | Open — design/Phase-4 |
+| **Tenancy under-documented (G-J)** | `auth.app_user` no tenant/role; run/vault listing not tenant-scoped | Open — Category C (multi-tenant) |
 | Setup ingest + capacity ingest emit no audit event | cycle/capacity creation not chained (only the 5 decision events are) | Open — note |
 | `eng.scenario_award` ALTERed (0005) but DORMANT | schema/code drift | Open — note |
 
 ### 20.3 Audit-findings register
 
-| Finding | Severity | Resolution |
-|---|---|---|
-| **G-B** audit chain didn't cover decisions | Critical | ✅ Closed v1.4 |
-| **G-A** flat-13 period storage not wired | Material | ✅ Closed v1.6 |
-| E-38 capacity-check review (read-only agent, v1.19) — weekly check failed open on non-positive weeks | B | ✅ Fixed (e28f57f — fail loud) |
-| Codex PR #18 (9 findings / 4 rounds), PR #19 formula registry | P1–P2 | ✅ All resolved |
-| **Open critical findings** | — | **None** |
+| Finding | Severity | Owner | Resolution |
+|---|---|---|---|
+| **G-B** audit chain didn't cover decisions | Critical | — | ✅ Closed v1.4 |
+| **G-A** flat-13 period storage not wired | Material | — | ✅ Closed v1.6 |
+| E-38 capacity-check review (read-only agent, v1.19) — weekly check failed open on non-positive weeks | B | — | ✅ Fixed (e28f57f — fail loud) |
+| Codex PR #18 (9 findings / 4 rounds), PR #19 formula registry | P1–P2 | — | ✅ All resolved |
+| **Open audit findings (open gaps — see exec gap register for Owner):** G-C/D/E/F → Ed (sponsor — accepted, Phase 1); G-H/I → Build (Phase 1 / Live-Run) | 🟠 Material | per row | 🔴 Open — tracked in the exec gap register |
+| **Open critical findings** | — | — | **None** |
 
 ## 21. Future roadmap (planned — NOT current state)
 
@@ -519,7 +525,8 @@ The target is production-ready execution of live sourcing events, validated over
 
 ## Appendix — version history (track the delta)
 
-- **v1.19 (2026-06-21)** — *Full code-verified refresh (three read-only sweeps over HEAD `e28f57f`; "everything in one place, stacked to show where it breaks").* **Added (E-38 capacity, this session):** capacity ingest+persist now ACTIVE — `bid.capacity_statement`/`bid.capacity_constraint` written by `_persist_bid_lines` (service.py:1459/1477) on strict+flexible intake, key-validated (bid_ingester.py:645), with per-supplier supersede (:1338); a pure, tested evaluator `output/capacity_check.py` (fail-loud on non-positive weeks). **Closed:** none new (G-A/G-B remain closed). **Introduced (new gaps):** **G-G** (capacity evaluator built but not surfaced — zero call sites), **G-H** (comms no-send / no review UI), **G-I** (web alignment screen ≠ the ~18-tab alignment workbook). **Corrected vs v1.18:** (1) schema is **86 tables** (64 baseline + 22 migration) + 1 view, not ~64 — §16 rebuilt as a per-table active/dormant inventory with writer:reader file:line; (2) capacity tables moved **dormant → active**; (3) `eng.scenario_capacity_usage` confirmed dormant (keyed to the dormant solver spine; not used by E-38); (4) stale `service.py` line refs throughout §2/§3 corrected (E-38 inserts shifted the file); (5) mount-point fix — alignment/award/comms routes live under the `runs` router, not the empty `awards` stub; (6) draft→SENT reclassified amber→**missing**; (7) §14 now lists all 28 live endpoints with auth/validation; (8) noted setup/capacity ingest emit no audit event, and the `eng.scenario_award` ALTER-but-dormant drift. **Release-gate read:** 🟡 CONDITIONAL. *Method note:* assembled from three tightly-scoped parallel agents + assertion; this is the model going forward (08 review cadence).
+- **v1.20 (2026-06-21)** — Auditor-driven reconciliation (manual full-suite audit at 78bed20): added an Owner column to the gap register (CONDITIONAL now satisfies its owner rule); narrowed the audit-chain language to decision-chain-vs-full-write-point; corrected '~18'→'17-tab'; clarified the source-audited (e28f57f) vs doc-committed commit distinction; added G-J (tenancy under-documented). Paired with 04/03/README/ADR-0002/ADR-0003 reconciliation and the capacity-NOTE honesty fix (service.py). No source/behavior change in this entry. Also reflects E-38b shipped (commit c362f6c): the capacity check is now surfaced as the alignment-workbook **Capacity Check** tab — **G-G closed (workbook surface)**; the workbook is now 18-tab; the residual in-app capacity surface is E-38c (deferred).
+- **v1.19 (2026-06-21)** — *Full code-verified refresh (three read-only sweeps over HEAD `e28f57f`; "everything in one place, stacked to show where it breaks").* **Added (E-38 capacity, this session):** capacity ingest+persist now ACTIVE — `bid.capacity_statement`/`bid.capacity_constraint` written by `_persist_bid_lines` (service.py:1459/1477) on strict+flexible intake, key-validated (bid_ingester.py:645), with per-supplier supersede (:1338); a pure, tested evaluator `output/capacity_check.py` (fail-loud on non-positive weeks). **Closed:** none new (G-A/G-B remain closed). **Introduced (new gaps):** **G-G** (capacity evaluator built but not surfaced — zero call sites), **G-H** (comms no-send / no review UI), **G-I** (web alignment screen ≠ the 17-tab alignment workbook). **Corrected vs v1.18:** (1) schema is **86 tables** (64 baseline + 22 migration) + 1 view, not ~64 — §16 rebuilt as a per-table active/dormant inventory with writer:reader file:line; (2) capacity tables moved **dormant → active**; (3) `eng.scenario_capacity_usage` confirmed dormant (keyed to the dormant solver spine; not used by E-38); (4) stale `service.py` line refs throughout §2/§3 corrected (E-38 inserts shifted the file); (5) mount-point fix — alignment/award/comms routes live under the `runs` router, not the empty `awards` stub; (6) draft→SENT reclassified amber→**missing**; (7) §14 now lists all 28 live endpoints with auth/validation; (8) noted setup/capacity ingest emit no audit event, and the `eng.scenario_award` ALTER-but-dormant drift. **Release-gate read:** 🟡 CONDITIONAL. *Method note:* assembled from three tightly-scoped parallel agents + assertion; this is the model going forward (08 review cadence).
 - **v1.18 (2026-06-21)** — *Corrections (PR #20 self-audit, 9 findings re-verified):* §16 count 63→64; `cycle_timeline_event` reclassified dormant; §11 → governance pointer; §13 web-console row refreshed; §8 G-C→G12 mislabel fixed; cadence de-Codex'd; `04` E-38 split + status Draft→Living; Decision Doctrine codified in `08`.
 - **v1.17 (2026-06-21)** — incumbent-baseline tables (perf.historical_*/norm.normalization_run) moved dormant→active; `eng.scenario_capacity_usage` mis-keying flagged for E-38; review cadence added to `08`.
 - **v1.16 (2026-06-21)** — §16 catalog completed from `db/baseline/schema.sql`; front-matter drift fixed; §4 G-B contradiction fixed (caught the capacity duplicate-store risk before building).
