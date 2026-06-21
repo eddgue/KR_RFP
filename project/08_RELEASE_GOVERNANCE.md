@@ -4,6 +4,18 @@
 > with the **As-Built Specification** (`07_AS_BUILT_PROCESS_AUDIT.md` — the single source of truth for
 > *what exists*) and the **Program Backlog** (`04_PROGRAM_BACKLOG.md` — the item register).
 
+## Decision Doctrine (how every decision is made)
+
+Ratified 2026-06-21. These seven principles govern *how* we decide; the rules below govern *what* gets built and *when*.
+
+1. **Outcome over output — full functionality, least margin for error.** Every call optimizes for a system that runs live RFPs accurately, repeatably, and auditably — not feature count. This is the tiebreaker when options compete.
+2. **Default to backlog, not build; classify before acting.** A (critical fix → now) / B (enhancement within existing architecture → live-run cycles) / C (new module/workflow/domain → deferred). When unsure → backlog. The goal is live-run readiness, not perpetual development.
+3. **Truth from reality, never from documents or memory.** Verify claims against the code/schema. The As-Built Spec is the single source of truth and must reconcile to what actually runs; no sprint is done until it is updated; no tribal knowledge.
+4. **AI-generated, not AI-managed — the human asserts.** The engine and the agent recommend and prepare; the load-bearing decisions (award, sign-off, send, **merge**) are human-asserted and audit-evented. The agent never auto-asserts a governed outcome.
+5. **Reversible and in-scope → proceed; consequential or ambiguous → surface.** Act autonomously on routine, reversible work and **save as you go** (commit/push so nothing is lost). Stop at genuine forks — destructive, architecturally significant, scope-changing, or where intent is load-bearing — via explicit control points, not constant check-ins.
+6. **Gate before you ship.** Deterministic review at control points, fix *every* confirmed finding, and never merge over an open issue or a knowingly-stale record. Verify, don't assume; if in doubt, surface quickly.
+7. **Small, verified, behavior-preserving.** Prefer small reviewable changes; prove correctness (e.g., byte-identical tests for refactors); record the delta. Minimize the surface for error.
+
 ## Core principle
 
 **Default to backlog, not build.** The objective is a production-ready engine that runs live sourcing
@@ -76,8 +88,8 @@ marked **C** is recorded and deferred until the post–Live-Run consolidation re
 
 **Two review tiers:**
 
-1. **Push-basic review (automatic).** The Codex-in-GitHub bot runs on every push / PR and posts inline findings. The agent triages these continuously as they arrive (classify A/B/C, fix, resolve threads) — no human action needed to trigger it.
-2. **Detailed full-suite auditor (manual).** A deeper review the **human runs on request** and pastes the report back. It does **not** auto-run, so the agent must **explicitly call it at defined control points**; the agent then triages findings (A/B/C), fixes the actionable ones, calls a re-run if the change was material, and proceeds only when clean.
+1. **Agent self-review (every PR, automatic-by-agent).** Before calling a checkpoint, the agent runs a **tightly-scoped, read-only review agent** that verifies the change against the actual code/schema (not the docs) and reports findings; the agent triages (classify A/B/C), fixes, and re-verifies. This replaces the retired push-basic Codex bot (Codex is no longer in the loop). *(Push-basic Codex review was used through PR #20; it is no longer available.)*
+2. **Human full-suite auditor (manual).** A deeper external review the **human runs on request** and pastes back. It does **not** auto-run, so the agent **explicitly calls it at defined control points**; the agent then triages findings (A/B/C), fixes the actionable ones, calls a re-run if the change was material, and proceeds only when clean.
 
 Each manual-auditor request is a standout, copy-pasteable block:
 
