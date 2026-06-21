@@ -278,15 +278,19 @@ class _SingleSupplierAward:
     cells: Sequence[BookingCellView]
 
 
-def supplier_guide_label(award_code: str, supplier_name: str, supplier_id: str) -> str:
+def supplier_guide_label(
+    award_id: str, award_code: str, supplier_name: str, supplier_id: str
+) -> str:
     """The `stage_filename` LABEL for one supplier's individual award guide.
 
-    `stage_filename` slugifies this; the short id suffix keeps two like-named suppliers distinct,
-    and the award code keeps a later freeze from overwriting an earlier award's per-supplier files
-    (so a draft never points at another award's guide). Caller pairs it with the booking stage.
+    `stage_filename` slugifies this. The **award_id** (the unique award PK) makes the filename
+    unique even if two awards in a run reuse the same `award_code` (codes aren't enforced unique),
+    so a later freeze never overwrites an earlier award's per-supplier file and a draft never
+    points at another award's guide; the award code + supplier name are kept for human readability,
+    and the short supplier-id suffix keeps two like-named suppliers distinct.
     """
 
-    return f"award_guide_{award_code}_{supplier_name}_{supplier_id[:6]}"
+    return f"award_guide_{award_code}_{supplier_name}_{supplier_id[:6]}_{award_id}"
 
 
 def write_supplier_award_guide_files(

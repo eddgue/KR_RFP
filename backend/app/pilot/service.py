@@ -567,7 +567,9 @@ class PilotService:
             booking,
             paths_by_supplier={
                 sup.id: runpaths.outputs
-                / stage_filename(guide_stage, supplier_guide_label(award_code, sup.name, sup.id))
+                / stage_filename(
+                    guide_stage, supplier_guide_label(award_id, award_code, sup.name, sup.id)
+                )
                 for sup in cycle.suppliers
                 if sup.id in awarded_ids
             },
@@ -1567,7 +1569,8 @@ class PilotService:
             guide_stage = self._stage("booking_guide")
             for sup in cycle.suppliers:
                 fname = stage_filename(
-                    guide_stage, supplier_guide_label(award.award_code, sup.name, sup.id)
+                    guide_stage,
+                    supplier_guide_label(award.award_id, award.award_code, sup.name, sup.id),
                 )
                 if (runpaths.outputs / fname).is_file():
                     award_files[sup.id] = fname

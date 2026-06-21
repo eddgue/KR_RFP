@@ -127,6 +127,37 @@ def test_award_comms_guide_is_not_stale_across_awards(client, seed_user, vault_r
 
 
 @pytest.mark.integration
+def test_award_comms_guide_unique_when_award_codes_collide(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """Two awards on one run sharing the SAME award_code still attach distinct, own guides.
+
+    Award codes aren't enforced unique, so the per-supplier guide filename carries the award_id (the
+    unique PK) — a later same-coded freeze can't overwrite the earlier award's file, and the earlier
+    award's drafts reference its own guide (by id), never the later award's.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+    award_b = _freeze_b(client, slug, analysis_run_id, code="DUP-CODE")
+    resp_a = client.post(
+        f"{RUNS}/{slug}/awards/freeze",
+        json={"analysis_run_id": analysis_run_id, "scenario_code": "A", "award_code": "DUP-CODE"},
+    )
+    assert resp_a.status_code == 200, resp_a.text
+    award_a = resp_a.json()["award_id"]
+    assert award_a != award_b
+
+    drafts = client.get(f"{RUNS}/{slug}/awards/{award_b}/comms/award").json()
+    assert len(drafts) >= 1
+    slug_b = award_b.replace("-", "_")  # the id as it appears slugified in the filename
+    slug_a = award_a.replace("-", "_")
+    for draft in drafts:
+        assert "[#AwardFileName]" not in draft["body"]  # a guide is attached
+        assert slug_b in draft["body"]  # THIS award's own guide (by unique id)
+        assert slug_a not in draft["body"]  # never the same-coded other award's guide
+
+
+@pytest.mark.integration
 def test_award_comms_unknown_award_404(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
     _login(client, seed_user)
     slug = _create_run(client)
