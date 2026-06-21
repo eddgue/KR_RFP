@@ -98,3 +98,13 @@ def test_award_read_list_and_detail_reflect_layers(tmp_path: Path, db_session) -
     assert detail2.versions[1].adjustment_type == "MARKET_HIKE"
     assert detail2.latest_version == 1
     assert service.list_awards(db_session, paths)[0].latest_version == 1
+
+    # Cross-run scoping: a DIFFERENT run (its own cycle) must NOT read run 1's award — the lookup is
+    # scoped to the run's cycle, so an award id from another run is a clean 404, never a leak.
+    other = service.start_run(commodity="Field Tomatoes", label="Other Run")
+    other_setup = other.inputs / stage_filename(1, "setup_kickoff")
+    other_setup.write_bytes(_build_filled_setup())
+    service.ingest_setup(db_session, other, other_setup)
+    assert service.list_awards(db_session, other) == []
+    with pytest.raises(ValueError):
+        service.award_detail(db_session, other, award_id)

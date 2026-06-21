@@ -123,10 +123,17 @@ def award_detail(session: Session, cycle_view: CycleView, award_id: str) -> Awar
 
     The effective price per cell is the frozen baseline overlaid by every layer (`effective_award`);
     the history is `award_versions` (v0 FROZEN → vN). Cells are resolved to names (D23). Raises
-    ValueError if the id is not a frozen award (mapped to a clean 404 by the router).
+    ValueError if the id is not a frozen award OF THIS RUN'S CYCLE (mapped to a clean 404 by the
+    router) — the lookup is scoped to `cycle_view.cycle_id`, so a run-scoped endpoint can never
+    return another run's award prices/history (and never resolves names against the wrong cycle).
     """
 
-    award = session.execute(select(Award).where(Award.award_id == award_id)).scalar_one_or_none()
+    award = session.execute(
+        select(Award).where(
+            Award.award_id == award_id,
+            Award.cycle_id == cycle_view.cycle_id,
+        )
+    ).scalar_one_or_none()
     if award is None:
         raise ValueError(f"award {award_id!r} not found")
 
