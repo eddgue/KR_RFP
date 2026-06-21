@@ -2,7 +2,7 @@
 doc: No-server-side-file-storage refactor — implementation plan
 id: PM-NFS-PLAN
 version: 1.0
-status: In progress — Slice 0 landed (15d957e); slices 1–6 pending
+status: DONE — all 6 slices landed + reviewed (s0 15d957e · s1 847140b · s2 c4507a8 · s3 a73fa3a · s4 3c2074b · s5 e12e26a · s6 ed2d26a). 247 tests pass; migration 0019 round-trips; web console writes zero files; MCP harness unchanged (oracle).
 relates: ADR-0018 (storage model), ADR-0017 (GCP/Cloud Run), ADR-0003 (two runtimes), D30, D41, E-39, E-42
 created: 2026-06-21
 ---
