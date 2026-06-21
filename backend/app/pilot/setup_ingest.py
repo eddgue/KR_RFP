@@ -147,6 +147,24 @@ class _Named:
     name: str
 
 
+def _next_code(session: Session, count_sql: str, exists_sql: str, prefix: str) -> str:
+    """Next free zero-padded reference code (e.g. 'DC03', 'ITEM-03') unique across the shared DB.
+
+    Globally-unique reference codes (ref.dc.dc_code, ref.item.item_code) can already be taken by
+    another RFP in the shared database (isolate_db=False), so a positional code would collide. Start
+    just past the row count and bump until the code is free. `count_sql`/`exists_sql` are fixed
+    literals (the SQL is never built from input); `exists_sql` binds the candidate code as `:c`.
+    """
+
+    n = int(session.execute(text(count_sql)).scalar_one()) + 1
+    while (
+        session.execute(text(exists_sql), {"c": f"{prefix}{n:02d}"}).scalar_one_or_none()
+        is not None
+    ):
+        n += 1
+    return f"{prefix}{n:02d}"
+
+
 # ---------------------------------------------------------------------------
 # the ingest
 # ---------------------------------------------------------------------------
@@ -455,18 +473,45 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
         },
     )
 
-    # ref.dc
-    for i, dc in enumerate(dcs.values(), start=1):
+    # ref.dc — DCs are SHARED master data (the same canonical set across every RFP). REUSE an
+    # existing DC by name and only insert one never seen before; otherwise a second run in the
+    # shared DB (isolate_db=False) collides on ref.dc's unique dc_name/dc_code. Reassigning dc.id to
+    # the canonical row flows to every downstream reference (volumes, incumbents) through this dict.
+    for dc in dcs.values():
+        existing_dc = session.execute(
+            text("SELECT dc_id FROM ref.dc WHERE dc_name = :name"), {"name": dc.name}
+        ).scalar_one_or_none()
+        if existing_dc is not None:
+            dc.id = existing_dc
+            continue
         session.execute(
             text(
                 "INSERT INTO ref.dc (dc_id, dc_code, dc_name, region, division, active_flag) "
                 "VALUES (:id, :code, :name, :region, 'Produce', true)"
             ),
-            {"id": dc.id, "code": f"DC{i:02d}", "name": dc.name, "region": "EAST"},
+            {
+                "id": dc.id,
+                "code": _next_code(
+                    session,
+                    "SELECT count(*) FROM ref.dc",
+                    "SELECT 1 FROM ref.dc WHERE dc_code = :c",
+                    "DC",
+                ),
+                "name": dc.name,
+                "region": "EAST",
+            },
         )
 
-    # ref.supplier
+    # ref.supplier — suppliers are a SHARED, growing master list (added/updated across RFPs; each
+    # RFP selects which participate). REUSE by canonical_name; only insert one never seen before.
     for sup in suppliers.values():
+        existing_sup = session.execute(
+            text("SELECT supplier_id FROM ref.supplier WHERE canonical_name = :name"),
+            {"name": sup.name},
+        ).scalar_one_or_none()
+        if existing_sup is not None:
+            sup.id = existing_sup
+            continue
         session.execute(
             text(
                 "INSERT INTO ref.supplier (supplier_id, canonical_name, active_flag, created_at) "
@@ -479,6 +524,9 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
     for i, (lot_name, lot) in enumerate(lots.items(), start=1):
         item = items_by_lot[lot_name]
         desc, pack, _ptype, _category = lot_item_meta[lot_name]
+        # ref.item — items are per-RFP (tied to THIS run's freshly-minted commodity), so they are
+        # inserted fresh; but item_code is globally unique, so a positional ITEM-NN would collide
+        # with another RFP's items in the shared DB — pick the next free code instead.
         session.execute(
             text(
                 "INSERT INTO ref.item (item_id, item_code, description, pack_desc, commodity_id, "
@@ -486,7 +534,12 @@ def _write_cycle(  # noqa: PLR0913 — one cohesive writer; args are the parsed 
             ),
             {
                 "id": item.id,
-                "code": f"ITEM-{i:02d}",
+                "code": _next_code(
+                    session,
+                    "SELECT count(*) FROM ref.item",
+                    "SELECT 1 FROM ref.item WHERE item_code = :c",
+                    "ITEM-",
+                ),
                 "desc": desc,
                 "pack": pack,
                 "cid": commodity_id,

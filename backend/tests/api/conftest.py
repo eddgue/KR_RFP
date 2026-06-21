@@ -21,11 +21,15 @@ from app.main import app
 
 @pytest.fixture
 def vault_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the runs router at a per-test temp vault (the lru_cached resolver is replaced)."""
+    """Point the console routers at a per-test temp vault (the lru_cached resolver is replaced).
+
+    The runs + bids routers share their PilotService wiring in `app.api.v1.pilot_common`, so the
+    vault root is redirected there (both routers resolve through the same `_vault_root`).
+    """
 
     root = tmp_path / "vault"
     root.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr("app.api.v1.runs._vault_root", lambda: root)
+    monkeypatch.setattr("app.api.v1.pilot_common._vault_root", lambda: root)
     return root
 
 
