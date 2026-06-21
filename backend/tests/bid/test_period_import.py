@@ -335,7 +335,7 @@ def test_period_grain_storage_leaves_engine_output_unchanged(tmp_path: Path, db_
     # row per LOGICAL cell — NOT one per fanned period row. A dedupe miss in those gathers (the
     # Detailed Scoring market stats, the Coverage rows) would surface here as `× n_periods` rows.
     #   * Detailed Scoring lists EVERY scored cell -> exactly n_lines rows.
-    #   * Coverage lists cells with a CONSTRUCTIBLE price (All-In OR component-basis FOB) -> n_lines.
+    #   * Coverage lists cells with a CONSTRUCTIBLE price (All-In or component FOB) -> n_lines.
     # The `# Bidders` stat on Detailed Scoring is the per-group count that would inflate by periods
     # if the stats gather double-counted the period rows; assert it stays the true bidder count (2).
     wb = load_workbook(alignment_path)
