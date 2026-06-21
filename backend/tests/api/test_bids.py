@@ -9,6 +9,7 @@ The setup + bid fixture files are built with the SAME synthetic builders the pil
 
 from __future__ import annotations
 
+import contextlib
 import io
 
 import pytest
@@ -232,6 +233,35 @@ def test_flexible_propose_then_confirm(client, seed_user, vault_root, db_session
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["ingested"] == 8
     assert len(client.get(BIDS, params={"run": slug, "round": 1}).json()) == 8
+
+
+@pytest.mark.integration
+def test_flexible_propose_failure_cleans_scratch(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """A propose that FAILS mid-inference still drops its scratch upload (try/finally) — no leak.
+
+    The flexible path writes the raw bytes to a temp scratch file in inputs/ before inferring the
+    mapping. If inference raises, the scratch must still be removed (so inputs/ stays clean) —
+    otherwise a malformed drop would leave an orphan temp file behind on every failed attempt.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    client.post(f"{RUNS}/{slug}/setup", files={"file": ("s.xlsx", _build_filled_setup(), _XLSX)})
+
+    files_before = {f["name"] for f in client.get(f"{RUNS}/{slug}/files").json()}
+
+    # Garbage bytes are not a readable workbook → inference raises inside ingest_any. Whether the
+    # TestClient re-raises the server exception or maps it to a 500, the route's finally runs first.
+    with contextlib.suppress(Exception):
+        client.post(
+            f"{BIDS}/import",
+            data={"run": slug, "round": 1, "mode": "flexible", "confirm": "false"},
+            files={"file": ("raw.xlsx", b"not a real xlsx", _XLSX)},
+        )
+
+    files_after = {f["name"] for f in client.get(f"{RUNS}/{slug}/files").json()}
+    assert files_after == files_before
+    assert not any("raw_supplier_drop" in n for n in files_after)
 
 
 # --------------------------------------------------------------------------- #

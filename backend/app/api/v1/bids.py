@@ -201,9 +201,12 @@ def import_bids(
     # flexible — write the bytes to a temp scratch path inside inputs/ so the service reads a file.
     scratch = write_to_run(paths, SUBDIR_INPUTS, f"round{round}_raw_supplier_drop.xlsx", data)
     if not confirm:
-        proposal = svc.ingest_any(db, paths, round, scratch, confirm=False, actor=user.username)
-        # Propose writes nothing governed; drop the scratch upload so a rejected proposal is clean.
-        scratch.unlink(missing_ok=True)
+        try:
+            proposal = svc.ingest_any(db, paths, round, scratch, confirm=False, actor=user.username)
+        finally:
+            # Propose writes nothing governed; drop the scratch upload either way (try/finally) so a
+            # rejected — or a FAILED — proposal never leaves a temp file behind in inputs/.
+            scratch.unlink(missing_ok=True)
         assert isinstance(proposal, MappingProposal)  # noqa: S101 — confirm=False path returns one
         return ProposeImportResponse(proposal=_mapping_view(proposal))
 
