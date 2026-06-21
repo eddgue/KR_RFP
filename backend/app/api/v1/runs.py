@@ -402,7 +402,9 @@ def ingest_setup(
 
     The bytes are written into the run's inputs/ via the governed `write_to_run`, then handed to
     `PilotService.ingest_setup`, which creates the cycle, links cycle_id.txt, and recomputes the
-    kanban. Returns the new cycle id + the refreshed kanban. 404 if the run doesn't exist.
+    kanban. Returns the new cycle id + the refreshed kanban. 404 if the run doesn't exist; 409
+    (conflict) if the run already has a cycle (setup is once-per-run — a second ingest would orphan
+    the prior cycle).
     """
 
     svc = service()
@@ -470,7 +472,7 @@ def run_analysis(
     svc = service()
     paths = resolve_paths(slug)
     resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
-    out_path = svc.run_round(db, paths, round)
+    out_path = svc.run_round(db, paths, round, actor=user.username)
 
     # The just-sealed run is the cycle's latest; surface its typed summary + the lens count.
     analyses = svc.list_analyses(db, paths)

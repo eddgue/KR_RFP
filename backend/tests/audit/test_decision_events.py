@@ -211,6 +211,45 @@ def test_resubmission_emits_superseded(tmp_path: Path, db_session) -> None:  # t
 
 
 @pytest.mark.integration
+def test_actor_threads_to_audit_events(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """The caller's `actor` is recorded on the IMPORTED + SEALED events (HTTP passes the user).
+
+    The web console threads the authenticated `user.username` into ingest_bids / run_round; the
+    audit chain must then record that real identity, not the hardcoded "pilot" / "pilot-runner"
+    fallback the MCP harness uses.
+    """
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="Audit Actor")
+    setup_path = paths.inputs / stage_filename(1, "setup_kickoff")
+    setup_path.write_bytes(_build_filled_setup())
+    cycle_id = service.ingest_setup(db_session, paths, setup_path)
+
+    template_path = service.generate_bid_template(db_session, paths, 1)
+    template_path.write_bytes(_fill_bid_template(template_path.read_bytes()))
+    service.ingest_bids(db_session, paths, 1, template_path, actor="alice@buyer.example")
+    service.run_round(db_session, paths, 1, actor="alice@buyer.example")
+
+    client_id = client_id_for_cycle(db_session, cycle_id)
+    by_type: dict[str, list[dict[str, object]]] = {}
+    for ev in _events_for_client(db_session, client_id):
+        by_type.setdefault(str(ev["event_type"]), []).append(ev)
+
+    assert all(e["actor"] == "alice@buyer.example" for e in by_type[EventType.IMPORTED.value])
+    assert by_type[EventType.SEALED.value][0]["actor"] == "alice@buyer.example"
+
+    # The importing user is also stamped on the bid's source artifact (created_by).
+    created_by = {
+        cb
+        for (cb,) in db_session.execute(
+            text("SELECT created_by FROM norm.source_artifact WHERE cycle_id = :c"),
+            {"c": cycle_id},
+        ).all()
+    }
+    assert created_by == {"alice@buyer.example"}
+
+
+@pytest.mark.integration
 def test_event_rides_caller_transaction_rollback(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     """An appended event is dropped when the caller's unit of work rolls back (shared txn).
 

@@ -39,6 +39,7 @@ from app.comms.resolvers import (
 from app.core.audit.events import DomainEvent, EventType
 from app.core.audit.recorder import client_id_for_cycle
 from app.core.audit.writer import AuditWriter
+from app.core.errors.taxonomy import AppError, ErrorCode
 from app.cycle.loader import load_cycle
 from app.cycle.scope import build_scope_from_cycle
 from app.domain.awd import service as awd_service
@@ -207,7 +208,24 @@ class PilotService:
 
         Returns the new cycle_id. Writes it to cycle_id.txt and the RUN.md header, recomputes the
         kanban from the freshly-created cycle, and commits the vault.
+
+        Setup is a ONCE-per-run gate: if the run already names a cycle, this refuses (409 CONFLICT)
+        rather than overwrite cycle_id.txt — a second ingest would orphan the prior cycle (its
+        bids/analyses/awards left dangling, unreachable from the run). Correcting a cycle before any
+        downstream work means starting a fresh run (runs are cheap), never silently re-pointing this
+        run at a new cycle.
         """
+
+        existing = self._cycle_id(runpaths)
+        if existing is not None:
+            raise AppError(
+                code=ErrorCode.CONFLICT,
+                message=(
+                    "This run already has a cycle; re-ingesting setup would orphan it. "
+                    "Start a new run to set up a different cycle."
+                ),
+                status_code=409,
+            )
 
         data = Path(uploaded).read_bytes()
         cycle_id = ingest_setup_workbook(session, data)
@@ -301,7 +319,13 @@ class PilotService:
         return path
 
     def ingest_bids(
-        self, session: Session, runpaths: RunPaths, round_no: int, uploaded: Path
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        round_no: int,
+        uploaded: Path,
+        *,
+        actor: str = "pilot",
     ) -> int:
         """Key-validated ingest of a returned bid file -> `bid.bid_line` rows (step 1); returns N.
 
@@ -309,7 +333,9 @@ class PilotService:
         the round scope, ingests OUR template via the strict KEY-VALIDATED path, persists one
         `bid.bid_line` per priced line (mirrors the demo's submission/source_artifact + bid_line
         pattern), records any quarantined rows in NOTES.md (surfaced, never silently dropped), and
-        commits.
+        commits. `actor` is who imported the bids — recorded as the artifact's `created_by` and on
+        the IMPORTED/SUPERSEDED audit events (the HTTP path passes the authenticated user; the MCP
+        path defaults to "pilot").
         """
 
         cycle = self._load_cycle(session, runpaths)
@@ -320,7 +346,7 @@ class PilotService:
         result = ingest_template(data, scope)
         capacity = ingest_capacity(data, scope)
         count, superseded, cap_count = self._persist_bid_lines(
-            session, cycle, round_id, result.lines, capacity.lines
+            session, cycle, round_id, result.lines, capacity.lines, actor=actor
         )
 
         if result.quarantined:
@@ -368,6 +394,7 @@ class PilotService:
         uploaded: Path,
         *,
         confirm: bool = False,
+        actor: str = "pilot",
     ) -> MappingProposal | int:
         """Flexible "take my file as-is" ingest (PILOT_SYSTEM_DESIGN §4).
 
@@ -376,6 +403,7 @@ class PilotService:
         `confirm=True`: APPLY the (confirmed) mapping to a clean key-stamped owned template, write
         it to inputs/ as the normalized `0X_round{n}_bids_normalized.xlsx`, then ingest it via the
         strict key-validated path (returns the bid-line count). Ambiguity surfaced, never guessed.
+        `actor` (confirm=True only) is forwarded to `ingest_bids` as the importing user.
         """
 
         cycle = self._load_cycle(session, runpaths)
@@ -396,7 +424,7 @@ class PilotService:
             runpaths.slug,
             f"round {round_no} messy file normalized → owned template",
         )
-        return self.ingest_bids(session, runpaths, round_no, normalized_path)
+        return self.ingest_bids(session, runpaths, round_no, normalized_path, actor=actor)
 
     def run_round(
         self,
@@ -406,6 +434,7 @@ class PilotService:
         config: EngineConfig | None = None,
         *,
         synthetic: bool = False,
+        actor: str = "pilot-runner",
     ) -> Path:
         """Run the engine on a round -> sealed eng.* + the VERSIONED alignment workbook (step 2).
 
@@ -413,7 +442,9 @@ class PilotService:
         round, then writes the versioned alignment workbook (`write_scenario_workbook_xlsx`, which
         computes the `Analysis v{seq}` heading) into outputs/ as
         `0X_round{n}_alignment_v{seq}.xlsx`. Updates the kanban (Done: Round n analysis v{seq}) and
-        commits. Returns the written path.
+        commits. `actor` is who ran the analysis — recorded as the run's `run_by` and on the SEALED
+        audit event (the HTTP path passes the authenticated user; the MCP path defaults to
+        "pilot-runner"). Returns the written path.
         """
 
         # A rehearsal run stamps every artifact SYNTHETIC regardless of the caller's flag, so its
@@ -445,7 +476,7 @@ class PilotService:
             round_id=round_id,
             config=effective_config,
             incumbents=incumbents,
-            run_by="pilot-runner",
+            run_by=actor,
         )
 
         # Governed decision: the analysis run is sealed. Land a tamper-evident event in the same
@@ -457,7 +488,7 @@ class PilotService:
                 entity_type="eng.analysis_run",
                 entity_id=uuid.UUID(run_result.analysis_run_id),
                 cycle_id=uuid.UUID(cycle.cycle_id),
-                actor="pilot-runner",
+                actor=actor,
                 source="worker",
                 after={"round_id": round_id},
             )
@@ -1245,6 +1276,8 @@ class PilotService:
         round_id: str,
         lines: list[ParsedBidLine],
         capacity_lines: list[ParsedCapacityLine] | None = None,
+        *,
+        actor: str = "pilot",
     ) -> tuple[int, int, int]:
         """Persist priced ingest lines as bid.bid_line rows (one submission per supplier).
 
@@ -1318,7 +1351,7 @@ class PilotService:
                         entity_type="bid.bid_submission",
                         entity_id=uuid.UUID(prior_id),
                         cycle_id=uuid.UUID(cycle.cycle_id),
-                        actor="pilot",
+                        actor=actor,
                         source="import",
                         before={"overall_status": "SUBMITTED"},
                         after={"overall_status": "SUPERSEDED"},
@@ -1348,7 +1381,7 @@ class PilotService:
                     "INSERT INTO norm.source_artifact (artifact_id, artifact_type, file_name, "
                     "file_hash_sha256, received_at, status, cycle_id, round_id, supplier_id, "
                     "created_by) VALUES (:aid, 'BID_SUBMISSION', :fn, :hash, :now, 'RECEIVED', "
-                    ":cyc, :rnd, :sup, 'pilot')"
+                    ":cyc, :rnd, :sup, :created_by)"
                 ),
                 {
                     "aid": artifact_id,
@@ -1358,6 +1391,7 @@ class PilotService:
                     "cyc": cycle.cycle_id,
                     "rnd": round_id,
                     "sup": supplier_id,
+                    "created_by": actor,
                 },
             )
             submission_id = _new_id()
@@ -1386,7 +1420,7 @@ class PilotService:
                     entity_type="bid.bid_submission",
                     entity_id=uuid.UUID(submission_id),
                     cycle_id=uuid.UUID(cycle.cycle_id),
-                    actor="pilot",
+                    actor=actor,
                     source="import",
                     after={"round_id": round_id, "supplier_id": supplier_id},
                 )

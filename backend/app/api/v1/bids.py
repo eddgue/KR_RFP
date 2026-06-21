@@ -195,19 +195,19 @@ def import_bids(
         uploaded = write_to_run(
             paths, SUBDIR_INPUTS, stage_filename(_stage(round), f"round{round}_bids_uploaded"), data
         )
-        count = _ingest_bids(svc, db, paths, round, uploaded)
+        count = _ingest_bids(svc, db, paths, round, uploaded, actor=user.username)
         return IngestedResponse(ingested=count, kanban=svc.status(db, paths))
 
     # flexible — write the bytes to a temp scratch path inside inputs/ so the service reads a file.
     scratch = write_to_run(paths, SUBDIR_INPUTS, f"round{round}_raw_supplier_drop.xlsx", data)
     if not confirm:
-        proposal = svc.ingest_any(db, paths, round, scratch, confirm=False)
+        proposal = svc.ingest_any(db, paths, round, scratch, confirm=False, actor=user.username)
         # Propose writes nothing governed; drop the scratch upload so a rejected proposal is clean.
         scratch.unlink(missing_ok=True)
         assert isinstance(proposal, MappingProposal)  # noqa: S101 — confirm=False path returns one
         return ProposeImportResponse(proposal=_mapping_view(proposal))
 
-    result = svc.ingest_any(db, paths, round, scratch, confirm=True)
+    result = svc.ingest_any(db, paths, round, scratch, confirm=True, actor=user.username)
     assert isinstance(result, int)  # noqa: S101 — confirm=True path returns the ingested count
     return IngestedResponse(ingested=result, kanban=svc.status(db, paths))
 
@@ -269,11 +269,13 @@ def list_bids(
     return [_bid_line_view(row) for row in rows]
 
 
-def _ingest_bids(svc: Any, db: Session, paths: RunPaths, round_no: int, uploaded: Path) -> int:
+def _ingest_bids(
+    svc: Any, db: Session, paths: RunPaths, round_no: int, uploaded: Path, *, actor: str
+) -> int:
     """Run the strict key-validated ingest, mapping a malformed/mismatched file to a clean 400."""
 
     try:
-        return int(svc.ingest_bids(db, paths, round_no, uploaded))
+        return int(svc.ingest_bids(db, paths, round_no, uploaded, actor=actor))
     except ValueError as exc:
         raise AppError(
             code=ErrorCode.VALIDATION_ERROR,

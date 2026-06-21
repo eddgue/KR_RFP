@@ -408,6 +408,26 @@ def test_template_out_of_range_round_is_validation_error(client, seed_user, vaul
 
 
 @pytest.mark.integration
+def test_second_setup_post_is_conflict(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """A second POST /setup on a run that already has a cycle is a clean 409 conflict (not a 500).
+
+    Setup is once-per-run; the service guard surfaces as a problem-detail conflict so the prior
+    cycle is never silently orphaned by a re-pointed cycle_id.txt.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    _ingest_setup(client, slug)  # first setup → a cycle now exists
+
+    resp = client.post(
+        f"{RUNS}/{slug}/setup",
+        files={"file": ("setup.xlsx", _build_filled_setup(), _XLSX)},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "conflict"
+
+
+@pytest.mark.integration
 def test_import_bad_mode_is_422(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
     """An unknown mode fails request validation (422) before any work."""
 

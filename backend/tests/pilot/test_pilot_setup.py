@@ -296,6 +296,32 @@ def test_setup_roundtrips_to_cycle(tmp_path: Path, db_session) -> None:  # type:
 
 
 @pytest.mark.integration
+def test_second_setup_ingest_is_refused(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """Setup is once-per-run: a second ingest is refused (409 CONFLICT), never a silent orphan.
+
+    Re-ingesting setup would overwrite cycle_id.txt and strand the prior cycle (its bids/analyses/
+    awards left dangling). The guard refuses it and leaves the original link untouched.
+    """
+
+    from app.core.errors.taxonomy import AppError, ErrorCode
+
+    service = PilotService(tmp_path, isolate_db=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="Once Only")
+    uploaded = paths.inputs / stage_filename(1, "setup_kickoff")
+    uploaded.write_bytes(_build_filled_setup())
+
+    first_cycle = service.ingest_setup(db_session, paths, uploaded)
+
+    with pytest.raises(AppError) as exc:
+        service.ingest_setup(db_session, paths, uploaded)
+    assert exc.value.code == ErrorCode.CONFLICT
+    assert exc.value.status_code == 409
+
+    # The original cycle link is intact — nothing was orphaned or re-pointed.
+    assert paths.cycle_id_file.read_text().strip() == first_cycle
+
+
+@pytest.mark.integration
 def test_setup_ingest_reports_unresolved_rows(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     from app.pilot.setup_ingest import SetupIngestError, ingest_setup_workbook
 
