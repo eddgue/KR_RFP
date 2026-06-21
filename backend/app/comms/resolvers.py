@@ -12,6 +12,7 @@ separately in the body.
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -21,9 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.comms.render import render
 from app.comms.templates import EmailType, get_template
+from app.domain.awd.models import Award, AwardLine
 from app.domain.awd.read import award_detail
 from app.domain.cyc.models import CycleTimeframe
-from app.engine.scoring import GATE_COVERAGE, GATE_PREMIUM
+from app.engine.scoring import GATE_COVERAGE, GATE_NO_PRICE, GATE_PREMIUM
 from app.output.types import CycleView
 
 # Engine eligibility defaults (mirror the pilot wiring) when the cycle sets no override.
@@ -334,6 +336,141 @@ def feedback_drafts(
                 "SoftAskTable": sorted(soft[supplier_id], key=lambda r: (r["DC"], r["Lot"])),
             },
         )
+        drafts.append(
+            SupplierEmailDraft(
+                supplier_id=supplier_id,
+                supplier_name=supplier_name,
+                email_type=template.email_type,
+                subject=rendered.subject,
+                body=rendered.body,
+                missing=list(rendered.missing),
+            )
+        )
+    drafts.sort(key=lambda d: d.supplier_name)
+    return drafts
+
+
+# --------------------------------------------------------------------------- #
+# Non-selection / "RFP Results" (E-37): per-lot reasons a participant didn't win.
+# --------------------------------------------------------------------------- #
+@dataclass
+class _LostLot:
+    """A supplier's averaged standing on one (dc, lot) they did NOT win, across its timeframes."""
+
+    bid_sum: Decimal = Decimal("0")
+    low_sum: Decimal = Decimal("0")
+    count: int = 0
+    ineligible: bool = False
+    flags: str = field(default="")
+
+
+def _rejection_reason(ineligible: bool, flags: str) -> str:
+    """A data-centered reason for a lost lot: the eligibility gate if any, else competitive rank."""
+
+    if ineligible:
+        if GATE_NO_PRICE in flags:
+            return "No valid price submitted"
+        if GATE_PREMIUM in flags:
+            return "Price premium above ceiling"
+        if GATE_COVERAGE in flags:
+            return "Insufficient volume offered"
+        return "Did not meet eligibility criteria"
+    return "Not selected (lower competitive rank)"
+
+
+def rejection_drafts(
+    session: Session,
+    cycle_view: CycleView,
+    award_id: str,
+    *,
+    buyer_name: str = "",
+    buyer_title: str = "",
+) -> list[SupplierEmailDraft]:
+    """One NON-SELECTION ("RFP Results") draft per supplier with a lot they did NOT win (E-37).
+
+    Keyed on the frozen award (the decision that settles who won what): over the round the award
+    scored, each supplier's cells NOT awarded to them (lost outright, or a split cell that went to
+    others) become an itemized, data-centered row — their submitted price, the cell's market-low
+    benchmark, the % difference, and a reason (an eligibility gate, else competitive rank). A
+    supplier awarded every cell they bid gets no draft (they got the award notice). Raises a
+    ValueError if the award isn't this run's (router -> 404). The supplier's OWN bid + an anonymous
+    benchmark only — never a competitor's name or price.
+    """
+
+    award = session.execute(
+        select(Award).where(Award.award_id == award_id, Award.cycle_id == cycle_view.cycle_id)
+    ).scalar_one_or_none()
+    if award is None:
+        raise ValueError(f"award {award_id!r} not found")
+
+    round_id, _ = _round_id_and_number(session, award.analysis_run_id)
+    prices = _round_prices(session, cycle_view.cycle_id, round_id)
+    eligibility = _eligibility(session, award.analysis_run_id)
+    awarded: set[tuple[str, str, str, str]] = {
+        (dc, lot, tf, sup)
+        for dc, lot, tf, sup in session.execute(
+            select(AwardLine.dc_id, AwardLine.lot_id, AwardLine.tf_id, AwardLine.supplier_id).where(
+                AwardLine.award_id == award_id
+            )
+        ).all()
+    }
+
+    dc_name = {d.id: d.name for d in cycle_view.dcs}
+    lot_name = {lot.id: lot.name for lot in cycle_view.lots}
+    sup_name = {s.id: s.name for s in cycle_view.suppliers}
+
+    # Per supplier, per (dc, lot) they lost: accumulate bid + benchmark + eligibility over its TFs.
+    lost: dict[str, dict[tuple[str, str], _LostLot]] = defaultdict(dict)
+    for (dc_id, lot_id, tf_id), sup_prices in prices.items():
+        if not sup_prices:
+            continue
+        market_low = min(sup_prices.values())
+        if market_low <= 0:
+            continue
+        for supplier_id, price in sup_prices.items():
+            if (dc_id, lot_id, tf_id, supplier_id) in awarded:
+                continue  # they won this cell — never a rejection row
+            agg = lost[supplier_id].setdefault((dc_id, lot_id), _LostLot())
+            agg.bid_sum += price
+            agg.low_sum += market_low
+            agg.count += 1
+            is_elig, flags = eligibility.get((supplier_id, dc_id, lot_id, tf_id), (True, ""))
+            if not is_elig:
+                agg.ineligible = True
+            agg.flags += flags
+
+    template = get_template(EmailType.NON_SELECTION)
+    drafts: list[SupplierEmailDraft] = []
+    for supplier_id, by_lot in lost.items():
+        supplier_name = sup_name.get(supplier_id, supplier_id[:8])
+        rows = []
+        for (dc_id, lot_id), agg in sorted(
+            by_lot.items(),
+            key=lambda kv: (dc_name.get(kv[0][0], kv[0][0]), lot_name.get(kv[0][1], kv[0][1])),
+        ):
+            count = Decimal(agg.count)
+            avg_bid = agg.bid_sum / count
+            avg_low = agg.low_sum / count
+            prem_pct = (avg_bid - avg_low) / avg_low if avg_low > 0 else Decimal("0")
+            rows.append(
+                {
+                    "DC": dc_name.get(dc_id, dc_id[:6]),
+                    "Lot": lot_name.get(lot_id, lot_id[:6]),
+                    "BidPrice": _money(avg_bid),
+                    "BenchmarkPrice": _money(avg_low),
+                    "PremiumPct": _pct(prem_pct),
+                    "ReasonCode": _rejection_reason(agg.ineligible, agg.flags),
+                }
+            )
+        context = {
+            "SupplierName": supplier_name,
+            "SupplierID": supplier_id,
+            "CycleName": cycle_view.cycle_name,
+            "CycleID": cycle_view.cycle_id,
+            "BuyerName": buyer_name,
+            "BuyerTitle": buyer_title,
+        }
+        rendered = render(template, context, tables={"RejectionReasonTable": rows})
         drafts.append(
             SupplierEmailDraft(
                 supplier_id=supplier_id,

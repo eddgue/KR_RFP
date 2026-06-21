@@ -30,7 +30,12 @@ from typing import cast
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.comms.resolvers import SupplierEmailDraft, award_drafts, feedback_drafts
+from app.comms.resolvers import (
+    SupplierEmailDraft,
+    award_drafts,
+    feedback_drafts,
+    rejection_drafts,
+)
 from app.core.audit.events import DomainEvent, EventType
 from app.core.audit.recorder import client_id_for_cycle
 from app.core.audit.writer import AuditWriter
@@ -1566,6 +1571,32 @@ class PilotService:
             session,
             cycle,
             analysis_run_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
+        )
+
+    def rejection_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        award_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One non-selection ("RFP Results") email DRAFT per supplier with a lost lot (E-37).
+
+        Keyed on the frozen award: loads the run's cycle (for names) and renders the non-selection
+        template per supplier who bid the award's round but was not awarded every cell — each lost
+        lot itemized with their price, the market-low benchmark, the % gap, and a data-centered
+        reason. Raises ValueError on an unknown award (router -> 404).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        return rejection_drafts(
+            session,
+            cycle,
+            award_id,
             buyer_name=buyer_name,
             buyer_title=buyer_title,
         )

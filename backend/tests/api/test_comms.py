@@ -112,3 +112,54 @@ def test_feedback_comms_unknown_run_404(client, seed_user, vault_root) -> None: 
     _seed_sealed_run(client, slug)
     resp = client.get(f"{RUNS}/{slug}/analysis/no-such-run/comms/feedback")
     assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_rejection_comms_requires_auth(client, vault_root) -> None:  # type: ignore[no-untyped-def]
+    assert client.get(f"{RUNS}/x/awards/a-1/comms/rejection").status_code == 401
+
+
+@pytest.mark.integration
+def test_rejection_comms_drafts_per_lost_lot(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """freeze B → a non-selection draft per supplier with a lot they did not win.
+
+    The synthetic seed splits each DC's two lots across the two suppliers, so each supplier loses
+    its weaker lot — both get a "RFP Results" draft itemizing the lost lots (their price, the
+    market-low benchmark, the % gap, a reason), with a machine-tag subject and no visible holes.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+    award_id = _freeze_b(client, slug, analysis_run_id, code="AWD-COMMS-REJ-1")
+
+    resp = client.get(f"{RUNS}/{slug}/awards/{award_id}/comms/rejection")
+    assert resp.status_code == 200, resp.text
+    drafts = resp.json()
+    assert len(drafts) >= 1
+
+    for draft in drafts:
+        assert draft["email_type"] == "RFP Results"
+        # Subject: machine-readable routing tags first, then the results infix + cycle.
+        assert draft["subject"].startswith("[RFP:")
+        assert "[SUP:" in draft["subject"]
+        assert "RFP Results –" in draft["subject"]
+        # Body merged from governed data: greeting + the evaluation summary section.
+        assert f"Dear {draft['supplier_name']}," in draft["body"]
+        assert "not selected for award" in draft["body"]
+        assert "Evaluation Summary" in draft["body"]
+        # The reason table expanded (header present, placeholder gone).
+        assert "[#RejectionReasonTable]" not in draft["body"]
+        assert "Benchmark Price" in draft["body"]
+        # The authenticated user is the draft's buyer; the title is left for the buyer to complete.
+        assert seed_user["username"] in draft["body"]
+        assert "BuyerTitle" in draft["missing"]
+
+
+@pytest.mark.integration
+def test_rejection_comms_unknown_award_404(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    _login(client, seed_user)
+    slug = _create_run(client)
+    _seed_sealed_run(client, slug)
+    resp = client.get(f"{RUNS}/{slug}/awards/no-such-award/comms/rejection")
+    assert resp.status_code == 404

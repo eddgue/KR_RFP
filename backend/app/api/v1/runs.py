@@ -781,6 +781,41 @@ def get_award_comms_drafts(
 
 
 @router.get(
+    "/{slug}/awards/{award_id}/comms/rejection",
+    response_model=list[SupplierEmailDraft],
+    summary="Non-selection email drafts (one per supplier with a lost lot)",
+)
+def get_rejection_comms_drafts(
+    slug: str,
+    award_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierEmailDraft]:
+    """One template-merge non-selection ("RFP Results") DRAFT per supplier with a lost lot (E-37).
+
+    Keyed on the frozen award; each lost lot is itemized with the supplier's price, the market-low
+    benchmark, the % gap, and a data-centered reason. The authenticated user is the draft's
+    `[#BuyerName]`. 404 if the run / award is unknown (scoped to the run's cycle).
+    """
+
+    paths = resolve_paths(slug)
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        )
+    try:
+        return service().rejection_email_drafts(db, paths, award_id, buyer_name=user.username)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        ) from exc
+
+
+@router.get(
     "/{slug}/analysis/{analysis_run_id}/comms/feedback",
     response_model=list[SupplierEmailDraft],
     summary="Round-feedback email drafts (one per above-benchmark supplier)",
