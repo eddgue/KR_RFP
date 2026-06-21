@@ -294,24 +294,24 @@ def test_download_run_archive_zip(client, seed_user, vault_root) -> None:  # typ
 
 
 # --------------------------------------------------------------------------- #
-# no-server-side-file-storage (Slice 4): uploads stream to ingest, leaving NO file on disk
+# no-server-side-file-storage (Slices 4 + 6): the whole input chain leaves NO file on disk
 # --------------------------------------------------------------------------- #
-def _input_names(vault_root, slug: str) -> set[str]:  # type: ignore[no-untyped-def]
-    """The filenames actually present in a run's inputs/ dir on disk (skipping scaffold markers)."""
+def _disk_files(vault_root, slug: str) -> set[str]:  # type: ignore[no-untyped-def]
+    """Every real file under a run's vault folder on disk (empty when no folder is scaffolded)."""
 
-    inputs = vault_root / "runs" / slug / "inputs"
-    if not inputs.is_dir():
+    root = vault_root / "runs" / slug
+    if not root.is_dir():
         return set()
-    return {p.name for p in inputs.iterdir() if p.is_file() and p.name != ".gitkeep"}
+    return {p.name for p in root.rglob("*") if p.is_file() and p.name != ".gitkeep"}
 
 
 @pytest.mark.integration
 def test_uploads_leave_no_file_on_disk(client, seed_user, vault_root, db_session) -> None:  # type: ignore[no-untyped-def]
-    """Setup + strict + flexible uploads stream to ingest — no UPLOADED file is ever persisted.
+    """The console input chain persists NOTHING server-side — no vault folder at all (Slice 6).
 
-    The only files on disk are the ones the service GENERATES (the setup template + the bid
-    template); the uploaded filled setup, the strict bids file, the raw supplier drop, and the
-    normalized template are all streamed straight into ingest and never written (ADR-0018 Slice 4).
+    Create (no scaffold) → ingest setup (streamed, no file) → generate template (rendered on
+    request, not written) → strict import (streamed) → flexible confirm (streamed): at no point is
+    ANY file written to the run's vault folder — the run is a `pilot.run` row only (ADR-0018).
     """
 
     from app.cycle.loader import load_cycle
@@ -319,14 +319,14 @@ def test_uploads_leave_no_file_on_disk(client, seed_user, vault_root, db_session
     _login(client, seed_user)
     slug = _create_run(client)
 
-    # After create: only the generated setup template is on disk (an upload hasn't happened).
-    assert _input_names(vault_root, slug) == {"01_setup_kickoff.xlsx"}
+    # After create: no vault folder, nothing on disk.
+    assert _disk_files(vault_root, slug) == set()
 
-    # Ingest the filled setup (an UPLOAD) — it must NOT be written to disk.
+    # Ingest the filled setup (an UPLOAD) — streamed to ingest, nothing written.
     _ingest_setup(client, slug)
-    assert _input_names(vault_root, slug) == {"01_setup_kickoff.xlsx"}
+    assert _disk_files(vault_root, slug) == set()
 
-    # Generate the bid template (GENERATED, on disk) then strict-import the filled file (an UPLOAD).
+    # Generate the bid template (rendered on request) + strict-import the filled file (an UPLOAD).
     template_name = _generate_template(client, slug, 1)
     tmpl = client.get(f"{RUNS}/{slug}/files/{template_name}")
     imported = client.post(
@@ -336,9 +336,7 @@ def test_uploads_leave_no_file_on_disk(client, seed_user, vault_root, db_session
     )
     assert imported.status_code == 200, imported.text
     assert imported.json()["ingested"] == 8
-    # Only the two GENERATED files remain — the uploaded bids file was never written.
-    assert _input_names(vault_root, slug) == {"01_setup_kickoff.xlsx", template_name}
-    assert not any("bids_uploaded" in n for n in _input_names(vault_root, slug))
+    assert _disk_files(vault_root, slug) == set()
 
     # Flexible confirm (an UPLOAD + a normalized template) — neither hits disk.
     view = load_cycle(db_session, _cycle_id(db_session, slug))
@@ -349,11 +347,7 @@ def test_uploads_leave_no_file_on_disk(client, seed_user, vault_root, db_session
         files={"file": ("raw.xlsx", messy, _XLSX)},
     )
     assert confirmed.status_code == 200, confirmed.text
-    # Still only the two generated files — no raw drop, no normalized template on disk.
-    assert _input_names(vault_root, slug) == {"01_setup_kickoff.xlsx", template_name}
-    assert not any(
-        "raw_supplier_drop" in n or "bids_normalized" in n for n in _input_names(vault_root, slug)
-    )
+    assert _disk_files(vault_root, slug) == set()
 
 
 def _cycle_id(db_session, slug: str) -> str:  # type: ignore[no-untyped-def]

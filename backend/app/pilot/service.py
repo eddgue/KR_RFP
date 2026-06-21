@@ -99,7 +99,12 @@ from app.pilot.run_db import (
     provision_run_database,
     restore_run_database,
 )
-from app.pilot.run_repo import create_run_record, get_run, set_run_cycle
+from app.pilot.run_repo import (
+    create_run_record,
+    delete_run_record,
+    get_run,
+    set_run_cycle,
+)
 from app.pilot.setup_ingest import ingest_setup_workbook
 from app.pilot.setup_template import build_setup_workbook
 from app.pilot.vault import (
@@ -111,6 +116,7 @@ from app.pilot.vault import (
     git_commit_run,
     is_rehearsal,
     list_runs,
+    new_run_slug,
     purge_run,
     run_paths,
     stage_filename,
@@ -231,7 +237,26 @@ class PilotService:
         ADR-0018 Slice 2: when `db_runs` is on (the web console) AND a `session` is given, the run
         identity is also written to `pilot.run` (dual-write) so the stateless console can resolve
         the run from the DB. The MCP harness passes no session, `db_runs` off — unchanged.
+
+        ADR-0018 Slice 6: when `persist_outputs` is OFF (the web console), NO vault folder is
+        scaffolded — the run is a `pilot.run` row only. A slug is minted, the DB-backed identity is
+        written, and a `RunPaths` (pointing at a non-existent folder) is returned for API shape; the
+        setup workbook is rendered on request, not written. The harness keeps the on-disk scaffold.
         """
+
+        # Console (no-vault) path: mint a slug, write only the DB identity, scaffold nothing.
+        if not self.persist_outputs:
+            slug = new_run_slug(commodity)
+            paths = run_paths(self.vault_root, slug)
+            if self.db_runs and session is not None:
+                create_run_record(
+                    session,
+                    slug=slug,
+                    commodity=commodity,
+                    label=label,
+                    rehearsal=rehearsal,
+                )
+            return paths
 
         paths = create_run(self.vault_root, commodity=commodity, label=label, rehearsal=rehearsal)
         try:
@@ -305,10 +330,9 @@ class PilotService:
         `data` and linked on the run's `pilot.run` row (the DB identity). Once-per-run, exactly like
         `ingest_setup`: a run that already names a cycle refuses (409). Returns the new cycle_id.
 
-        The cycle_id.txt link + RUN.md kanban are still written (vault scaffold) so the downstream
-        service methods that still read `cycle_id.txt` (template/analysis/freeze) keep working until
-        Slice 5-6 move them onto the DB; Slice 6 then removes the scaffold writes entirely. The
-        once-per-run conflict is checked against the DB row (the console's source of truth).
+        The cycle link is set ONLY on the `pilot.run` row — no vault file is written (Slice 6): the
+        run has no folder, and the downstream template/analysis/freeze methods resolve the cycle +
+        rehearsal flag from the DB. The once-per-run conflict is checked against the DB row.
         """
 
         existing = self._console_cycle_id(session, runpaths)
@@ -324,13 +348,6 @@ class PilotService:
 
         cycle_id = ingest_setup_workbook(session, data)
         set_run_cycle(session, runpaths.slug, cycle_id)
-        # Vault scaffold (removed in Slice 6): keep the cycle link + kanban on disk so the
-        # template/analysis/freeze methods that still read cycle_id.txt resolve the cycle.
-        runpaths.cycle_id_file.write_text(cycle_id, encoding="utf-8")
-        status_mod.set_header_field(runpaths, "Cycle", cycle_id)
-        board = status_mod.kanban(session, cycle_id, runpaths)
-        status_mod.render_run_md(runpaths, board)
-        git_commit_run(self.vault_root, runpaths.slug, "setup ingested → cycle created")
         return cycle_id
 
     # ------------------------------------------------------------------ #
@@ -398,27 +415,42 @@ class PilotService:
             return run.cycle_id
         return self._cycle_id(runpaths)
 
+    def _resolve_rehearsal(self, session: Session, runpaths: RunPaths) -> bool:
+        """Whether the run is a rehearsal — from the `pilot.run` row (console) or `.rehearsal`.
+
+        The console has no `.rehearsal` sentinel (no folder); it reads the flag off the DB row. The
+        harness reads the vault sentinel via `is_rehearsal`.
+        """
+
+        if not self.persist_outputs:
+            run = get_run(session, runpaths.slug)
+            return bool(run and run.rehearsal)
+        return is_rehearsal(runpaths)
+
     # ================================================================== #
     # PART B — the rest of the cycle loop
     # ================================================================== #
     def generate_bid_template(self, session: Session, runpaths: RunPaths, round_no: int) -> Path:
-        """Generate the owned bid template for a round into inputs/ (step 1, D21 key-validated).
+        """Generate the owned bid template for a round (step 1, D21 key-validated).
 
-        Loads the persisted cycle (`load_cycle`), builds the round's `CycleScope`
-        (`build_scope_from_cycle`), runs the bid-template generator, writes the normalized
-        `0X_round{n}_bid_template.xlsx` into inputs/, updates the kanban (Waiting: upload the
-        round's bids), and commits the vault. Returns the written path.
+        Loads the persisted cycle, builds the round's `CycleScope`, and renders the bid template.
+        On the HARNESS path it writes the normalized `0X_round{n}_bid_template.xlsx` into inputs/,
+        updates the kanban, and commits the vault; on the CONSOLE path (`persist_outputs` off) it
+        writes nothing — the template renders on request from the registry (ADR-0018 Slice 5-6).
+        Returns the template's path (its filename is the contract either way).
         """
 
         cycle = self._load_cycle(session, runpaths)
         scope = build_scope_from_cycle(cycle, round_no)
-        data = generate_template_bytes(scope)
 
         filename = stage_filename(
             self._stage("bid_template", round_no), f"round{round_no}_bid_template"
         )
-        path = write_to_run(runpaths, SUBDIR_INPUTS, filename, data)
+        if not self.persist_outputs:
+            return runpaths.inputs / filename
 
+        data = generate_template_bytes(scope)
+        path = write_to_run(runpaths, SUBDIR_INPUTS, filename, data)
         self._render_kanban(
             session,
             runpaths,
@@ -637,8 +669,9 @@ class PilotService:
         """
 
         # A rehearsal run stamps every artifact SYNTHETIC regardless of the caller's flag, so its
-        # output can never be mislabelled "LIVE CYCLE DATA — real names & prices".
-        synthetic = synthetic or is_rehearsal(runpaths)
+        # output can never be mislabelled "LIVE CYCLE DATA — real names & prices". The flag comes
+        # from the `pilot.run` row (console) or the `.rehearsal` sentinel (harness).
+        synthetic = synthetic or self._resolve_rehearsal(session, runpaths)
 
         cycle = self._load_cycle(session, runpaths)
         round_id = cycle.rounds[round_no - 1].id
@@ -1273,6 +1306,17 @@ class PilotService:
         if self.isolate_db:
             drop_run_database(slug)
 
+    def delete_run(self, session: Session, slug: str) -> None:
+        """Close out a CONSOLE run by deleting its `pilot.run` row (ADR-0018 Slice 6).
+
+        The console run has no vault folder to purge — its identity is the DB row, so close-out is a
+        clean removal of that row (the governed cycle/award records remain; a DB-rendered archive
+        zip can be downloaded first via `/archive`). The MCP harness uses `purge_run`/`close_run`
+        for its file-vault close-out instead.
+        """
+
+        delete_run_record(session, slug)
+
     # ------------------------------------------------------------------ #
     # vault-carried DB persistence (resume across ephemeral containers)
     # ------------------------------------------------------------------ #
@@ -1315,9 +1359,18 @@ class PilotService:
     # PART B — internal helpers
     # ================================================================== #
     def _load_cycle(self, session: Session, runpaths: RunPaths) -> CycleView:
-        """Load the run's persisted cycle (raises if the run hasn't ingested its setup yet)."""
+        """Load the run's persisted cycle (raises if the run hasn't ingested its setup yet).
 
-        cycle_id = self._cycle_id(runpaths)
+        The cycle link is resolved from the `pilot.run` row on the CONSOLE path (`persist_outputs`
+        off — no vault folder) and from `cycle_id.txt` on the HARNESS path, so every read/loop
+        method that loads the cycle works for both runtimes (ADR-0018 Slice 6).
+        """
+
+        cycle_id = (
+            self._console_cycle_id(session, runpaths)
+            if not self.persist_outputs
+            else self._cycle_id(runpaths)
+        )
         if cycle_id is None:
             raise ValueError(
                 f"run {runpaths.slug} has no cycle yet — ingest the setup workbook first"
@@ -1829,6 +1882,13 @@ class PilotService:
     # ------------------------------------------------------------------ #
     # web alignment read surface — the scenario/award reads the console renders
     # ------------------------------------------------------------------ #
+    def _run_cycle_id(self, session: Session, runpaths: RunPaths) -> str | None:
+        """The run's cycle id — from the `pilot.run` row (console) or `cycle_id.txt` (harness)."""
+
+        if not self.persist_outputs:
+            return self._console_cycle_id(session, runpaths)
+        return self._cycle_id(runpaths)
+
     def list_analyses(self, session: Session, runpaths: RunPaths) -> list[AnalysisSummary]:
         """The run's cycle's SEALED analysis runs (typed views), or [] if no cycle yet.
 
@@ -1836,7 +1896,7 @@ class PilotService:
         exactly this run's sealed analyses (never another run's).
         """
 
-        cycle_id = self._cycle_id(runpaths)
+        cycle_id = self._run_cycle_id(session, runpaths)
         if cycle_id is None:
             return []
         return read_list_analyses(session, cycle_id)
@@ -1847,7 +1907,7 @@ class PilotService:
         Thin wrapper over `awd.read.list_awards` scoped to THIS run's cycle.
         """
 
-        cycle_id = self._cycle_id(runpaths)
+        cycle_id = self._run_cycle_id(session, runpaths)
         if cycle_id is None:
             return []
         return read_list_awards(session, cycle_id)

@@ -99,6 +99,29 @@ def test_harness_mode_writes_no_run_row(tmp_path: Path, db_session) -> None:  # 
     assert get_run(db_session, paths.slug) is None
 
 
+def test_console_start_run_scaffolds_no_folder(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """Console mode (persist_outputs off) writes only the DB row — NO vault folder (Slice 6)."""
+
+    service = PilotService(tmp_path, isolate_db=False, db_runs=True, persist_outputs=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="No Folder", session=db_session)
+    # The pilot.run row exists; the vault folder does not.
+    assert get_run(db_session, paths.slug) is not None
+    assert not paths.root.exists()
+
+
+def test_console_delete_run_removes_row(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """Console close-out deletes the pilot.run row (Slice 6); idempotent."""
+
+    service = PilotService(tmp_path, isolate_db=False, db_runs=True, persist_outputs=False)
+    paths = service.start_run(commodity="Field Tomatoes", label="Closeout", session=db_session)
+    assert get_run(db_session, paths.slug) is not None
+
+    service.delete_run(db_session, paths.slug)
+    assert get_run(db_session, paths.slug) is None
+    # Idempotent: deleting an already-gone run is a no-op.
+    service.delete_run(db_session, paths.slug)
+
+
 def test_rehearsal_dual_write_flags_synthetic(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
     """A rehearsal run's dual-written row carries rehearsal=True."""
 

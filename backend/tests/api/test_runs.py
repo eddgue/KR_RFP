@@ -140,27 +140,26 @@ def test_run_resolves_from_db_with_no_folder(  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.integration
-def test_created_run_still_resolves_after_folder_removed(  # type: ignore[no-untyped-def]
+def test_created_run_scaffolds_no_vault_folder(  # type: ignore[no-untyped-def]
     client, seed_user, vault_root, db_session
 ) -> None:
-    """Deleting a created run's vault folder does NOT drop it from the console — DB is the identity.
+    """A console-created run scaffolds NO vault folder — its identity is the pilot.run row (Sl. 6).
 
-    Creates a run (which dual-writes the pilot.run row + the folder), removes the folder, and
-    asserts the run still lists and reads back: the source of truth is the DB row, not the files.
+    create_run mints a slug + writes only the DB-backed identity (no `runs/<slug>/` folder, no
+    RUN.md/NOTES.md/cycle_id.txt/.rehearsal/git). The run still lists + reads back from the DB.
     """
-
-    import shutil
 
     _login(client, seed_user)
     created = client.post(
-        RUNS, json={"commodity": "Field Tomatoes", "label": "Survives", "rehearsal": False}
+        RUNS, json={"commodity": "Field Tomatoes", "label": "No Folder", "rehearsal": False}
     )
     assert created.status_code == 201
     slug = created.json()["slug"]
 
-    # Wipe the vault folder entirely — only the pilot.run row remains.
-    shutil.rmtree(vault_root / "runs" / slug)
+    # No vault folder was created — the console persists nothing server-side.
+    assert not (vault_root / "runs" / slug).exists()
 
+    # The run still lists + reads back, resolved entirely from the pilot.run row.
     assert slug in {r["slug"] for r in client.get(RUNS).json()}
     one = client.get(f"{RUNS}/{slug}")
     assert one.status_code == 200

@@ -175,6 +175,19 @@ def _seed_notes_md(slug: str, *, label: str) -> str:
 # ---------------------------------------------------------------------------
 # run creation + listing
 # ---------------------------------------------------------------------------
+def new_run_slug(commodity: str) -> str:
+    """A fresh run slug `<commodity-slug>-<YYYYMMDD>-<short-id>` — WITHOUT scaffolding anything.
+
+    The same identifier `create_run` stamps, factored out so the web console (ADR-0018: no
+    server-side files) can mint a run identity for the DB-backed `pilot.run` row without creating a
+    vault folder. `create_run` still uses this format for the harness's on-disk scaffold.
+    """
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d")
+    short = uuid.uuid4().hex[:6]
+    return f"{_slugify(commodity)}-{stamp}-{short}"
+
+
 def create_run(
     vault_root: Path, *, commodity: str, label: str, rehearsal: bool = False
 ) -> RunPaths:
@@ -190,9 +203,7 @@ def create_run(
     """
 
     vault_root = Path(vault_root)
-    stamp = datetime.now(UTC).strftime("%Y%m%d")
-    short = uuid.uuid4().hex[:6]
-    slug = f"{_slugify(commodity)}-{stamp}-{short}"
+    slug = new_run_slug(commodity)
 
     paths = _build_run_paths(vault_root, slug)
     for subdir in (paths.inputs, paths.outputs, paths.memory):
