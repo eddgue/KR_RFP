@@ -14,7 +14,8 @@ with the bids router via `app.api.v1.pilot_common`.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -131,6 +132,35 @@ class FreezeAwardResponse(BaseModel):
 
     award_id: str
     scenario_code: str
+
+
+class AdjustmentLineChange(BaseModel):
+    """One cell repriced by a post-award adjustment — the cell key + its new $/case."""
+
+    dc_id: str
+    lot_id: str
+    tf_id: str
+    supplier_id: str
+    new_price: float = Field(gt=0, description="The cell's new all-in $/case (must be > 0).")
+
+
+class RecordAdjustmentRequest(BaseModel):
+    """Append an append-only post-award adjustment layer to a frozen award (governed decision)."""
+
+    adjustment_type: str = Field(min_length=1, description="The layer's type (e.g. MARKET_HIKE).")
+    effective_date: date = Field(description="The business date the new prices take effect.")
+    reason: str = Field(min_length=1, description="Why the layer was applied (stored verbatim).")
+    changes: list[AdjustmentLineChange] = Field(
+        min_length=1, description="The cells repriced (at least one)."
+    )
+
+
+class RecordAdjustmentResponse(BaseModel):
+    """The recorded layer's new version + the regenerated post-award document filename."""
+
+    award_id: str
+    version_no: int
+    filename: str
 
 
 # --------------------------------------------------------------------------- #
@@ -626,6 +656,84 @@ def get_run_award(
             message=f"No frozen award {award_id!r} on run {slug!r}.",
             status_code=404,
         ) from exc
+
+
+@router.post(
+    "/{slug}/awards/{award_id}/adjustments",
+    response_model=RecordAdjustmentResponse,
+    summary="Record a post-award adjustment layer (governed)",
+)
+def record_award_adjustment(
+    slug: str,
+    award_id: str,
+    body: RecordAdjustmentRequest,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> RecordAdjustmentResponse:
+    """Append an append-only, date-stamped post-award adjustment LAYER to a frozen award.
+
+    A governed decision (ADR-0014: the baseline is never edited; a price move is a new versioned
+    layer) — the `CREATED` audit event fires inside the award domain on this path. The award is
+    scoped to THIS run's cycle and every change must reference a cell that exists on the award, so a
+    cross-run id is a 404 and an off-award cell is a clean 400 (never a phantom layer). Returns the
+    new `version_no` + the regenerated post-award document filename. 404 if the run / award is
+    unknown; 400 (`validation_error`) for an off-award cell or a service rejection.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    # Scope to THIS run's cycle (another run's award / no cycle is a 404) and fetch the award's real
+    # cells in one shot — `award_detail` raises ValueError when the id isn't ours.
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        )
+    try:
+        detail = svc.award_detail(db, paths, award_id)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        ) from exc
+
+    valid_cells = {(line.dc_id, line.lot_id, line.tf_id, line.supplier_id) for line in detail.lines}
+    unknown = [
+        c for c in body.changes if (c.dc_id, c.lot_id, c.tf_id, c.supplier_id) not in valid_cells
+    ]
+    if unknown:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"{len(unknown)} change(s) reference a cell not on award {award_id!r}.",
+            status_code=400,
+        )
+
+    line_changes = [
+        (c.dc_id, c.lot_id, c.tf_id, c.supplier_id, Decimal(str(c.new_price))) for c in body.changes
+    ]
+    try:
+        out_path = svc.record_adjustment(
+            db,
+            paths,
+            award_id=award_id,
+            adjustment_type=body.adjustment_type,
+            effective_date=body.effective_date,
+            reason=body.reason,
+            line_changes=line_changes,
+        )
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"Could not record the adjustment: {exc}",
+            status_code=400,
+        ) from exc
+
+    updated = svc.award_detail(db, paths, award_id)
+    return RecordAdjustmentResponse(
+        award_id=award_id, version_no=updated.latest_version, filename=out_path.name
+    )
 
 
 def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: str) -> None:

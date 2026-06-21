@@ -42,8 +42,16 @@ class AwardSummary(BaseModel):
 
 
 class AwardLineView(BaseModel):
-    """One awarded cell — names (D23) + frozen baseline, effective price, and the delta."""
+    """One awarded cell — names (D23) + frozen baseline, effective price, and the delta.
 
+    The cell-key ids (`dc_id`/`lot_id`/`tf_id`/`supplier_id`) identify the cell exactly, so a client
+    can reference it when recording a post-award adjustment without fragile name matching.
+    """
+
+    dc_id: str
+    lot_id: str
+    tf_id: str
+    supplier_id: str
     dc: str
     lot: str
     tf: str
@@ -161,6 +169,10 @@ def award_detail(session: Session, cycle_view: CycleView, award_id: str) -> Awar
         eff = effective.get((dc_id, lot_id, tf_id, supplier_id), frozen_price)
         lines.append(
             AwardLineView(
+                dc_id=dc_id,
+                lot_id=lot_id,
+                tf_id=tf_id,
+                supplier_id=supplier_id,
                 dc=dc_name.get(dc_id, dc_id[:6]),
                 lot=lot_name.get(lot_id, lot_id[:6]),
                 tf=tf_name.get(tf_id, tf_id[:6]),
