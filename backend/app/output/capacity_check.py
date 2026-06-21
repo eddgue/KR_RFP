@@ -66,7 +66,7 @@ class CapacityCheckRow:
     lot_id: str
     tf_id: str
     allocated_cases: Decimal  # period total = period_cases × volume_share
-    allocated_weekly_cases: Decimal | None  # allocated / weeks_per_tf (None if weeks not positive)
+    allocated_weekly_cases: Decimal  # allocated / weeks_per_tf (weeks_per_tf is required positive)
     max_weekly_cases: Decimal | None
     max_period_cases: Decimal | None
     has_statement: bool  # did the supplier state ANY ceiling for this cell?
@@ -95,13 +95,20 @@ def evaluate_capacity(
     `award_cells` are the chosen scenario's allocation cells (supplier/dc/lot/tf + period_cases +
     volume_share); `capacity_by_cell` maps the (supplier, dc, lot, tf) cell to its stated ceiling.
     A cell with no stated ceiling is reported (has_statement=False), never flagged. Pure — no IO.
+
+    `weeks_per_tf` MUST be positive: the weekly ceiling check is undefined without a week count, so
+    a non-positive value raises rather than silently treating a real weekly overage as in-capacity
+    (the check fails LOUD, never open — this is a safety check, "never recommend beyond capacity").
     """
+
+    if weeks_per_tf <= 0:
+        raise ValueError(f"weeks_per_tf must be positive (got {weeks_per_tf!r})")
 
     rows: list[CapacityCheckRow] = []
     for c in award_cells:
         key: CellKey = (c.supplier_id, c.dc_id, c.lot_id, c.tf_id)
         allocated = awarded_cases(c.period_cases, c.volume_share)
-        weekly = (allocated / weeks_per_tf) if weeks_per_tf and weeks_per_tf > 0 else None
+        weekly = allocated / weeks_per_tf
         cap = capacity_by_cell.get(key)
         if cap is None:
             rows.append(
@@ -149,7 +156,8 @@ def load_active_capacity(session: Session, cycle_id: str) -> dict[CellKey, State
 
     Reads only CELL-scoped constraints under a non-SUPERSEDED statement (E-38 slice 1 persists CELL
     rows; a re-submission supersedes its predecessor, so the latest ceilings win). When a cell has
-    more than one constraint, the TIGHTEST (MIN) of each ceiling is taken — conservative.
+    more than one constraint, the TIGHTEST (MIN) of EACH ceiling is taken INDEPENDENTLY (weekly and
+    period min'd separately) — conservative on both dimensions, so the check never understates.
     """
 
     rows = session.execute(

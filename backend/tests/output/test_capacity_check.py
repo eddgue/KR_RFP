@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+import pytest
+
 from app.output.capacity_check import StatedCapacity, evaluate_capacity
 
 _D = Decimal
@@ -82,3 +84,13 @@ def test_only_period_stated_ignores_weekly_dimension() -> None:
     (row,) = evaluate_capacity([cell], cap, weeks_per_tf=_WEEKS)
     assert row.over_weekly is False  # no weekly ceiling -> weekly never flags
     assert row.over_period is True
+
+
+def test_nonpositive_weeks_fails_loud_not_open() -> None:
+    """A non-positive week count must RAISE, never silently pass a weekly overage as in-capacity."""
+
+    cell = _cell("G", "1.0", "6500")
+    cap = {("G", "DC-G", "LOT-G", "TF1"): StatedCapacity(_D("1"), None)}  # tiny weekly ceiling
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="weeks_per_tf must be positive"):
+            evaluate_capacity([cell], cap, weeks_per_tf=bad)
