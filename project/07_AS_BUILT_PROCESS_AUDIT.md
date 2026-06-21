@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.4
+version: 1.5
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -316,6 +316,7 @@ A calendar audit is mostly noise; an audit **after meaningful architectural chan
 
 The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
 
+- **v1.5 (2026-06-21)** — *Added:* `RunSummary.has_cycle` (durable post-setup unlock signal); migration 0018 backfilling pre-G-B commodities' `client_id` (a per-orphan legacy client, so duplicate codes don't collide). *Closed:* the G-B backward-compat hole (pre-G-B cycles are no longer stranded by the now-mandatory tenant resolver); three Codex P2 intake findings (soft-gating signal, template-list source, round-error labeling). *Introduced:* none. *Triggers:* none major — the next State/write-location + UX-visibility audit fires with the engine/award HTTP surface + scenario screen (G-E).
 - **v1.4 (2026-06-21)** — *Added:* decision-point audit events (`app/core/audit/recorder.py` + in-txn emits at ingest/seal/freeze/adjust) and `tests/audit/test_decision_events.py`; `ref.commodity.client_id` now populated at setup ingest (latent NULL fixed). *Closed:* **G-B** — the audit chain now covers every existing decision (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic with the decision and tamper-evident. *Introduced:* none. *Note:* `SIGNED_OFF`/`SENT` events remain pending their features (G-D/E-24).
 - **v1.3 (2026-06-21)** — *Added:* re-audit trigger table + five standing questions (§12); release-gate policy (D37, WAYS_OF_WORKING §8); this delta-format history. *Closed:* none. *Introduced:* none.
 - **v1.2 (2026-06-21)** — *Added:* Platform maturity snapshot at the top. *Closed:* none. *Introduced:* none.
