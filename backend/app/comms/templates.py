@@ -79,11 +79,16 @@ _ROUND_FEEDBACK = CommsTemplate(
     subject=_subject("Round [#RoundNumber] Feedback"),
     body=_body("round_feedback.txt"),
     tables=(
-        # DCSummaryTable columns INFERRED (author gave only the Hard/Soft ask tables) — confirm.
         TableSpec(
             name="DCSummaryTable",
-            columns=("DC", "Lots Flagged", "Avg Premium %"),
-            row="[#DC] | [#LotsFlagged] | [#AvgPremiumPct]",
+            columns=(
+                "DC",
+                "Lots Above Target",
+                "Avg $ Premium",
+                "Avg % Premium",
+                "Estimated Weekly Impact",
+            ),
+            row="[#DC] | [#LotsAboveTarget] | [#AvgDollarPremium] | [#AvgPercentPremium] | [#EstWeeklyImpact]",  # noqa: E501
         ),
         TableSpec(
             name="HardAskTable",

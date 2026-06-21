@@ -30,6 +30,7 @@ from typing import cast
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.comms.resolvers import SupplierEmailDraft, award_drafts
 from app.core.audit.events import DomainEvent, EventType
 from app.core.audit.recorder import client_id_for_cycle
 from app.core.audit.writer import AuditWriter
@@ -1513,6 +1514,35 @@ class PilotService:
 
         cycle = self._load_cycle(session, runpaths)
         return read_award_detail(session, cycle, award_id)
+
+    def award_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        award_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One award-notification email DRAFT per awarded supplier (E-37; template-merge).
+
+        Loads the run's cycle (for names + the delivery window), finds the generated per-supplier
+        award guide in outputs/ for the `[#AwardFileName]` placeholder, and renders the award
+        template per awarded supplier. Raises ValueError on an unknown award (router -> 404).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        award_file = next(
+            (p.name for p in runpaths.outputs.glob("*supplier_guides*.xlsx") if p.is_file()), ""
+        )
+        return award_drafts(
+            session,
+            cycle,
+            award_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
+            award_file_name=award_file,
+        )
 
     def scenario_comparison(
         self, session: Session, runpaths: RunPaths, analysis_run_id: str
