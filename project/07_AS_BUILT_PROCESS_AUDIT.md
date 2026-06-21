@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.1
+version: 1.2
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -19,6 +19,29 @@ It is also a **UX/UI map**: each stage is shown in two layers — the *system* l
 ---
 
 ## Executive summary
+
+### Platform maturity snapshot — read this first
+
+The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / built-not-wired** · 🟠 **Defined, not enforced** · 🔴 **Critical gap** · ⬜ **Not implemented**.
+
+| Domain | Status |
+|---|---|
+| Bid intake (strict + flexible) | ✅ Operational |
+| Analysis engine (5-factor scoring) | ✅ Operational |
+| Scenario generation (7 lenses A–G) | ✅ Operational |
+| Award freezing + immutability | ✅ Operational |
+| Post-award versioning (layers) | ✅ Operational |
+| Document generation (workbooks) | ✅ Operational |
+| Reproducible / sealed runs + per-run isolation | ✅ Operational |
+| Web console (UI) | 🟡 Partial — dashboard + intake only; engine/award/post-award are MCP-only (G-E) |
+| Flat-13 period model | 🟡 Built, not wired (G-A) |
+| **Audit provenance (decision trail)** | 🔴 Partial — commodities only; **no award-decision events (G-B)** |
+| RBAC enforcement | 🟠 Defined, not enforced (G-C) |
+| Sign-off workflow | ⬜ Not implemented (G-D) |
+| Contract generation (PBA) | ⬜ Not implemented (G-F) |
+| External feeds / supplier import | ⬜ Not implemented (E-08/E-09/E-34) |
+
+---
 
 **What works end to end (driven by `PilotService` + the MCP harness):** start run → setup ingest (full cycle/scope creation) → bid template → bid intake (strict *and* flexible) → V3 engine (5-factor scoring, 7 scenario lenses A–G, split allocation) → human-selected award freeze → versioned post-award layers → generated workbooks (alignment, booking guide, per-supplier guides, post-award) → close-out (archive→purge). Sealed analysis runs and frozen awards are immutability-guarded. Per-run isolated databases keep runs apart at the harness runtime.
 
@@ -265,5 +288,6 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ## Appendix — revision log
 
+- **v1.2 (2026-06-21):** added the **Platform maturity snapshot** table at the top (whole-platform status in one glance, for a director-level read). (Sponsor review of v1.1.)
 - **v1.1 (2026-06-21):** added §4 System of Record hierarchy and §5 Failure domains; elevated **G-B to CRITICAL (existential)**; re-ranked priorities to lead with the audit-event wiring; added the "where the project stands" framing. (Sponsor review of v1.0.)
 - **v1.0 (2026-06-21):** initial as-built audit at commit `d563aad`.
