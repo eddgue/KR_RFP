@@ -50,18 +50,15 @@ export default function RunIntakePage({
   const [bidsRefreshKey, setBidsRefreshKey] = useState(0);
 
   // Soft gating: the backend is the source of truth (it returns `gate_required`
-  // when a step is run too early). Locally we unlock a step once the user has
-  // completed the prior one this session, OR from durable server-side state. A
-  // generated bid template lives in inputs/ and implies the cycle exists, so it
-  // — not output files, which only appear later after analysis — is the signal a
-  // returning user has finished setup and this round's template.
-  const hasAnyTemplate = files.some(
-    (f) => f.kind === "input" && f.name.includes("bid_template"),
-  );
+  // when a step is run too early). Locally we unlock a step from durable server
+  // state or this session's progress. Setup-done is the run's `has_cycle` flag
+  // (true once setup is ingested — works even for a returning user who hasn't
+  // generated a template yet). Template-done is the round's template file in
+  // inputs/ (a template implies the cycle exists too).
   const hasRoundTemplate = files.some(
     (f) => f.kind === "input" && f.name.includes(`round${round}_bid_template`),
   );
-  const setupDone = setupDoneThisSession || hasAnyTemplate;
+  const setupDone = setupDoneThisSession || Boolean(run?.has_cycle) || hasRoundTemplate;
   const templateDone = templateDoneThisSession || hasRoundTemplate;
 
   const loadRun = useCallback(async () => {

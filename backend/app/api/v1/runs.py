@@ -55,6 +55,10 @@ class RunSummary(BaseModel):
     label: str
     rehearsal: bool
     stage: str = Field(description="A short human label for where the run is (from the kanban).")
+    has_cycle: bool = Field(
+        description="True once setup has been ingested (a cycle exists) — the durable signal the "
+        "console uses to unlock the post-setup steps, independent of any generated file."
+    )
 
 
 class RunDetail(RunSummary):
@@ -126,6 +130,19 @@ def _stage_label(board: dict[str, list[str]]) -> str:
     return "Setup"
 
 
+def _has_cycle(paths: RunPaths) -> bool:
+    """True once setup has been ingested — the run's cycle_id.txt exists and is non-empty.
+
+    A durable, file-generation-independent signal: a returning user who ingested setup but hasn't
+    generated a template yet should still have the post-setup steps unlocked (re-uploading setup
+    would re-create the cycle).
+    """
+
+    return paths.cycle_id_file.exists() and bool(
+        paths.cycle_id_file.read_text(encoding="utf-8").strip()
+    )
+
+
 def _summary(paths: RunPaths, board: dict[str, list[str]]) -> RunSummary:
     header = read_status(paths)
     return RunSummary(
@@ -134,6 +151,7 @@ def _summary(paths: RunPaths, board: dict[str, list[str]]) -> RunSummary:
         label=_label_from_notes(paths),
         rehearsal=is_rehearsal(paths),
         stage=_stage_label(board),
+        has_cycle=_has_cycle(paths),
     )
 
 

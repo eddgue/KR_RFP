@@ -375,6 +375,22 @@ def test_import_before_setup_is_gated(client, seed_user, vault_root) -> None:  #
 
 
 @pytest.mark.integration
+def test_run_has_cycle_flips_after_setup(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """has_cycle is false on a fresh run, true once setup is ingested.
+
+    This is the durable signal the intake UI gates on (Codex P2): a returning user who ingested
+    setup but hasn't generated a template yet must still have the post-setup steps unlocked, without
+    re-uploading setup.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    assert client.get(f"{RUNS}/{slug}").json()["has_cycle"] is False
+    _ingest_setup(client, slug)
+    assert client.get(f"{RUNS}/{slug}").json()["has_cycle"] is True
+
+
+@pytest.mark.integration
 def test_template_out_of_range_round_is_validation_error(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
     """After setup, a round beyond the cycle's count is validation_error — NOT 'no cycle yet'.
 
