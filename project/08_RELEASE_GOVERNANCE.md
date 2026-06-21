@@ -59,7 +59,7 @@ no new core workflows. **Anything that fails these is C.**
 |---|---|---|---|
 | **E-37** comms email drafts (award/feedback/non-selection) | shipped (PR #18) | B (within existing output/render) | ✅ delivered |
 | **E-39** canonical formula registry | shipped/in-review (PR #19) | A-adjacent (systemic fix for a calc-divergence defect; behavior-preserving) | ✅ delivered |
-| **E-38** supplier capacity | ingest + persist + engine/custom cap flag + workbook control tab | **B** | **BUILD now** (accuracy: never recommend an award beyond stated capacity). **Wires the EXISTING baseline tables `bid.capacity_statement` + `bid.capacity_constraint` + `eng.scenario_capacity_usage` (As-Built §16) — NOT a new store.** |
+| **E-38** supplier capacity | ingest + persist + engine/custom cap flag + workbook control tab | **B** | **BUILD now** (accuracy: never recommend an award beyond stated capacity). **Wires the EXISTING baseline tables `bid.capacity_statement` + `bid.capacity_constraint` (As-Built §16) — NOT a new store**; usage computed against the active `eng.analysis_scenario_award` (NOT `eng.scenario_capacity_usage`, which is keyed to the dormant solver spine). |
 | **E-38** supplier capacity | the in-app allocation-vs-capacity **dashboard** | **C** (new app section) | **Backlog** → Phase-4 review |
 | **G-C** RBAC enforcement | call `require_permission` on routes | B (within existing auth) | Backlog/Live-Run (not speculative now) |
 | **G-D / E-24** sign-off + draft→SENT lifecycle | new transition/state/gate + `SIGNED_OFF`/`SENT` events | **C** (new workflow family) | Backlog |
@@ -71,3 +71,23 @@ no new core workflows. **Anything that fails these is C.**
 
 This table is the operative gate: only **A** and the **E-38 B-core** are buildable in Phase 1; everything
 marked **C** is recorded and deferred until the post–Live-Run consolidation review.
+
+## Review cadence & control points
+
+**Two review tiers:**
+
+1. **Push-basic review (automatic).** The Codex-in-GitHub bot runs on every push / PR and posts inline findings. The agent triages these continuously as they arrive (classify A/B/C, fix, resolve threads) — no human action needed to trigger it.
+2. **Detailed full-suite auditor (manual).** A deeper review the **human runs on request** and pastes the report back. It does **not** auto-run, so the agent must **explicitly call it at defined control points**; the agent then triages findings (A/B/C), fixes the actionable ones, calls a re-run if the change was material, and proceeds only when clean.
+
+Each manual-auditor request is a standout, copy-pasteable block:
+
+> 🔎 **REVIEW CHECKPOINT** — please run the **full detailed auditor** on **<PR # / branch / commit range>**. Scope: `<what changed>`. I'll hold the merge until the report is back.
+
+**Control points (when the agent will call the manual detailed auditor):**
+
+1. **Pre-merge — every PR (primary gate).** When a PR is green and ready, before merge. This is the recurring rhythm — in practice a review lands at **every PR**, which is the "periodic" cadence.
+2. **Sprint close.** When a unit of work + its **As-Built Specification** update is complete (often coincides with #1; called out separately for spec-only or multi-commit sprints — the As-Built rule: *no sprint complete until the spec is updated*).
+3. **Phase gates.** Entering/leaving Live Run #1, Live Run #2, Feature Consolidation, Final Audit, Production Lock — a deeper full review (per Phase 5).
+4. **Backstop.** If work accumulates without hitting 1–3 (e.g., a long working session), the agent calls a checkpoint rather than let review debt build.
+
+**Between control points** the agent keeps working and committing ("save as you go"), but **does not merge** a PR until its review checkpoint is satisfied. If the human says "skip the review on this one," the agent proceeds and records that in the PR.
