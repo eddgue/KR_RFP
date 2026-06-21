@@ -47,3 +47,25 @@ def test_preflight_does_not_allow_unknown_origin() -> None:
     )
 
     assert "access-control-allow-origin" not in resp.headers
+
+
+def test_unexpected_500_carries_cors_for_allowed_origin() -> None:
+    """An unhandled 500 still gets CORS headers so the console reads the error, not a CORS failure.
+
+    The catch-all Exception handler runs in ServerErrorMiddleware, outside CORSMiddleware, so this
+    guards the explicit header-echo in the 500 handler. A throwaway route raises so the catch-all
+    fires; `raise_server_exceptions=False` makes TestClient return the 500 instead of re-raising.
+    """
+
+    app = create_app()
+
+    @app.get("/api/v1/_boom")
+    def _boom() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/api/v1/_boom", headers={"Origin": _ALLOWED_ORIGIN})
+
+    assert resp.status_code == 500
+    assert resp.headers["access-control-allow-origin"] == _ALLOWED_ORIGIN
+    assert resp.headers["access-control-allow-credentials"] == "true"
