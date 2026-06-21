@@ -340,8 +340,9 @@ class PilotService:
         if cap_count:
             self._append_note(
                 runpaths,
-                f"Round {round_no} capacity: {cap_count} stated per-cell ceiling(s) loaded — the "
-                "engine/award allocation is checked against these (over-capacity is flagged).",
+                f"Round {round_no} capacity: {cap_count} stated per-cell ceiling(s) loaded "
+                "and stored. Allocation-vs-capacity is not yet surfaced in outputs "
+                "(tracked as G-G / E-38b).",
                 related_file=None,
             )
         if superseded:
