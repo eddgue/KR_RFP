@@ -29,8 +29,16 @@ export RFP_VAULT_AUTOPUSH="${RFP_VAULT_AUTOPUSH:-1}"
 
 log() { echo "[session-start] $*" >&2; }
 
+# If the venv is missing (the env Setup script wasn't configured, or the cache was cleared), BUILD it
+# now rather than bailing — self-healing so the harness still comes up. Configuring scripts/web_setup.sh
+# as the environment Setup script caches this so it doesn't run every session (and so the server is up
+# before the MCP client connects). This fallback can take 1-3 min on the session it runs.
 if [ ! -x "$PY" ]; then
-  log "backend venv missing ($PY) — run scripts/web_setup.sh as the environment setup script first."
+  log "backend venv missing — building it now (set scripts/web_setup.sh as the env Setup script to cache this)..."
+  bash "$ROOT/scripts/web_setup.sh" || log "WARNING: venv build failed (see above)."
+fi
+if [ ! -x "$PY" ]; then
+  log "venv still missing after build attempt — cannot start the harness; aborting."
   exit 0
 fi
 
@@ -38,11 +46,21 @@ fi
 # Option (a, recommended): attach eddgue/RFP_PILOT_VAULT as a SECOND repo and point PILOT_VAULT_ROOT
 #   at its checkout — push works natively via the attached repo's credentials.
 # Option (b): set RFP_PILOT_VAULT_REMOTE and this clones it here (the clone needs push credentials).
+# Auto-detect an attached/sibling vault clone across the locations a second repo tends to land.
 if [ -z "${PILOT_VAULT_ROOT:-}" ]; then
-  for cand in "$(dirname "$ROOT")/RFP_PILOT_VAULT" "$(dirname "$ROOT")/rfp_pilot_vault"; do
-    [ -d "$cand/.git" ] && { PILOT_VAULT_ROOT="$(cd "$cand" && pwd)"; log "found vault clone at $cand."; break; }
+  parent="$(dirname "$ROOT")"
+  for cand in \
+    "$parent/RFP_PILOT_VAULT" "$parent/rfp_pilot_vault" \
+    "$ROOT/../RFP_PILOT_VAULT" "${HOME:-/root}/RFP_PILOT_VAULT"; do
+    [ -d "$cand/.git" ] && { PILOT_VAULT_ROOT="$(cd "$cand" && pwd)"; break; }
   done
 fi
+# Last resort: search a couple levels down for a git repo named like the vault (case-insensitive).
+if [ -z "${PILOT_VAULT_ROOT:-}" ]; then
+  hit="$(find "$(dirname "$ROOT")" "${HOME:-/root}" -maxdepth 3 -type d -iname 'rfp_pilot_vault' 2>/dev/null | head -1)"
+  [ -n "$hit" ] && [ -d "$hit/.git" ] && PILOT_VAULT_ROOT="$hit"
+fi
+# Or clone it from a configured remote (set RFP_PILOT_VAULT_REMOTE in the env).
 if [ -z "${PILOT_VAULT_ROOT:-}" ] && [ -n "${RFP_PILOT_VAULT_REMOTE:-}" ]; then
   PILOT_VAULT_ROOT="${ROOT%/}/.rfp_pilot_vault"
   if [ ! -d "$PILOT_VAULT_ROOT/.git" ]; then
@@ -51,11 +69,11 @@ if [ -z "${PILOT_VAULT_ROOT:-}" ] && [ -n "${RFP_PILOT_VAULT_REMOTE:-}" ]; then
   fi
 fi
 export PILOT_VAULT_ROOT="${PILOT_VAULT_ROOT:-}"
-
-# Autopush needs an upstream branch to push to; warn early if there is none (push would no-op).
-if [ -n "$PILOT_VAULT_ROOT" ] && [ -d "$PILOT_VAULT_ROOT/.git" ] && [ "$RFP_VAULT_AUTOPUSH" != "0" ]; then
-  git -C "$PILOT_VAULT_ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1 \
-    || log "WARNING: vault has no upstream branch — autopush has no target (run 'git -C <vault> push -u origin <branch>' once)."
+if [ -n "$PILOT_VAULT_ROOT" ]; then
+  log "vault: $PILOT_VAULT_ROOT"
+else
+  log "vault not found — attach eddgue/RFP_PILOT_VAULT as a second repo or set RFP_PILOT_VAULT_REMOTE; \
+runs won't persist until then (rehydrate skipped)."
 fi
 
 # --- run a psql command as a Postgres SUPERUSER, trying the usual local auth strategies ---------- #

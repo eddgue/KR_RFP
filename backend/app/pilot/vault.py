@@ -301,11 +301,12 @@ def _commit(vault_root: Path, message: str) -> None:
     # `git commit` exits non-zero when there's nothing staged; that's fine, swallow it.
     committed = _git(vault_root, "commit", "-m", message)
     # In the ephemeral web runtime the local clone is discarded between sessions, so a commit only
-    # PERSISTS if it is pushed to the vault's remote (D34). RFP_VAULT_AUTOPUSH turns that on; it
-    # stays OFF for local/tests (the default), and a push failure is swallowed like every other git
-    # convenience here — it must never break the file scaffold the pilot depends on.
-    if committed and _autopush_enabled():
-        _git(vault_root, "push")
+    # PERSISTS if pushed to the vault's remote (D34). RFP_VAULT_AUTOPUSH turns that on (OFF for
+    # local/tests); push failures are swallowed like every git convenience here. Plain `git push`
+    # first; if it fails for lack of an upstream (a freshly cloned / EMPTY vault), `-u origin HEAD`
+    # creates the remote branch and sets it, so run state persists from the very first write.
+    if committed and _autopush_enabled() and not _git(vault_root, "push"):
+        _git(vault_root, "push", "-u", "origin", "HEAD")
 
 
 def _autopush_enabled() -> bool:
