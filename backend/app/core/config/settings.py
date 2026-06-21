@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # local http://localhost testing — a browser silently drops a Secure cookie over plain http, so
     # login appears to "succeed" but no session sticks. Keep it true in every deployed environment.
     auth_cookie_secure: bool = True
+    # The browser console is a separate origin from this API and sends the session cookie
+    # cross-origin, so credentialed CORS must allow its EXACT origin(s). Comma-separated; a wildcard
+    # "*" is invalid with credentials, so list real origins. Default is the local Next dev server;
+    # set CORS_ALLOW_ORIGINS to the deployed console origin(s) in every other environment.
+    cors_allow_origins: str = "http://localhost:3000"
 
     # Pilot run vault root (app/api/v1/runs wraps PilotService against this). Defaults under the
     # repo's `var/vault`; created on first use. Override VAULT_ROOT to point at the sponsor vault.
