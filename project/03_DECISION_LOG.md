@@ -251,6 +251,21 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D39 — As-Built Audit Governance contract: the audit is the living model of reality · **RATIFIED 2026-06-21**
+**Why.** D37 made the As-Built Audit a release gate; the sponsor then formalized its *role*: the audit is the authoritative description of **how the system actually operates** — system-lifecycle documentation, governance record, operational + architectural reference, institutional memory, gap register, and release-validation artifact. It documents **implemented reality, not intent, roadmap, or design concepts**. The risk it retires: documentation that drifts into fiction and a release that ships on a stale or aspirational picture.
+**Decision (the contract).** Ratify and maintain `07_AS_BUILT_PROCESS_AUDIT.md` (PM-007) under these rules:
+- **Reality wins.** If implementation and the audit disagree, implementation is reviewed and the audit is corrected to reflect reality. The audit is documentation of truth.
+- **Trigger conditions.** A re-audit (scoped to what changed) is required on any change materially affecting **workflow** (stage/transition/approval/human interaction/automation), **persistence** (table/file output/storage/write path/system of record), **runtime** (service/MCP tool/agent/orchestrator/execution boundary/integration), **security & governance** (role/permission/RBAC/approval/audit-logging), **user experience** (screen/surface/operator action/visible state), or **architecture** (subsystem/dependency/runtime/deployment).
+- **Required sections (maintained):** Executive Summary · Platform Maturity Snapshot · Workflow Mapping · Human Workflow Mapping · Persistence Mapping · System of Record Hierarchy · Runtime Boundaries · User Experience Surfaces · Failure Domains · Gap Register · Version Delta.
+- **Required questions (every re-run answers):** how the system actually works · where information is written · who can read/write/approve · what must be visible to operators · what can fail · where design and implementation diverge — answerable **without reading source code**.
+- **Gap register fields:** description · impact · severity · recommended action · status.
+- **Status vocabulary:** Operational · Partial · Defined-but-Unenforced · Missing (plus Critical for an existential gap).
+- **Release gate.** No major version is complete until: (1) implementation complete, (2) review complete, (3) audit updated, (4) gap register updated, (5) critical findings reviewed. The gate yields **PASS** (audit reflects implementation; no critical control missing), **CONDITIONAL** (known risks documented and explicitly accepted in the gap register with an owner), or **FAIL** (audit doesn't reflect implementation or a critical control is missing — do not ship).
+- **Pre-merge audit-impact review.** On every PR (incl. Codex review), verify whether the change affects workflow / state transitions / persistence / runtime boundaries / permissions / governance / auditability / user-visible behavior / failure domains. If any answer is **yes**, the audit + gap register are reviewed and updated **in the same change, before merge** — part of the Definition of Done.
+**Linked:** D37 (release-gate origin), PM-007 (now v1.7 — §12 governance hub, §13 runtime boundaries, formal gap register), `02_WAYS_OF_WORKING` §5/§6/§8, the sponsor governance note (2026-06-21).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

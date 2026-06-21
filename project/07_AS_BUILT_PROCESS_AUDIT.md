@@ -1,8 +1,9 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.6
+version: 1.7
 status: Review — feature development HELD pending sign-off
+governance: living model of reality — maintained per the As-Built Audit Governance contract (D39)
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
 depends_on: PM-004 (Program Backlog), 03_DECISION_LOG
@@ -22,7 +23,7 @@ It is also a **UX/UI map**: each stage is shown in two layers — the *system* l
 
 ### Platform maturity snapshot — read this first
 
-The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / built-not-wired** · 🟠 **Defined, not enforced** · 🔴 **Critical gap** · ⬜ **Not implemented**.
+The whole platform at a glance. Status vocabulary (the governance set, D39): ✅ **Operational** · 🟡 **Partial** (built, not fully wired) · 🟠 **Defined but Unenforced** · 🔴 **Critical gap** · ⬜ **Missing** (not implemented).
 
 | Domain | Status |
 |---|---|
@@ -45,16 +46,16 @@ The whole platform at a glance. Legend: ✅ **Operational** · 🟡 **Partial / 
 
 **What works end to end (driven by `PilotService` + the MCP harness):** start run → setup ingest (full cycle/scope creation) → bid template → bid intake (strict *and* flexible) → V3 engine (5-factor scoring, 7 scenario lenses A–G, split allocation) → human-selected award freeze → versioned post-award layers → generated workbooks (alignment, booking guide, per-supplier guides, post-award) → close-out (archive→purge). Sealed analysis runs and frozen awards are immutability-guarded. Per-run isolated databases keep runs apart at the harness runtime.
 
-**The gaps — the critical one (G-B) CLOSED (v1.4) and G-A CLOSED (v1.6); four material remain** (detail + evidence below):
+**The gaps — the critical one (G-B) CLOSED (v1.4) and G-A CLOSED (v1.6); four material remain.** This is the **gap register** (the spec's required fields: description · severity · impact · recommended action · status). Severity = inherent weight if unaddressed; status = where it stands today.
 
-| # | Gap | Severity | Impact | Backlog |
-|---|---|---|---|---|
-| **G-B** | **~~The audit hash-chain doesn't cover award decisions.~~ CLOSED (v1.4).** Decision events now fire in-transaction at ingest (IMPORTED), supersede (SUPERSEDED), engine seal (SEALED), award freeze (FROZEN), and adjustment (CREATED) — `app/core/audit/recorder.py` + emits in `pilot/service.py`, `awd/service.py`. | ✅ **CLOSED** | The "why did Supplier A get 35%?" chain (bid → analysis → freeze → adjustment) is now tamper-evident and recomputable. | E-05 ✓ |
-| **G-A** | **~~Flat-13 period fan-out is built but NOT wired.~~ CLOSED (v1.6).** Intake now fans each priced line out to one `bid.bid_line` per fiscal period in the timeframe's span (`fiscal_period_id` populated); the engine/award builder stay timeframe-grain via a deterministic representative-row collapse (Option B, **D38**). Unmappable timeframes fall back to a single tf-grain NULL-period row. | ✅ **CLOSED** | The "data flat at 13 periods" model (D35) is now in effect for stored bids, with engine/workbook output proven byte-identical to the pre-fan-out grain. | D35/D38, migrations 0014–0016 |
-| **G-C** | **RBAC is defined but not enforced.** A full permission matrix + separation-of-duties exists; **no route uses it** — every route is bare session auth, and the dev principal holds all roles. | 🟠 Material | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 |
-| **G-D** | **Sign-off is decorative.** It exists only as a workbook tab + an unused permission — no transition, no state, no gate. | 🟠 Material | No portfolio sign-off step (E-22) in the running system. | E-22 |
-| **G-E** | **The HTTP API is front-half only.** `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs. | 🟠 Material | The web console can set up + take bids, but cannot run the engine, award, or adjust — those need the MCP harness. | E-25 |
-| **G-F** | **PBA / contract builder is absent**, and so are external feeds (iTrade/KCMS), the supplier importer, and any deck/letter/email/send path. | 🟠 Material | The post-award final step and supplier master intake the sponsor flagged don't exist yet. | E-33, E-34, E-08/E-09, E-24 |
+| # | Gap (description) | Severity | Impact | Recommended action | Status |
+|---|---|---|---|---|---|
+| **G-B** | The audit hash-chain didn't cover award decisions. Now fires in-transaction at ingest (IMPORTED), supersede (SUPERSEDED), engine seal (SEALED), freeze (FROZEN), adjustment (CREATED) — `app/core/audit/recorder.py` + emits in `pilot/service.py`, `awd/service.py`. | 🔴 Critical (existential) | The "why did Supplier A get 35%?" chain (bid → analysis → freeze → adjustment) is tamper-evident and recomputable. | E-05 — wire decision events in-txn; verify chain. | ✅ **Closed (v1.4)** |
+| **G-A** | Flat-13 period fan-out was built but not wired. Intake now fans each priced line to one `bid.bid_line` per fiscal period in the timeframe span (`fiscal_period_id` populated); engine/award stay timeframe-grain via a deterministic representative-row collapse (Option B, **D38**); unmappable tf → single NULL-period row. | 🟠 Material | The "data flat at 13 periods" model (D35) is in effect for stored bids; engine/workbook output proven byte-identical to the pre-fan-out grain. | D35/D38 — fan-out + collapse; migrations 0014–0016. | ✅ **Closed (v1.6)** |
+| **G-C** | RBAC is defined but not enforced: a full permission matrix + separation-of-duties exists, but **no route uses it** — every route is bare session auth and the dev principal holds all roles. | 🟠 Material | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 — call `require_permission` on routes; real principals. | 🔴 Open |
+| **G-D** | Sign-off is decorative: a workbook tab + an unused permission — no transition, no state, no gate. | 🟠 Material | No portfolio sign-off step (E-22) in the running system. | E-22 — add the sign-off transition/state + gate; wire `SIGNED_OFF`. | 🔴 Open |
+| **G-E** | The HTTP API is front-half only: `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs (the alignment read layer + endpoints landed in PR #12; the screen frontend is still missing). | 🟠 Material | The web console can set up + take bids, but cannot run the engine, award, or adjust from the browser. | E-25 — build the engine/award/post-award HTTP surface + scenario screen. | 🔴 Open (backend partial) |
+| **G-F** | PBA / contract builder is absent, as are external feeds (iTrade/KCMS), the supplier importer, and any deck/letter/email/send path. | 🟠 Material | The post-award final step and supplier-master intake the sponsor flagged don't exist yet. | E-33 (PBA), E-34 (importer), E-08/E-09 (feeds), E-24 (send). | 🔴 Open |
 
 > **✅ G-B CLOSED in v1.4 (was the one existential gap).** The platform's thesis is *AI-generated, not AI-managed* — every number must be defensible by a human-owned, tamper-evident record. The first hard question in production is **"why did Supplier A receive 35% and Supplier B 15%?"**, and the answer must be a chain: **bid received → analysis run → scenario selected → award frozen → adjustment applied**. As of v1.4 each of those decisions appends a hash-chained `audit.event_log` row **in the decision's own transaction** — so an award cannot exist without its event — and the chain recomputes/verifies (tamper-evident; see `tests/audit/test_decision_events.py`). The remaining `SIGNED_OFF` / `SENT` event types stay unwired only because those features don't exist yet (G-D / E-24).
 
@@ -284,29 +285,63 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ---
 
-## 12. Re-running this audit — triggers, not calendar
+## 12. Governance — triggers, questions, and the release gate
 
-A calendar audit is mostly noise; an audit **after meaningful architectural change** catches drift while it is still cheap to fix. Re-run this audit on the events below — scoped to what changed — and treat it as a **release gate**: *no major version is complete until this document is updated* (ratified in **D37**; operationalized in `02_WAYS_OF_WORKING` §8 + Definition of Done).
+This audit is a **living model of reality**, not a statement of intent: it documents the system **as actually implemented**. If implementation and this document disagree, **implementation is reviewed and the audit is corrected to match reality** (ratified in **D39**; release-gate policy in **D37**; operationalized in `02_WAYS_OF_WORKING` §8 + Definition of Done). A calendar audit is mostly noise; an audit **after meaningful architectural change** catches drift while it is still cheap to fix.
 
-| Trigger | Audit scope |
+### 12.1 Trigger conditions (re-audit on change, scoped to what changed)
+
+| Category | Triggering change | Audit scope |
+|---|---|---|
+| **Workflow** | New process stage · lifecycle transition · approval path · human interaction · automation | Workflow (§1–§2) |
+| **Persistence** | New table · file output · storage location · write path · system of record | State / write-location (§3–§4) |
+| **Runtime** | New service · MCP tool · agent · orchestrator logic · execution boundary · integration | Runtime boundaries (§13) |
+| **Security & governance** | New user role · permission/RBAC change · approval change · audit-logging change | RBAC + governance (§6, §8) |
+| **User experience** | New screen · workflow surface · operator action · user-visible state | UX visibility (§2 human layer) |
+| **Architecture** | New subsystem · dependency · runtime · deployment model | Full audit |
+| **Major version / rollout** | New major version · pre-production rollout · post-production rollout | Full audit |
+
+### 12.2 The questions every re-run must answer
+
+1. **How does the system actually work?** — inputs → processing → outputs, human vs automated decisions (§1 flowchart, §2 stages).
+2. **Where is information written?** — every write path has a defined destination (§3 data flow, §4 System of Record).
+3. **Who can read / write / approve it?** — (§6 gates, §2 human layer, RBAC / G-C).
+4. **What must be visible to operators?** — required screens, status, approval, and audit visibility (§2 human/UX layer, §13 trust boundaries).
+5. **What can fail?** — failure domains, dependency chains, single points of failure, recovery (§5).
+6. **Where are the gaps between design and implementation?** — (the gap register, §9).
+
+The objective: any future developer, operator, auditor, or stakeholder can answer *how it works · where the data is · who can change it · what can fail · what changed since last version* **without reading source code**.
+
+### 12.3 Release gate — a major version is not complete until
+
+1. Implementation is complete; **2.** review is complete; **3.** this audit is updated; **4.** the gap register is updated; **5.** critical findings are reviewed. The gate then yields one of three **release states**:
+
+| State | Meaning |
 |---|---|
-| New major version | Full audit |
-| New data store | Full audit |
-| New agent added | Workflow + permissions |
-| New write path added | State / write-location |
-| New user role added | RBAC |
-| New UI surface added | UX visibility |
-| New approval process added | Governance |
-| Pre-production rollout | Full audit |
-| Post-production rollout | Full audit |
+| ✅ **PASS** | The audit accurately reflects implementation; no critical control missing. |
+| 🟡 **CONDITIONAL** | Known risks are documented **and explicitly accepted** (recorded in the gap register with an owner). |
+| 🔴 **FAIL** | The audit does **not** reflect implementation, or a critical control is missing. **Do not ship.** |
 
-**Every re-run answers the same five questions** (the section answering each today in parentheses):
+### 12.4 Pre-merge audit-impact review (the review requirement)
 
-1. **What is the workflow now?** (§1 flowchart, §2 stages)
-2. **What records exist, and where are they stored?** (§3 data flow, §4 System of Record)
-3. **Who can read / write / approve them?** (§6 gates, §2 human layer, RBAC / G-C)
-4. **What must be surfaced to users?** (§2 human/UX layer)
-5. **Where are the gaps between design and implementation?** (§9 gap analysis, the six-gap summary)
+On **every** change (PR review, incl. Codex), verify whether it affects: **workflow · state transitions · persistence · runtime boundaries · permissions · governance · auditability · user-visible behavior · failure domains**. If **any** answer is **yes**, `07_AS_BUILT_PROCESS_AUDIT.md` (and the gap register) **must be reviewed and updated before merge** — the audit moves with the code in the same change. This check is part of the Definition of Done (`02_WAYS_OF_WORKING` §8).
+
+---
+
+## 13. Runtime boundaries & trust boundaries
+
+What actually runs, where, and where the trust lines fall. Two runtimes wrap the **same** `PilotService` domain logic; the unit of work owns the transaction (services `add+flush`, never an internal commit).
+
+| Runtime / boundary | What it is | Isolation / trust |
+|---|---|---|
+| **Web console API** (FastAPI, `app/api`) | The browser-facing surface (auth+2FA, dashboard, run detail, bid intake). Front-half only today (G-E). | Runs against the **shared** app DB; per-run `cycle_id`/`round_id` scoping (D36); auth at the edge (`get_current_user`), **no per-query RLS yet**. |
+| **MCP harness** (`PilotService(isolate_db=True)`) | The full-lifecycle execution surface (engine/award/post-award/close-out). | Each run gets its **own database** `kr_rfp_run_<slug>` (D30) — strong runtime isolation. |
+| **Engine** (`app/engine`, clean-room v3) | Deterministic single-pass scoring/allocation. **Not an agent**, no optimisation loop, no autonomy. | **Purity boundary**: stdlib + pydantic only; the purity test forbids importing SQLAlchemy here. `app/domain/eng` adapts DB ↔ engine. |
+| **Immutability guards** | Sealed analysis runs + frozen awards. | **App-layer** SQLAlchemy listeners (wired at `main.py`); DB-level triggers/RLS are Platform-team-owned and **not present here**. |
+| **Audit writer** (`AuditWriter`) | Appends hash-chained `audit.event_log` rows. | **Atomic with the decision** — same transaction, inherits its rollback (G-B). |
+| **Vault filesystem** (git per run) | Generated documents + `run_data.json`, git-versioned. | Persistence **convenience** — commit/push failures are deliberately swallowed (D34); the DB stays authoritative. |
+
+**Agents:** none run autonomously in the platform — there is no in-loop AI making or managing decisions at runtime (the thesis is *AI-generated, not AI-managed*). **Integrations:** none live yet; iTrade/KCMS feeds (E-08/E-09/E-28) and the supplier importer (E-34) are future. **Execution environments:** Postgres 16 (shared for web, per-run for MCP), Alembic migrations, the git-versioned vault. The principal trust lines are the **auth edge** (no per-query RLS — G-C), the **engine purity boundary**, and the **app-layer-only immutability** (no DB-level enforcement yet — see §11 priority 4).
 
 ---
 
@@ -314,6 +349,7 @@ A calendar audit is mostly noise; an audit **after meaningful architectural chan
 
 The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
 
+- **v1.7 (2026-06-21)** — *Added (governance structure, ratified in D39):* this audit is now formally maintained as a **living model of reality** with a fixed required-section set. New **§13 Runtime boundaries & trust boundaries** (web vs MCP runtimes, engine purity boundary, app-layer immutability, auth edge); the gap summary is now a formal **gap register** (description · severity · impact · recommended action · status); **§12** reworked into the governance hub — categorized trigger conditions, the six standing questions, the **release-gate states** (PASS / CONDITIONAL / FAIL) + completion checklist, and the **pre-merge audit-impact review** requirement (any change touching workflow/state/persistence/runtime/permissions/governance/auditability/UX/failure-domains updates this audit before merge). Status vocabulary aligned to Operational / Partial / Defined-but-Unenforced / Critical / Missing. *Closed:* none (process/structure change). *Introduced:* none. *Triggers:* governance-process change — no implementation delta.
 - **v1.6 (2026-06-21)** — *Added:* flat-13 period storage wired into intake (Option B, **D38**) — `_persist_bid_lines` fans each priced line to one `bid.bid_line` per fiscal period in its timeframe span (`fiscal_period_id` populated), `_representative_lines` collapses period rows back to timeframe grain for the engine, and the workbook/list/read paths dedupe per cell (`DISTINCT ON`); `tests/bid/test_period_import.py` proves engine + workbook output is byte-identical to the pre-fan-out grain, plus an unmappable-timeframe NULL-period fallback. Caught two latent workbook dedupe bugs (Detailed Scoring stats, Coverage rows) that would otherwise have inflated ×n_periods. Follow-up (Codex P2 + a self-found regression-test catch): **every `bid.bid_line` render read now filters to ACTIVE (`is_scoreable`) rows**, mirroring the engine's `_read_bid_lines` — the bids list, the `run_data` per-round count, and all five workbook reads (price grid, Detailed Scoring stats, Coverage, transit-by-lane MAX, round-evolution, Landed & Hidden Costs). This closes a latent superseded-leak (a re-submission supersedes prior rows but never deletes them, so an unfiltered dedupe could surface a stale price). A new resubmission regression test (`test_resubmission_supersedes_prior_period_rows_in_every_read`) scans the whole alignment workbook end-to-end and proves no superseded price reaches any sealed score or rendered tab. *Closed:* **G-A** — bids are now stored flat at the 13 fiscal periods (D35 in effect); the engine/award builder stay timeframe-grain by construction. *Introduced:* (minor, tracked in D38) `bid_line.fiscal_period_id` is `varchar(36)` nullable rather than a `uuid` FK — a deliberate low-risk choice (matches the existing text-id convention; no engine change); future cleanup to a typed FK + NOT NULL once tf→period mapping is universal. *Triggers:* New write-location grain change (scoped: §3 data flow + §2 stages re-verified). Next State/write-location + UX-visibility audit fires with the scenario screen frontend (G-E).
 - **v1.5 (2026-06-21)** — *Added:* `RunSummary.has_cycle` (durable post-setup unlock signal); migration 0018 backfilling pre-G-B commodities' `client_id` (a per-orphan legacy client, so duplicate codes don't collide). *Closed:* the G-B backward-compat hole (pre-G-B cycles are no longer stranded by the now-mandatory tenant resolver); three Codex P2 intake findings (soft-gating signal, template-list source, round-error labeling). *Introduced:* none. *Triggers:* none major — the next State/write-location + UX-visibility audit fires with the engine/award HTTP surface + scenario screen (G-E).
 - **v1.4 (2026-06-21)** — *Added:* decision-point audit events (`app/core/audit/recorder.py` + in-txn emits at ingest/seal/freeze/adjust) and `tests/audit/test_decision_events.py`; `ref.commodity.client_id` now populated at setup ingest (latent NULL fixed). *Closed:* **G-B** — the audit chain now covers every existing decision (IMPORTED/SEALED/FROZEN/SUPERSEDED/CREATED), atomic with the decision and tamper-evident. *Introduced:* none. *Note:* `SIGNED_OFF`/`SENT` events remain pending their features (G-D/E-24).
