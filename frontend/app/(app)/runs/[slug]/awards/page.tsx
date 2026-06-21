@@ -2,12 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ApiError, getAward, getRun, listAwards } from "@/lib/api";
-import type { AwardDetail, AwardSummary, RunDetail } from "@/lib/api";
+import {
+  ApiError,
+  downloadRunFile,
+  getAward,
+  getRun,
+  listAwards,
+  recordAdjustment,
+} from "@/lib/api";
+import type {
+  AwardDetail,
+  AwardSummary,
+  RecordAdjustmentBody,
+  RunDetail,
+} from "@/lib/api";
 import { Button, Panel } from "@/components/ui";
 import { Alert } from "@/components/intake/Alert";
 import { AwardsListPanel } from "@/components/awards/AwardsListPanel";
 import { AwardDetailPanel } from "@/components/awards/AwardDetailPanel";
+import { RecordAdjustmentModal } from "@/components/awards/RecordAdjustmentModal";
 
 // The post-award screen — view a run's frozen awards and inspect one: its awarded
 // lines (frozen baseline → current effective price) and the versioned layer history.
@@ -29,6 +42,17 @@ export default function AwardsPage({
   const [detail, setDetail] = useState<AwardDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  // Bumped after a recorded adjustment to re-fetch the (now-superseded) detail.
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  // Record-adjustment flow.
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [adjustNotice, setAdjustNotice] = useState<{
+    version: number;
+    filename: string;
+  } | null>(null);
 
   const loadRun = useCallback(async () => {
     setRunLoading(true);
@@ -98,7 +122,36 @@ export default function AwardsPage({
         setDetailLoading(false);
       });
     return () => ctrl.abort();
-  }, [slug, selectedId]);
+  }, [slug, selectedId, reloadNonce]);
+
+  // Selecting a different award clears any prior adjustment notice/error.
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+    setAdjustNotice(null);
+    setAdjustError(null);
+  }, []);
+
+  const handleAdjustConfirm = useCallback(
+    async (body: RecordAdjustmentBody) => {
+      if (!selectedId) return;
+      setAdjusting(true);
+      setAdjustError(null);
+      try {
+        const res = await recordAdjustment(slug, selectedId, body);
+        setAdjustNotice({ version: res.version_no, filename: res.filename });
+        setAdjustOpen(false);
+        setReloadNonce((n) => n + 1); // re-fetch the now-updated award detail
+        await loadAwards(); // the list's latest_version advances
+      } catch (err) {
+        setAdjustError(
+          err instanceof ApiError ? err.detail : "Could not record the adjustment.",
+        );
+      } finally {
+        setAdjusting(false);
+      }
+    },
+    [slug, selectedId, loadAwards],
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -171,7 +224,7 @@ export default function AwardsPage({
             </div>
           </Panel>
 
-          <AwardsListPanel awards={awards} selectedId={selectedId} onSelect={setSelectedId} />
+          <AwardsListPanel awards={awards} selectedId={selectedId} onSelect={handleSelect} />
 
           {selectedId && (
             <>
@@ -185,7 +238,38 @@ export default function AwardsPage({
               )}
               {!detailLoading && detailError && <Alert tone="error">{detailError}</Alert>}
               {!detailLoading && !detailError && detail && detail.award_id === selectedId && (
-                <AwardDetailPanel detail={detail} />
+                <>
+                  {adjustNotice && (
+                    <Alert tone="success">
+                      Recorded adjustment v{adjustNotice.version}.{" "}
+                      <button
+                        type="button"
+                        onClick={() => void downloadRunFile(slug, adjustNotice.filename)}
+                        className="font-medium underline hover:no-underline"
+                      >
+                        Download the updated post-award document
+                      </button>
+                      .
+                    </Alert>
+                  )}
+                  <AwardDetailPanel
+                    detail={detail}
+                    onAdjust={() => {
+                      setAdjustError(null);
+                      setAdjustNotice(null);
+                      setAdjustOpen(true);
+                    }}
+                  />
+                  <RecordAdjustmentModal
+                    open={adjustOpen}
+                    onClose={() => setAdjustOpen(false)}
+                    onConfirm={handleAdjustConfirm}
+                    submitting={adjusting}
+                    error={adjustError}
+                    awardCode={detail.award_code}
+                    lines={detail.lines}
+                  />
+                </>
               )}
             </>
           )}
