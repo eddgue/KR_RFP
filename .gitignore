@@ -55,3 +55,9 @@ backend/demo/output/
 
 # Option (b) vault clone target (web session-start); never commit the vault into this repo
 .rfp_pilot_vault/
+
+# Harness skill/subagents are symlinked into here at web session start
+# (scripts/web_session_start.sh); canonical copies live under mcp/. Not committed.
+# (If you switch to committing real project-scope skills/agents, remove these.)
+.claude/skills/
+.claude/agents/

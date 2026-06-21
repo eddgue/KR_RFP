@@ -14,6 +14,10 @@ set -uo pipefail  # not -e: best-effort; a soft failure must not abort session s
 # Only do the web wiring in the cloud runtime; local Claude Code uses the stdio plugin (mcp/.mcp.json).
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || { echo "[session-start] not the web runtime — skipping." >&2; exit 0; }
 
+# Reserve stdout for this hook's JSON output (Claude Code parses it); route ALL logs + command
+# output to stderr so nothing pollutes it. fd 3 is the real stdout; the reloadSkills line goes there.
+exec 3>&1 1>&2
+
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BACKEND="${ROOT}/backend"
 PY="${BACKEND}/.venv/bin/python"
@@ -104,4 +108,21 @@ else
     || log "WARNING: MCP server did not come up — see /tmp/rfp_mcp.log."
 fi
 
+# --- 5. Make the 3-agent harness loadable in this web session ----------------------------------- #
+# The cloud runtime auto-loads project skills/subagents from .claude/, but NOT the plugin layout
+# under mcp/ (plugins need a marketplace declaration). Symlink the plugin's CANONICAL skill +
+# subagents into .claude/ (no committed duplication; .gitignored), then the reloadSkills signal
+# emitted below re-scans them. NOTE: skill reload is documented; SUBAGENT live-reload is not — if a
+# real web session doesn't pick up the engine/secretary agents, prefer committing them to .claude/
+# or declaring the plugin in .claude/settings.json (see WEB_DEPLOYMENT.md).
+if [ -d "$ROOT/mcp/skills/rfp-pilot" ]; then
+  mkdir -p "$ROOT/.claude/skills" "$ROOT/.claude/agents"
+  ln -sfn "$ROOT/mcp/skills/rfp-pilot" "$ROOT/.claude/skills/rfp-pilot"
+  ln -sfn "$ROOT/mcp/agents/rfp-engine.md" "$ROOT/.claude/agents/rfp-engine.md"
+  ln -sfn "$ROOT/mcp/agents/rfp-secretary.md" "$ROOT/.claude/agents/rfp-secretary.md"
+  log "linked harness into .claude/ (skill rfp-pilot + subagents rfp-engine, rfp-secretary)."
+fi
+
+# The hook's ONLY stdout: re-scan skills so the just-linked harness is available this session.
+echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","reloadSkills":true}}' >&3
 exit 0
