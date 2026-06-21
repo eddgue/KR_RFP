@@ -14,9 +14,10 @@ set -uo pipefail  # not -e: best-effort; a soft failure must not abort session s
 # Only do the web wiring in the cloud runtime; local Claude Code uses the stdio plugin (mcp/.mcp.json).
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || { echo "[session-start] not the web runtime — skipping." >&2; exit 0; }
 
-# Reserve stdout for this hook's JSON output (Claude Code parses it); route ALL logs + command
-# output to stderr so nothing pollutes it. fd 3 is the real stdout; the reloadSkills line goes there.
-exec 3>&1 1>&2
+# This hook produces NO stdout: the harness skill + subagents are committed under .claude/ (loaded at
+# clone time, so no reloadSkills signal is needed). Route all logs + command output to stderr so the
+# hook's stdout stays clean.
+exec 1>&2
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BACKEND="${ROOT}/backend"
@@ -29,16 +30,19 @@ export RFP_VAULT_AUTOPUSH="${RFP_VAULT_AUTOPUSH:-1}"
 
 log() { echo "[session-start] $*" >&2; }
 
-# If the venv is missing (the env Setup script wasn't configured, or the cache was cleared), BUILD it
-# now rather than bailing — self-healing so the harness still comes up. Configuring scripts/web_setup.sh
-# as the environment Setup script caches this so it doesn't run every session (and so the server is up
-# before the MCP client connects). This fallback can take 1-3 min on the session it runs.
-if [ ! -x "$PY" ]; then
-  log "backend venv missing — building it now (set scripts/web_setup.sh as the env Setup script to cache this)..."
+# Build the venv if it's missing OR incomplete. Checking only that python exists would accept a
+# PARTIAL install (venv created but `pip install` interrupted), so verify the key deps actually
+# import. Configuring scripts/web_setup.sh as the env Setup script caches a complete build so this
+# fallback (1-3 min) doesn't run every session and the server is up before the MCP client connects.
+venv_ready() {
+  [ -x "$PY" ] && (cd "$BACKEND" && "$PY" -c "import mcp, sqlalchemy, app.pilot.service") >/dev/null 2>&1
+}
+if ! venv_ready; then
+  log "backend venv missing or incomplete — building it (set scripts/web_setup.sh as the env Setup script to cache this)..."
   bash "$ROOT/scripts/web_setup.sh" || log "WARNING: venv build failed (see above)."
 fi
-if [ ! -x "$PY" ]; then
-  log "venv still missing after build attempt — cannot start the harness; aborting."
+if ! venv_ready; then
+  log "venv still not usable after build attempt (deps missing?) — cannot start the harness; aborting."
   exit 0
 fi
 
@@ -126,21 +130,7 @@ else
     || log "WARNING: MCP server did not come up — see /tmp/rfp_mcp.log."
 fi
 
-# --- 5. Make the 3-agent harness loadable in this web session ----------------------------------- #
-# The cloud runtime auto-loads project skills/subagents from .claude/, but NOT the plugin layout
-# under mcp/ (plugins need a marketplace declaration). Symlink the plugin's CANONICAL skill +
-# subagents into .claude/ (no committed duplication; .gitignored), then the reloadSkills signal
-# emitted below re-scans them. NOTE: skill reload is documented; SUBAGENT live-reload is not — if a
-# real web session doesn't pick up the engine/secretary agents, prefer committing them to .claude/
-# or declaring the plugin in .claude/settings.json (see WEB_DEPLOYMENT.md).
-if [ -d "$ROOT/mcp/skills/rfp-pilot" ]; then
-  mkdir -p "$ROOT/.claude/skills" "$ROOT/.claude/agents"
-  ln -sfn "$ROOT/mcp/skills/rfp-pilot" "$ROOT/.claude/skills/rfp-pilot"
-  ln -sfn "$ROOT/mcp/agents/rfp-engine.md" "$ROOT/.claude/agents/rfp-engine.md"
-  ln -sfn "$ROOT/mcp/agents/rfp-secretary.md" "$ROOT/.claude/agents/rfp-secretary.md"
-  log "linked harness into .claude/ (skill rfp-pilot + subagents rfp-engine, rfp-secretary)."
-fi
-
-# The hook's ONLY stdout: re-scan skills so the just-linked harness is available this session.
-echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","reloadSkills":true}}' >&3
+# The 3-agent harness (skill rfp-pilot + subagents rfp-engine/rfp-secretary) is committed under
+# .claude/skills and .claude/agents, so the cloud runtime loads it at clone time — nothing to do here
+# (subagents added at SessionStart would NOT load until restart; committing them avoids that).
 exit 0

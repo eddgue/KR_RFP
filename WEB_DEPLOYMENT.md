@@ -26,25 +26,26 @@ entry point — `RFP_MCP_TRANSPORT=streamable-http` selects HTTP (`rfp_mcp/rfp_p
 
 ## The 3-agent harness (skill + subagents) on the web
 
-The orchestrator **skill** and the **engine/secretary subagents** ship in the plugin layout
-(`mcp/skills/rfp-pilot/`, `mcp/agents/`). The web runtime does **not** auto-load a plugin from a
-cloned repo — it only auto-loads project skills/subagents from `.claude/skills/` and `.claude/agents/`
-(or a plugin *declared* in `.claude/settings.json` via a marketplace). So the SessionStart hook
-(`scripts/web_session_start.sh`, step 5) **symlinks** the plugin's canonical skill + subagents into
-`.claude/` (no committed duplication — the links are `.gitignored`) and emits
-`{"hookSpecificOutput":{"hookEventName":"SessionStart","reloadSkills":true}}` to re-scan skills.
+The web runtime auto-loads project skills/subagents from **`.claude/skills/`** and **`.claude/agents/`**
+at clone time, but it does **not** auto-load the `mcp/` plugin layout. It also does **not** reliably
+load subagents added *during* a SessionStart hook — `reloadSkills` re-scans skills only, and a
+subagent file dropped in at session start isn't picked up until a restart (confirmed by review).
 
-- **Caveat — validate in a real web session.** Skill reload via the hook is documented; **subagent**
-  live-reload is not. If a real session loads the orchestrator skill but not the `rfp-engine` /
-  `rfp-secretary` subagents, switch to one of the cleaner alternatives below.
-- **Alternative A (simplest):** commit the skill + subagents directly to `.claude/skills/rfp-pilot/`
-  and `.claude/agents/` (they auto-load from the clone, no hook/reload needed). Trade-off: duplicates
-  the plugin content, or means moving the canonical copy out of `mcp/`.
-- **Alternative B (keeps the plugin/versioning architecture, D31/D32):** publish `RFP_MCP` as a
-  marketplace and **declare the plugin in `.claude/settings.json`**, which the cloud runtime installs
-  at session start. Trade-off: needs the marketplace + a settings declaration.
-- The raw MCP **tools** work on the web regardless of the above (they come from the HTTP server), so
-  a single session can still drive a run; the harness loading is what gives the curated 3-agent UX.
+So the harness is **committed under `.claude/`**: `.claude/skills/rfp-pilot/SKILL.md` and
+`.claude/agents/rfp-engine.md` / `.claude/agents/rfp-secretary.md`. Present in the clone, they load at
+session start — both the skill and the subagents — with nothing for the hook to do. (The canonical
+copies still live under `mcp/` for the local `--plugin-dir` plugin / stdio path; **keep the two in
+sync** — they are duplicated on purpose so each runtime loads its native way.)
+
+- **Validate once in a real web session:** confirm `/agents` shows `rfp-engine` and `rfp-secretary`
+  and that invoking the `rfp-pilot` skill can delegate to them. (Local copies loading on web is the
+  documented "present before startup" path; this just hasn't been exercised on the cloud yet.)
+- The raw MCP **tools** work on the web regardless (they come from the HTTP server), so a single
+  session can drive a run even if the skill/subagents ever fail to load — the harness is the curated
+  UX on top.
+- Later option (drops the duplication): publish `RFP_MCP` as a marketplace and **declare the plugin
+  in `.claude/settings.json`** so the cloud installs it at session start (preserves the versioned
+  plugin design, D31/D32).
 
 ## One-time environment setup (web console)
 
