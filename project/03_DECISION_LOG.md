@@ -274,6 +274,14 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D41 — Storage model: DB is the system of record; deliverables render on request, uploads not persisted (web/Cloud Run) — and NO storage change before the live RFPs · **RATIFIED 2026-06-21**
+**Why.** Sponsor asked whether outputs are stored or generated, and stated the principle: the DB is the single source of truth — render deliverables on request, never store them; don't keep uploaded files (re-extract via the standard template + DB). Today the opposite holds (deliverables + uploads written to the run vault on disk, git-committed, served/zipped from disk). **Decisive constraint: two live RFPs start the coming week**, running on the **MCP harness** (GCP decided per ADR-0017 but not yet provisioned).
+**Decision (by the Doctrine).** (1) **Ratify the target:** the PostgreSQL DB is the system of record; generated deliverables **render on request and are not persisted**; uploads **stream → ingest → not retained as derived copies**. Sound because every generator is a **deterministic DB-render** (E-39 → byte-identical), so regeneration is exact/lossless for our templates. (2) **Bind it to the Cloud Run deployment (Category B), AFTER the live RFPs** — Cloud Run's statelessness requires it anyway. (3) **Change nothing before the live RFPs:** they run on the harness, whose **per-run vault (files + git + DB snapshot) is RETAINED** as the run's portable, **recoverable** record across ephemeral boxes (D30) — a *safety feature* for a live run. Refactoring a working, recovery-critical layer the week of go-live is the highest margin for error; we don't. (4) **Open sub-decision (resolve at deployment):** the raw-as-received **flexible** upload is the only governed input not reconstructable from the DB — recommended to retain **that one class** in object storage (GCS) for audit/dispute, render everything else; *sponsor leans pure-discard.* E-31 gate-closure export → GCS (intentional), never the request path.
+**Readiness note.** For the live RFPs, the in-flight safety net is the vault recovery (autopush of the DB snapshot) — confirm it works as a live-run readiness check.
+**Linked:** ADR-0018, ADR-0017 (Cloud Run statelessness), ADR-0003 (two runtimes), D30 (vault/isolated DB), E-39 (deterministic renders), E-31 (gate-closure export), `norm.source_artifact`, As-Built §16 (persistence).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
