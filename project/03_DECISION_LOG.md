@@ -208,6 +208,23 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D34 — A run's governed DB rides the Vault git as a SQL snapshot, so a run resumes on a fresh (ephemeral) box · **NOTE 2026-06-20**
+**Why.** The harness must run **online** (Claude Code on the web), where the container — and its Postgres — is **ephemeral**: only what is committed to the cloned RFP_PILOT_VAULT git survives between sessions. The per-run isolated database (D30) would be lost every session. So the run's governed state must travel with the Vault, the same way its documents already do.
+**Decision.** After every governed write, the run's isolated DB is dumped to **`<run>/db/run_db.sql`** (full `pg_dump`, schema + data) and committed to the Vault git alongside the documents + `run_data.json` — `PilotService.snapshot_run` (no-op when DB isolation is off). On session start in a fresh box, **`python -m rfp_mcp.rehydrate`** walks the Vault and restores each run's DB from its snapshot (`PilotService.rehydrate_runs` → drop-if-stale, create empty, load the dump). A run therefore resumes **exactly where it was sealed**, from git alone — no external DB to carry.
+**Mechanism / correctness.** A full `pg_dump` restores into an EMPTY database cleanly (tables, then COPY data, then FK constraints last), so the FK-heavy schema round-trips with no load-order problems; the dump carries the schema, so restore does **not** re-migrate (preserving the version a run was pinned to, D32). Proven end to end by `test_run_db_dump_drop_restore_round_trips`: provision → write → dump → DROP (the wipe) → restore → the sentinel survives. The snapshot is taken **after** the unit of work commits, so it captures committed state only.
+**Write side — persisting off the box.** A vault *commit* only survives an ephemeral (web) container if it is **pushed** to the remote. `RFP_VAULT_AUTOPUSH` makes every vault commit push (default OFF for local/tests; the web SessionStart hook defaults it ON), so each governed write that commits a DB snapshot also pushes it (`test_vault_autopush.py`). A push failure is swallowed — git remains a convenience layer that never blocks the file scaffold. Running the harness on Claude Code for the web is documented in `WEB_DEPLOYMENT.md` (HTTP MCP transport, the setup + SessionStart scripts, and the remaining vault-clone/credentials decision).
+**Linked:** D30 (per-run isolation — this is how it persists), D32 (version pinning — restore does not migrate), RFP_PILOT_VAULT (the carrier), `app/pilot/run_db.py` (`dump_run_database` / `restore_run_database`), `rfp_mcp/rehydrate.py` (session-start entry).
+
+---
+
+### D35 — The Kroger fiscal calendar is stored AUTHORITATIVELY (data, not a date rule); 13 periods, 4-3-3-3 quarters, 53-week leap years · **NOTE 2026-06-20**
+**Decision.** The platform's fiscal-period reference is the sponsor's actual conversion table, stored as data (`app/fiscal/data/kroger_fiscal_periods.csv`, FY16..FY36, derived from the sponsor's daily Web-Intelligence export), NOT a computed date rule. `app/fiscal/calendar.py` reads it for `period_for_date`, the timeframe presets, and the intake fan-out. Chosen for error-protection (the sponsor's stated principle): a calendar quirk becomes a CSV update, never a subtly-wrong derivation.
+**Confirmed facts (correct earlier assumptions).** Exactly **13 periods/year**; quarters split **4-3-3-3** (Q1=P1-4, Q2=P5-7, Q3=P8-10, Q4=P11-13), *not* 3-3-3-4; most years are 52 weeks (every period = 4 weeks) but a **53-week leap year** (~every 5-6 yrs — FY17/23/28/34 in the table) gives **Period 13 a 5th week**, so a period is **not always 28 days** — spans are always read from the table. The table is fully contiguous (each period begins the day after the prior ends, across FY boundaries). 2026-06-20 = FY26 Period 5 (Q2).
+**Role.** This is the canonical flat-13 grain the intake model records against (INTAKE_TEMPLATE_DESIGN §1a): every offer lands in exactly ONE period; a template groups periods into timeframes for the supplier; intake fans a timeframe's price out to each period (`expand_to_periods`). Foundation done (increment 2a); the flat-13 storage table + bid-grain FK + compact/expand view are the next data-layer increment (2b).
+**Linked:** INTAKE_TEMPLATE_DESIGN §1a (flat-13 model), D29 (column superset), the reference clean-room rule (the derived table lives in `backend/app/`, not `reference/`), `tests/fiscal/test_calendar.py`.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

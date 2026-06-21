@@ -108,16 +108,57 @@ The template a supplier receives must behave like a true form, not an editable s
   the superset; the generator emits exactly those, and a reduced preset still round-trips through
   ingest (test: `test_preset_reduces_columns_and_still_round_trips`). Built-in presets: full /
   all_in_simple / components.
-- **§1 period model (flat-13 storage + template grouping + intake fan-out) — NEXT (increment 2),
-  per §1a.** Two parts: (a) the data layer stores flat at the 13 fiscal periods and intake fans a
-  timeframe's price out to each period in its span; (b) the compact/expand VIEW rolls those 13
-  periods up into the template's timeframes. Needs a multi-period scope to be meaningful (the pilot's
-  synthetic scope is single-period). This is the larger build — likely its own schema work
-  (period table + period→timeframe map) given the pilot's bid grain is currently one row per TF.
+- **§1 period model — calendar FOUNDATION DONE (increment 2a, 2026-06-20).** The authoritative
+  Kroger fiscal calendar is now in the platform: `app/fiscal/calendar.py` + the reference table
+  `app/fiscal/data/kroger_fiscal_periods.csv` (FY16..FY36, 273 rows, fully contiguous, derived from
+  the sponsor's daily conversion table). It gives `period_for_date` (date → the one of 13 periods an
+  offer lands in), `get_period`/`periods_in_year`, the timeframe presets
+  (`fiscal_quarters`/`fiscal_halves`/`fiscal_year_timeframe`/`per_period` + a generic
+  `group_periods` for arbitrary contiguous spans like A=P1-2,B=P3-9,C=P10-13), and `expand_to_periods`
+  — the intake **fan-out** that writes a timeframe's price to each period in its span. Tested:
+  `tests/fiscal/test_calendar.py` (11). **Confirmed facts** (use these, they correct earlier
+  assumptions): 13 periods/year; quarters are **4-3-3-3** (Q1=P1-4, Q2=P5-7, Q3=P8-10, Q4=P11-13),
+  not 3-3-3-4; most years are 52 weeks but a **53-week leap year** (~every 5-6 yrs: FY17/23/28/34)
+  gives **Period 13 a 5th week**, so a period is **not always 28 days** — always read the span from
+  the table, never assume a length. Stored authoritatively (data, not a date rule) so a future
+  calendar quirk is a CSV update, not a code change ("protects us from future errors").
+- **§1 period model — DB DIMENSION DONE (increment 2b-i, 2026-06-20).** `ref.fiscal_period`
+  (migration `0014`) lands the calendar in the governed store, seeded from the same CSV (273 rows,
+  FY16..FY36); other grains can FK to it. Tested: `tests/ref/test_fiscal_period_table.py`.
+- **§1 period model — STORAGE COLUMN + fan-out logic DONE (increment 2b-ii, 2026-06-20),
+  backward-compatible.** `bid.bid_line` gains a **nullable** `fiscal_period_id` (migration `0015`,
+  no constraint change — pilot rows stay NULL and behave as before), and `app/domain/bid/
+  period_fanout.py` is the PURE fan-out (`fan_out` / `fan_out_all` on `expand_to_periods`, payload
+  copied per period, rejects double-covered periods). Tested: `tests/bid/test_period_fanout.py` (5).
+  NOT yet wired into the live ingest/engine path — intentionally inert so it cannot affect a live
+  cutover.
+- **§1 period model — PERIOD-GRAIN UNIQUENESS + by-period import PROVEN (increment 2b-iii,
+  2026-06-21), backward-compatible.** Migration `0016` flips `bid.bid_line` uniqueness to the
+  flat-13 grain via TWO *filtered* unique indexes: `WHERE fiscal_period_id IS NULL` keeps the legacy
+  one-row-per-(cell, tf) guarantee (pilot/resubmission unchanged), `WHERE fiscal_period_id IS NOT
+  NULL` enforces one-row-per-(cell, fiscal period) for fanned rows. The old single
+  `uq_bid_line_cell_per_submission` is dropped (its FK-target sibling `uq_bid_line_identity_full` is
+  untouched). Proven end to end on real Postgres with the **potato sample**: timeframe-structured
+  bids (full column set, both price bases) ingested, then fanned out — each timeframe row →
+  one row per fiscal period in its span (derived from the cycle TF's dates), every column preserved
+  verbatim, each by-period row joined to a real `ref.fiscal_period` (test:
+  `tests/bid/test_period_import.py`). Resubmission/supersession e2e still green (backward-compat).
+- **§1 period model — ACTIVATION (wire fan-out into ingest + engine read-path + compact/expand view)
+  — DEFERRED until after the first live run, per §1a.** Remaining: call the fan-out in the intake
+  unit of work; add the ~5-line `runner._assemble_bids` fallback that prefers the period grain when
+  present (engine logic unchanged); and the compact/expand VIEW. Deferred on purpose — it touches
+  the engine read-path, the wrong risk to take right before going live.
+  - **TYPE NOTE (reconcile at activation):** `bid.bid_line.fiscal_period_id` is `varchar(36)` (the
+    bid_line id convention) while `ref.fiscal_period.id` is `uuid`, so joins need an explicit cast
+    (`fp.id::text`) and an enforced FK isn't possible as-is. At activation, reconcile: either store
+    the period's surrogate as `uuid`, switch `ref.fiscal_period` to a `varchar(36)` PK to match the
+    operational tables, or carry the natural key (`fiscal_year`,`period`) on the bid line instead.
 - **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
 
+- The fiscal calendar (period↔date, timeframes, fan-out): `app/fiscal/calendar.py` +
+  `app/fiscal/data/kroger_fiscal_periods.csv`. The flat-13 grain everything below records against.
 - The bid column set + ordering: `app/domain/bid/template_schema.py` (`BidColumn`, `PRICE_COLUMNS`).
 - Completeness classification (the traffic-light source of truth): `bid_ingester` `Completeness`
   (`NO_BID` / `INCOMPLETE` / `BID`).

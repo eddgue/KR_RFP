@@ -1,0 +1,9 @@
+{
+  "//": "Repo-root MCP registration read by Claude Code on the web (cloud runtime). The web runtime does NOT spawn stdio MCP servers, so the rfp-pilot server runs as a LOCAL HTTP server inside the session container (started by the SessionStart hook, scripts/web_session_start.sh) and is reached here over loopback. For LOCAL terminal use, register the stdio server instead via mcp/.mcp.json (the plugin) or `claude mcp add` — see mcp/README.md.",
+  "mcpServers": {
+    "rfp-pilot": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/mcp"
+    }
+  }
+}

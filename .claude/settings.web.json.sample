@@ -1,0 +1,16 @@
+{
+  "//": "SAMPLE — copy this to .claude/settings.json (in the web repo clone) to wire the SessionStart hook. It is a SAMPLE, not active config, on purpose: installing a hook that runs on every session is an action you should take deliberately. When applied, the hook runs scripts/web_session_start.sh at the start of each session to start Postgres, rehydrate each run's isolated DB from its vault snapshot (D34), and start the HTTP MCP server that .mcp.json points at. The script is a no-op outside the web runtime (CLAUDE_CODE_REMOTE != true), so local terminal sessions are unaffected. See WEB_DEPLOYMENT.md.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/web_session_start.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

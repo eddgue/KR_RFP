@@ -50,7 +50,12 @@ from app.output.scenario_workbook import write_scenario_workbook_xlsx
 from app.output.types import CycleView
 from app.pilot import status as status_mod
 from app.pilot.flex_ingest import MappingProposal, apply_mapping, infer_bid_mapping
-from app.pilot.run_db import drop_run_database, provision_run_database
+from app.pilot.run_db import (
+    drop_run_database,
+    dump_run_database,
+    provision_run_database,
+    restore_run_database,
+)
 from app.pilot.setup_ingest import ingest_setup_workbook
 from app.pilot.setup_template import build_setup_workbook
 from app.pilot.vault import (
@@ -931,6 +936,44 @@ class PilotService:
         purge_run(self.vault_root, slug)
         if self.isolate_db:
             drop_run_database(slug)
+
+    # ------------------------------------------------------------------ #
+    # vault-carried DB persistence (resume across ephemeral containers)
+    # ------------------------------------------------------------------ #
+    _DB_SNAPSHOT = (
+        "db/run_db.sql"  # the run's governed-DB dump under the run folder (git-versioned)
+    )
+
+    def snapshot_run(self, runpaths: RunPaths) -> Path | None:
+        """Dump the run's isolated DB into the vault (git-committed) so it survives a wiped box.
+
+        Called after a governed write commits. The dump rides the vault's git history alongside the
+        documents + run_data.json, so a fresh (web) session can rehydrate the exact governed state.
+        No-op when DB isolation is off (the shared-DB test mode has nothing per-run to dump).
+        """
+
+        if not self.isolate_db:
+            return None
+        out_path = runpaths.root / self._DB_SNAPSHOT
+        dump_run_database(runpaths.slug, out_path)
+        git_commit_run(self.vault_root, runpaths.slug, "run DB snapshot")
+        return out_path
+
+    def rehydrate_runs(self) -> list[str]:
+        """Restore every vault run's DB from its committed snapshot (session start in a fresh box).
+
+        Iterates the vault's runs; for each that carries a `db/run_db.sql` snapshot, recreates the
+        run's isolated database and loads it. Returns the slugs restored. The inverse of the
+        per-step `snapshot_run` — together they make a run fully resumable from git alone (D30/D32).
+        """
+
+        restored: list[str] = []
+        for paths in list_runs(self.vault_root):
+            snapshot = paths.root / self._DB_SNAPSHOT
+            if snapshot.is_file():
+                restore_run_database(paths.slug, snapshot)
+                restored.append(paths.slug)
+        return restored
 
     # ================================================================== #
     # PART B — internal helpers

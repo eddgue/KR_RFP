@@ -20,10 +20,10 @@ and testable in the reference package this phase.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,3 +78,28 @@ class Commodity(RefBase):
     abbreviation: Mapped[str | None] = mapped_column(String(20), nullable=True)
     active_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = created_at_column()
+
+
+class FiscalPeriod(RefBase):
+    """One period of the Kroger 4-3-3-3 fiscal calendar — the governed period dimension.
+
+    Mirrors the authoritative conversion table shipped as data
+    (`app/fiscal/data/kroger_fiscal_periods.csv`) and the typed library `app.fiscal.calendar`
+    (FiscalPeriod): a fiscal year carries EXACTLY 13 four-week periods grouped 4-3-3-3 into four
+    quarters, with begin/end dates from the sponsor's table (period 13 of a 53-week year has 5
+    weeks). This is the period grain other tables FK to; the row set is seeded by migration 0014.
+    """
+
+    __tablename__ = "fiscal_period"
+    __table_args__ = (
+        UniqueConstraint("fiscal_year", "period", name="fiscal_period_year_period"),
+        {"schema": "ref"},
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    fiscal_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)
+    begin_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    weeks: Mapped[int] = mapped_column(Integer, nullable=False)

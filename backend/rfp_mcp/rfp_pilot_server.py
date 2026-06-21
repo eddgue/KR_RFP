@@ -25,7 +25,7 @@ import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -241,6 +241,7 @@ def setup_ingest(run_slug: str, uploaded_filename: str) -> str:
         svc = _service()
         svc.ingest_setup(session, paths, uploaded)
         cycle = load_cycle(session, paths.cycle_id_file.read_text(encoding="utf-8").strip())
+    _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
     return (
         f"Setup ingested for {run_slug}. The {cycle.cycle_name} cycle is live with "
         f"{len(cycle.dcs)} DCs, {len(cycle.lots)} lots, {len(cycle.suppliers)} suppliers, "
@@ -273,6 +274,7 @@ def ingest_bids(run_slug: str, round_no: int, uploaded_filename: str) -> str:
     uploaded = paths.inputs / uploaded_filename
     with run_unit_of_work(run_slug) as session:
         count = _service().ingest_bids(session, paths, round_no, uploaded)
+    _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
     return (
         f"Loaded {count} priced bid line(s) for Round {round_no} of {run_slug}. "
         f"Next: tell me to run the Round {round_no} alignment."
@@ -295,6 +297,7 @@ def ingest_any(run_slug: str, round_no: int, uploaded_filename: str, confirm: bo
         result = _service().ingest_any(session, paths, round_no, uploaded, confirm=confirm)
 
     if confirm:
+        _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
         return (
             f"Loaded {result} priced bid line(s) for Round {round_no} of {run_slug} from "
             f"`{uploaded_filename}` (normalized into a clean keyed file in inputs/). "
@@ -325,6 +328,7 @@ def run_round(run_slug: str, round_no: int) -> str:
     paths = _paths(run_slug)
     with run_unit_of_work(run_slug) as session:
         out_path = _service().run_round(session, paths, round_no)
+    _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
     version = out_path.stem.rsplit("_v", 1)[-1]
     return (
         f"Round {round_no} alignment is done for {run_slug}. "
@@ -356,6 +360,7 @@ def select_award(run_slug: str, analysis_run_ref: str, scenario_code: str, award
             scenario_code=scenario_code,
             award_code=award_code,
         )
+    _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
     return (
         f"Froze award {award_code} (Scenario {scenario_code}) for {run_slug}. "
         f"The booking guides are in outputs/ (`08_award_booking_guide.xlsx` for the internal "
@@ -396,6 +401,7 @@ def record_adjustment(
             reason=reason,
             line_changes=line_changes,
         )
+    _service().snapshot_run(paths)  # seal the run DB into the vault git (resume across boxes)
     version = out_path.stem.rsplit("_v", 1)[-1]
     return (
         f"Recorded post-award version {version} on award {award['award_code']} for {run_slug} "
@@ -520,9 +526,24 @@ def purge_run(run_slug: str) -> str:
 
 
 def main() -> None:
-    """Run the stdio MCP server (the entry point `python -m mcp.rfp_pilot_server` invokes)."""
+    """Run the MCP server (the entry point `python -m rfp_mcp.rfp_pilot_server` invokes).
 
-    app.run()
+    Transport is selectable so the SAME server drives both runtimes:
+      * local Claude Code (terminal) — **stdio** (the default).
+      * Claude Code on the web — **streamable-http**, because the cloud environment does not run
+        stdio MCP servers; set `RFP_MCP_TRANSPORT=streamable-http` and the SessionStart hook starts
+        this on a loopback port that `.mcp.json` points at (`RFP_MCP_HOST`/`RFP_MCP_PORT` tune it).
+    """
+
+    mode = os.environ.get("RFP_MCP_TRANSPORT", "stdio")
+    transport: Literal["stdio", "sse", "streamable-http"]
+    if mode in ("streamable-http", "sse"):
+        app.settings.host = os.environ.get("RFP_MCP_HOST", "127.0.0.1")
+        app.settings.port = int(os.environ.get("RFP_MCP_PORT", "8765"))
+        transport = "streamable-http" if mode == "streamable-http" else "sse"
+    else:
+        transport = "stdio"
+    app.run(transport=transport)
 
 
 if __name__ == "__main__":
