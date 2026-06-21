@@ -53,8 +53,14 @@ from app.domain.awd.read import (
 from app.domain.awd.read import (
     list_awards as read_list_awards,
 )
-from app.domain.bid.bid_ingester import Completeness, ParsedBidLine, ingest_template
-from app.domain.bid.models import BidLine
+from app.domain.bid.bid_ingester import (
+    Completeness,
+    ParsedBidLine,
+    ParsedCapacityLine,
+    ingest_capacity,
+    ingest_template,
+)
+from app.domain.bid.models import BidLine, CapacityConstraint, CapacityStatement
 from app.domain.bid.template_generator import generate_template_bytes
 from app.domain.eng.models import AnalysisRun
 from app.domain.eng.read import (
@@ -312,13 +318,30 @@ class PilotService:
 
         data = Path(uploaded).read_bytes()
         result = ingest_template(data, scope)
-        count, superseded = self._persist_bid_lines(session, cycle, round_id, result.lines)
+        capacity = ingest_capacity(data, scope)
+        count, superseded, cap_count = self._persist_bid_lines(
+            session, cycle, round_id, result.lines, capacity.lines
+        )
 
         if result.quarantined:
             self._append_note(
                 runpaths,
                 f"Round {round_no} bids: {len(result.quarantined)} row(s) quarantined and not "
                 "loaded (key mismatch / bad number) — review before re-uploading.",
+                related_file=None,
+            )
+        if capacity.quarantined:
+            self._append_note(
+                runpaths,
+                f"Round {round_no} capacity: {len(capacity.quarantined)} row(s) quarantined and "
+                "not loaded (key mismatch / bad number) — review before re-uploading.",
+                related_file=None,
+            )
+        if cap_count:
+            self._append_note(
+                runpaths,
+                f"Round {round_no} capacity: {cap_count} stated per-cell ceiling(s) loaded — the "
+                "engine/award allocation is checked against these (over-capacity is flagged).",
                 related_file=None,
             )
         if superseded:
@@ -1220,18 +1243,26 @@ class PilotService:
         cycle: CycleView,
         round_id: str,
         lines: list[ParsedBidLine],
-    ) -> tuple[int, int]:
+        capacity_lines: list[ParsedCapacityLine] | None = None,
+    ) -> tuple[int, int, int]:
         """Persist priced ingest lines as bid.bid_line rows (one submission per supplier).
 
         Mirrors the demo's `ingest_and_persist`: one `norm.source_artifact` + `bid.bid_submission`
         per supplier for the round (the FK chain), then one `bid.bid_line` per priced line. Only
         `Completeness.BID` lines persist (no-bid / incomplete are not scoreable). A prior submission
         for the same (cycle, round, supplier) is SUPERSEDED (its lines marked non-scoreable) so a
-        re-send never double-counts. Returns (persisted_count, superseded_line_count).
+        re-send never double-counts.
+
+        E-38: the supplier's stated capacity (`capacity_lines`, from the SAME returned file) is
+        persisted in the same pass — one `bid.capacity_statement` per supplier riding that
+        supplier's SAME submission/artifact, with one CELL-scoped `bid.capacity_constraint` per
+        stated cell. A re-send supersedes the prior capacity statement too (status -> SUPERSEDED),
+        so the cap never reads a stale ceiling. Returns (count, superseded_lines, capacity_count).
         """
 
         now = datetime.now(UTC).replace(tzinfo=None)
         submission_by_sup: dict[str, str] = {}
+        artifact_by_sup: dict[str, str] = {}
         superseded_total = 0
 
         # Resolve the owning tenant once for this ingest; reused for the IMPORTED + SUPERSEDED
@@ -1300,6 +1331,16 @@ class PilotService:
                 ),
                 {"cyc": cycle.cycle_id, "rnd": round_id, "sup": supplier_id},
             )
+            # E-38: supersede this supplier's PRIOR capacity statement for the round too, so the
+            # cap check reads only the latest ceilings (append-only — status flip, rows retained).
+            session.execute(
+                text(
+                    "UPDATE bid.capacity_statement SET status = 'SUPERSEDED' "
+                    "WHERE cycle_id = :cyc AND round_id = :rnd AND supplier_id = :sup "
+                    "AND status <> 'SUPERSEDED'"
+                ),
+                {"cyc": cycle.cycle_id, "rnd": round_id, "sup": supplier_id},
+            )
             artifact_id = _new_id()
             session.execute(
                 text(
@@ -1350,6 +1391,7 @@ class PilotService:
                 )
             )
             submission_by_sup[supplier_id] = submission_id
+            artifact_by_sup[supplier_id] = artifact_id
             return submission_id
 
         # Option B (INTAKE §1a): store bids FLAT at the 13 fiscal periods. Each priced tf-grain line
@@ -1400,8 +1442,54 @@ class PilotService:
                     )
                 )
             count += 1  # LOGICAL priced lines, NOT the fanned storage rows (API contract).
+
+        # E-38: persist stated capacity from the SAME file. One capacity_statement per supplier
+        # (lazily, riding that supplier's submission + source_artifact via `_submission_for`), then
+        # one CELL-scoped capacity_constraint per stated cell (dc x lot x tf — the award's grain).
+        cap_count = 0
+        cap_stmt_by_sup: dict[str, str] = {}
+        for cap in capacity_lines or ():
+            if cap.max_weekly_cases is None and cap.max_period_cases is None:
+                continue  # belt-and-suspenders: the ingester already drops no-max rows
+            submission_id = _submission_for(cap.supplier_id)
+            stmt_id = cap_stmt_by_sup.get(cap.supplier_id)
+            if stmt_id is None:
+                stmt_id = _new_id()
+                session.add(
+                    CapacityStatement(
+                        capacity_statement_id=stmt_id,
+                        cycle_id=cycle.cycle_id,
+                        round_id=round_id,
+                        supplier_id=cap.supplier_id,
+                        submission_id=submission_id,
+                        source_artifact_id=artifact_by_sup[cap.supplier_id],
+                        status="SUBMITTED",
+                        effective_at=now,
+                        notes=None,
+                    )
+                )
+                # Flush the parent now: the constraint FK is composite (statement_id, cycle_id) and
+                # the ORM has no declared relationship to order the inserts, so the statement row
+                # must exist before its CELL constraints are inserted below.
+                session.flush()
+                cap_stmt_by_sup[cap.supplier_id] = stmt_id
+            session.add(
+                CapacityConstraint(
+                    capacity_constraint_id=_new_id(),
+                    capacity_statement_id=stmt_id,
+                    cycle_id=cycle.cycle_id,
+                    scope_type="CELL",
+                    dc_id=cap.dc_id,
+                    lot_id=cap.lot_id,
+                    tf_id=cap.tf_id,
+                    max_weekly_cases=cap.max_weekly_cases,
+                    max_period_cases=cap.max_period_cases,
+                    conditions_text=cap.notes,
+                )
+            )
+            cap_count += 1
         session.flush()
-        return count, superseded_total
+        return count, superseded_total, cap_count
 
     def _scenario_award_view(
         self,

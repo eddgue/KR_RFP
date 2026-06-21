@@ -151,16 +151,42 @@ BID_HEADERS: tuple[str, ...] = tuple(c.value for c in (*SCOPE_COLUMNS, *PRICE_CO
 
 
 class CapacityColumn(StrEnum):
-    """Canonical header strings for the `Capacity` sheet (supplier volume capability)."""
+    """Canonical header strings for the `Capacity` sheet (supplier volume capability).
 
+    Like the `Bids` sheet (D21), the Capacity sheet embeds system-owned KEY IDs so the live ingest
+    is KEY-VALIDATED, never name-resolved. The keys are the join identity (validated against the
+    cycle scope on ingest); display names are attributes only; Max/Notes cells are supplier-owned.
+    """
+
+    # --- Key IDs (D21): system-owned surrogate UUIDs — THE join identity. Locked + hidden. ---
+    CYCLE_ID = "Cycle ID"
+    SUPPLIER_ID = "Supplier ID"
+    DC_ID = "DC ID"
+    LOT_ID = "Lot ID"
+    ITEM_ID = "Item ID"
+    TF_ID = "TF ID"
+    # --- Display names (system-owned attributes; human-readable, NOT the join key). ---
     SUPPLIER = "Supplier"
     DC = "DC Name"
     ITEM = "Item Description"
     TF = "TF"
+    # --- Supplier-owned entry cells (the only editable cells on the form). ---
     MAX_WEEKLY_CASES = "Max Weekly Cases"
     MAX_TOTAL_CASES = "Max Total Cases"
     CAPACITY_NOTES = "Capacity Notes"
 
+
+# The KEY-ID columns on the Capacity sheet (D21) — the validated join identity, in tuple order.
+# Note: LOT_ID is carried (derived from the item via the cycle scope) because the persisted
+# `bid.capacity_constraint` CELL grain is dc x lot x tf — the grain the engine award is keyed on.
+CAPACITY_KEY_ID_COLUMNS: tuple[CapacityColumn, ...] = (
+    CapacityColumn.CYCLE_ID,
+    CapacityColumn.SUPPLIER_ID,
+    CapacityColumn.DC_ID,
+    CapacityColumn.LOT_ID,
+    CapacityColumn.ITEM_ID,
+    CapacityColumn.TF_ID,
+)
 
 CAPACITY_HEADERS: tuple[str, ...] = tuple(c.value for c in CapacityColumn)
 
@@ -246,3 +272,17 @@ class CycleScope:
         """
 
         return frozenset(row.key_grain(self.cycle_id) for row in self.rows)
+
+    def capacity_key_set(self) -> frozenset[tuple[str, str, str, str, str, str]]:
+        """The scope's KNOWN capacity key set (E-38) — the allow-list for the Capacity-sheet ingest.
+
+        The Capacity sheet is round-independent and DC x item x TF grained, so its key tuple is
+        (cycle, supplier, dc, lot, item, tf) — CAPACITY_KEY_ID_COLUMNS order, deduped across rounds.
+        An ingested capacity row whose embedded keys are not in this set is quarantined, never
+        name-resolved (same D21 discipline as the bids).
+        """
+
+        return frozenset(
+            (self.cycle_id, row.supplier_id, row.dc_id, row.lot_id, row.item_id, row.tf_id)
+            for row in self.rows
+        )

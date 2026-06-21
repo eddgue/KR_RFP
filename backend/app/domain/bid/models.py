@@ -22,6 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db.base import Base, SchemaBase
 
+# numeric(18, 3) — the case-count precision the capacity tables use (db/baseline/schema.sql).
+# Distinct from `_Money` (18, 6): capacity is whole-ish cases, not per-case dollars.
+_Cases = Numeric(18, 3)
+
 if TYPE_CHECKING:
     BidBaseT = Base
 else:
@@ -79,3 +83,52 @@ class BidLine(BidBaseT):
     is_scoreable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_awardable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     incomplete_reason_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CapacityStatement(BidBaseT):
+    """A supplier's stated-capacity submission for a cycle/round (E-38). Mirrors
+    `bid.capacity_statement` (db/baseline/schema.sql, ADOPT KEEP #4) verbatim — the same lockstep
+    rule `BidLine` follows. One row per supplier per round: the header that owns the per-cell
+    `CapacityConstraint` rows. It rides the SAME `norm.source_artifact` + `bid.bid_submission` the
+    supplier's bids came in on (the capacity sheet is part of the one returned template file), so
+    the FK chain is shared and the provenance is honest.
+    """
+
+    __tablename__ = "capacity_statement"
+
+    capacity_statement_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    round_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    supplier_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    submission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_artifact_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    # Free text (no DB CHECK): "SUBMITTED" on import; flipped to "SUPERSEDED" when a later
+    # submission for the same (cycle, round, supplier) replaces it (append-only, never deleted).
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CapacityConstraint(BidBaseT):
+    """One stated per-cell capacity ceiling under a `CapacityStatement` (E-38). Mirrors
+    `bid.capacity_constraint` (db/baseline/schema.sql) verbatim.
+
+    Five scope types exist in the baseline (CELL / DC_TF / LOT_TF / SUPPLIER_TF / TOTAL_CYCLE); the
+    ingest path writes **CELL** rows (dc + lot + tf all set) — the grain the engine award is keyed
+    on, so allocation-vs-capacity is a direct per-cell comparison. The schema's
+    `ck_capacity_scope_field_match` / `ck_capacity_has_a_max` CHECKs are the persistence-side
+    backstop; the ingester only emits rows with at least one max so the CHECK never trips.
+    """
+
+    __tablename__ = "capacity_constraint"
+
+    capacity_constraint_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    capacity_statement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope_type: Mapped[str] = mapped_column(Text, nullable=False)
+    dc_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lot_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    tf_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    max_weekly_cases: Mapped[Decimal | None] = mapped_column(_Cases, nullable=True)
+    max_period_cases: Mapped[Decimal | None] = mapped_column(_Cases, nullable=True)
+    conditions_text: Mapped[str | None] = mapped_column(Text, nullable=True)

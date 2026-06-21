@@ -42,10 +42,13 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.domain.bid.template_schema import (
+    CAPACITY_KEY_ID_COLUMNS,
     HEADER_ROW,
     KEY_ID_COLUMNS,
     SHEET_BIDS,
+    SHEET_CAPACITY,
     BidColumn,
+    CapacityColumn,
     CycleScope,
     ScopeRow,
 )
@@ -53,6 +56,8 @@ from app.engine.formulas import construct_price_from_parts
 
 # The full embedded key tuple (KEY_ID_COLUMNS order): cycle, round, tf, lot, item, dc, supplier.
 KeyGrain = tuple[str, str, str, str, str, str, str]
+# The capacity key tuple (CAPACITY_KEY_ID_COLUMNS order): cycle, supplier, dc, lot, item, tf.
+CapacityKeyGrain = tuple[str, str, str, str, str, str]
 
 
 class Completeness(StrEnum):
@@ -598,3 +603,148 @@ def _parse_resolved_row(
         supplier_id=supplier_id, dc_id=dc_id, lot_id=lot_id, item_id=item_id, tf_code=resolved_tf
     )
     return _parse_pricing_and_build(raw, row_number, identity)
+
+
+# ====================================================================== #
+# Capacity sheet ingest (E-38) — KEY-VALIDATED, same D21 discipline as the bids.
+# ====================================================================== #
+
+
+@dataclass(frozen=True)
+class ParsedCapacityLine:
+    """One stated-capacity cell parsed from the Capacity sheet (maps onto bid.capacity_constraint).
+
+    Carries the EMBEDDED + validated key identity (cycle/supplier/dc/lot/item/tf) and the supplier's
+    stated ceilings. `max_period_cases` is the sheet's "Max Total Cases" (the total over the TF —
+    the apples-to-apples comparison to the engine's per-cell period allocation); `max_weekly_cases`
+    is the weekly ceiling. Only cells with a max become a line (a blank cell is no statement, not a
+    zero). The persisted constraint is CELL-scoped (dc + lot + tf) — the engine award's grain.
+    """
+
+    cycle_id: str
+    supplier_id: str
+    dc_id: str
+    lot_id: str
+    item_id: str
+    tf_id: str
+    tf_code: str
+    max_weekly_cases: Decimal | None
+    max_period_cases: Decimal | None
+    notes: str | None
+    source_row_number: int
+
+
+@dataclass
+class CapacityIngestResult:
+    """The outcome of ingesting the Capacity sheet — parsed lines + quarantined rows."""
+
+    lines: list[ParsedCapacityLine] = field(default_factory=list)
+    quarantined: list[QuarantinedRow] = field(default_factory=list)
+
+
+def ingest_capacity(data: bytes, scope: CycleScope) -> CapacityIngestResult:
+    """Ingest the Capacity sheet — KEY-VALIDATED against the cycle scope, not name-resolved (E-38).
+
+    Mirrors `ingest_template`'s D21 discipline for the capacity grain: each row's embedded keys
+    (cycle/supplier/dc/lot/item/tf) are validated against `scope.capacity_key_set()`. Missing key ->
+    MISSING_KEY; unknown/foreign key -> UNKNOWN_KEY; a bad/negative max -> BAD_NUMERIC. A row with
+    no max stated is simply skipped (a blank form cell is not a capacity statement). The Capacity
+    sheet is optional: a file without it yields an empty result (no capacity is not an error).
+    """
+
+    rows = _iter_capacity_rows(data)
+    valid_keys = scope.capacity_key_set()
+    result = CapacityIngestResult()
+    for row_number, raw in rows:
+        outcome = _parse_capacity_row(raw, row_number, scope.cycle_id, valid_keys)
+        if isinstance(outcome, QuarantinedRow):
+            result.quarantined.append(outcome)
+        elif outcome is not None:
+            result.lines.append(outcome)
+    return result
+
+
+def _iter_capacity_rows(data: bytes) -> list[tuple[int, dict[str, str]]]:
+    """Load the `Capacity` sheet and return [(row_number, raw-dict)] for each non-blank body row.
+
+    The sheet is optional — a returned template without it yields []. (The generator always writes
+    it, but a hand-built/legacy file may omit it; a missing capacity sheet must not fail ingest.)
+    """
+
+    wb = load_workbook(BytesIO(data), data_only=True, read_only=True)
+    if SHEET_CAPACITY not in wb.sheetnames:
+        wb.close()
+        return []
+    ws = wb[SHEET_CAPACITY]
+    headers = _header_index(ws)
+    rows: list[tuple[int, dict[str, str]]] = []
+    for row_number, row_cells in enumerate(
+        ws.iter_rows(min_row=HEADER_ROW + 1, values_only=False), start=HEADER_ROW + 1
+    ):
+        raw = _row_to_dict(row_cells, headers)
+        if not any(raw.values()):
+            continue
+        rows.append((row_number, raw))
+    wb.close()
+    return rows
+
+
+def _parse_capacity_row(
+    raw: dict[str, str],
+    row_number: int,
+    cycle_id: str,
+    valid_keys: frozenset[CapacityKeyGrain],
+) -> ParsedCapacityLine | QuarantinedRow | None:
+    """Key-validated parse of one Capacity row: validate keys, read the maxes, or quarantine.
+
+    Returns the parsed line, a `QuarantinedRow`, or None (no max stated -> nothing to persist).
+    """
+
+    keys: CapacityKeyGrain = tuple(  # type: ignore[assignment]
+        raw.get(col.value, "").strip() for col in CAPACITY_KEY_ID_COLUMNS
+    )
+    for col, value in zip(CAPACITY_KEY_ID_COLUMNS, keys, strict=True):
+        if not value:
+            return QuarantinedRow(
+                row_number, QuarantineReason.MISSING_KEY, f"blank {col.value}", raw
+            )
+
+    cycle_k, supplier_k, dc_k, lot_k, item_k, tf_k = keys
+    if cycle_k != cycle_id or keys not in valid_keys:
+        return QuarantinedRow(
+            row_number,
+            QuarantineReason.UNKNOWN_KEY,
+            f"embedded capacity keys not in cycle scope: {keys}",
+            raw,
+        )
+
+    try:
+        max_weekly = _to_decimal(raw.get(CapacityColumn.MAX_WEEKLY_CASES.value))
+        max_total = _to_decimal(raw.get(CapacityColumn.MAX_TOTAL_CASES.value))
+    except ValueError as exc:
+        return QuarantinedRow(row_number, QuarantineReason.BAD_NUMERIC, str(exc), raw)
+    # Guard the store's nonneg CHECKs here so a bad cell quarantines cleanly, never aborts the txn.
+    for label, val in (("Max Weekly Cases", max_weekly), ("Max Total Cases", max_total)):
+        if val is not None and val < 0:
+            return QuarantinedRow(
+                row_number, QuarantineReason.BAD_NUMERIC, f"negative {label}: {val}", raw
+            )
+
+    # A blank capacity cell is NOT a zero ceiling — it is simply no statement for that cell.
+    if max_weekly is None and max_total is None:
+        return None
+
+    notes = raw.get(CapacityColumn.CAPACITY_NOTES.value, "").strip() or None
+    return ParsedCapacityLine(
+        cycle_id=cycle_k,
+        supplier_id=supplier_k,
+        dc_id=dc_k,
+        lot_id=lot_k,
+        item_id=item_k,
+        tf_id=tf_k,
+        tf_code=raw.get(CapacityColumn.TF.value, "").strip(),
+        max_weekly_cases=max_weekly,
+        max_period_cases=max_total,
+        notes=notes,
+        source_row_number=row_number,
+    )

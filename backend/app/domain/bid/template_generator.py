@@ -27,6 +27,7 @@ from app.domain.bid.template_schema import (
     BODY_START_ROW,
     CAPACITY_ENTRY_COLUMNS,
     CAPACITY_HEADERS,
+    CAPACITY_KEY_ID_COLUMNS,
     HEADER_ROW,
     KEY_ID_COLUMNS,
     SHEET_BIDS,
@@ -239,28 +240,43 @@ def _build_bids(ws: Worksheet, scope: CycleScope, preset: BidTemplatePreset) -> 
 def _build_capacity(ws: Worksheet, scope: CycleScope) -> None:
     _write_headers(ws, f"Capacity — {scope.cycle_name}", CAPACITY_HEADERS)
     header_index = {header: i for i, header in enumerate(CAPACITY_HEADERS, start=1)}
-    # Capacity grain is supplier x DC x item x TF (round-independent) — dedupe the bid scope.
-    seen: set[tuple[str, str, str, str]] = set()
+    # Capacity grain is supplier x DC x lot x item x TF (round-independent) — dedupe the bid scope
+    # on the full IDENTITY (D21), not display names, so two cells that share a name never collapse.
+    seen: set[tuple[str, str, str, str, str]] = set()
     offset = BODY_START_ROW
+
+    def put(col: CapacityColumn, value: str) -> None:
+        ws.cell(row=offset, column=header_index[col.value], value=value)
+
     for scope_row in scope.rows:
         key = (
-            scope_row.supplier_label,
-            scope_row.dc_label,
-            scope_row.item_label,
-            scope_row.tf_code,
+            scope_row.supplier_id,
+            scope_row.dc_id,
+            scope_row.lot_id,
+            scope_row.item_id,
+            scope_row.tf_id,
         )
         if key in seen:
             continue
         seen.add(key)
-        ws.cell(row=offset, column=header_index[CapacityColumn.SUPPLIER.value], value=key[0])
-        ws.cell(row=offset, column=header_index[CapacityColumn.DC.value], value=key[1])
-        ws.cell(row=offset, column=header_index[CapacityColumn.ITEM.value], value=key[2])
-        ws.cell(row=offset, column=header_index[CapacityColumn.TF.value], value=key[3])
+        # Embedded KEY IDs (D21) — the validated join identity (locked + hidden).
+        put(CapacityColumn.CYCLE_ID, scope.cycle_id)
+        put(CapacityColumn.SUPPLIER_ID, scope_row.supplier_id)
+        put(CapacityColumn.DC_ID, scope_row.dc_id)
+        put(CapacityColumn.LOT_ID, scope_row.lot_id)
+        put(CapacityColumn.ITEM_ID, scope_row.item_id)
+        put(CapacityColumn.TF_ID, scope_row.tf_id)
+        # Display names (attributes only; a mismatch warns, never re-resolves).
+        put(CapacityColumn.SUPPLIER, scope_row.supplier_label)
+        put(CapacityColumn.DC, scope_row.dc_label)
+        put(CapacityColumn.ITEM, scope_row.item_label)
+        put(CapacityColumn.TF, scope_row.tf_code)
         offset += 1
-    # Same form treatment: only the capacity entry cells are editable, the sheet is protected.
-    _unlock_entry_cells(
-        ws, header_index, tuple(c.value for c in CAPACITY_ENTRY_COLUMNS), offset - BODY_START_ROW
-    )
+    n_rows = offset - BODY_START_ROW
+    # Same form treatment: only the capacity entry cells are editable; hide the raw key IDs so the
+    # supplier reads names not UUIDs (D23); the sheet is protected.
+    _unlock_entry_cells(ws, header_index, tuple(c.value for c in CAPACITY_ENTRY_COLUMNS), n_rows)
+    _hide_columns(ws, header_index, tuple(c.value for c in CAPACITY_KEY_ID_COLUMNS))
     _protect_form(ws)
 
 
