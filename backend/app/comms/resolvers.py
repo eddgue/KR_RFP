@@ -25,8 +25,12 @@ from app.comms.templates import EmailType, get_template
 from app.domain.awd.models import Award, AwardLine
 from app.domain.awd.read import award_detail
 from app.domain.cyc.models import CycleTimeframe
+from app.engine.formulas import construct_price, premium_vs_low
+from app.engine.interface import BidComponents, BidInput
 from app.engine.scoring import GATE_COVERAGE, GATE_NO_PRICE, GATE_PREMIUM
 from app.output.types import CycleView
+
+_ZERO = Decimal("0")
 
 # Engine eligibility defaults (mirror the pilot wiring) when the cycle sets no override.
 _DEFAULT_PREMIUM_CEILING = Decimal("0.12")
@@ -157,24 +161,62 @@ def _round_id_and_number(session: Session, analysis_run_id: str) -> tuple[str, i
     return str(row[0]), int(row[1])
 
 
+def _constructed_price(
+    all_in: Decimal | None,
+    fob: Decimal | None,
+    delivery: Decimal | None,
+    vegcool: Decimal | None,
+    lot_discount: Decimal | None,
+) -> Decimal | None:
+    """One active row's Price via the engine's §7 `construct_price` (comms == scoring exactly)."""
+
+    comp = BidComponents(
+        all_in=all_in,
+        fob=fob,
+        delivery_surcharge=delivery or _ZERO,
+        vegcool_surcharge=vegcool or _ZERO,
+        lot_discount=lot_discount or _ZERO,
+    )
+    landed = comp.all_in or comp.fob or _ZERO
+    return construct_price(
+        BidInput(
+            bid_id="",
+            supplier_id="",
+            dc_no="",
+            lot_id="",
+            tf_code="",
+            landed_cost_per_case=landed,
+            components=comp,
+        )
+    )
+
+
 def _round_prices(
     session: Session, cycle_id: str, round_id: str
 ) -> dict[_Cell, dict[str, Decimal]]:
-    """The round's ACTIVE all-in price per cell -> {supplier_id: price} (one per supplier×cell)."""
+    """The round's ACTIVE constructed price per cell -> {supplier_id: price}.
+
+    Builds each supplier's representative active price with the engine's §7 `construct_price`
+    (All-In primary, else FOB + surcharges − discounts) — the SAME formula the scorer used — so a
+    component-basis bid (FOB only, no All-In) still counts in the benchmark + supplier rows instead
+    of being dropped for lacking an All-In value.
+    """
 
     rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
-            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
-            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
-            "AND is_scoreable = true AND submitted_all_in_case IS NOT NULL "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, fob_case, "
+            "delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case "
+            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
         {"cyc": cycle_id, "rnd": round_id},
     ).all()
     by_cell: dict[_Cell, dict[str, Decimal]] = defaultdict(dict)
-    for supplier_id, dc_id, lot_id, tf_id, price in rows:
-        by_cell[(dc_id, lot_id, tf_id)][supplier_id] = Decimal(str(price))
+    for supplier_id, dc_id, lot_id, tf_id, all_in, fob, delivery, vegcool, disc in rows:
+        price = _constructed_price(all_in, fob, delivery, vegcool, disc)
+        if price is not None:
+            by_cell[(dc_id, lot_id, tf_id)][supplier_id] = price
     return by_cell
 
 
@@ -208,20 +250,31 @@ def _weekly_volume(session: Session, cycle_id: str) -> dict[_Cell, Decimal]:
     return {(d, lo, t): Decimal(str(v)) for d, lo, t, v in rows}
 
 
-def _hard_ask_reason(
+def _hard_ask_rows(
     flags: str, prem_pct: Decimal, ceiling: Decimal, floor: Decimal
-) -> tuple[str, str, str]:
-    """(Issue, Current Value, Required Improvement) for an INELIGIBLE lot, from its gate flags."""
+) -> list[tuple[str, str, str]]:
+    """One (Issue, Current Value, Required Improvement) per HARD gate the bid breached (§3).
 
+    Premium ceiling and coverage floor can fire together; emit a row for EACH breached gate so the
+    supplier sees every change needed to regain eligibility — not just the first one.
+    """
+
+    rows: list[tuple[str, str, str]] = []
     if GATE_PREMIUM in flags:
-        return ("Price premium exceeds threshold", _pct(prem_pct), f"at or below {_pct(ceiling)}")
-    if GATE_COVERAGE in flags:
-        return (
-            "Insufficient volume offered",
-            f"below {_pct(floor)} of requirement",
-            f"at least {_pct(floor)}",
+        rows.append(
+            ("Price premium exceeds threshold", _pct(prem_pct), f"at or below {_pct(ceiling)}")
         )
-    return ("Not eligible for award", _pct(prem_pct), "review submission")
+    if GATE_COVERAGE in flags:
+        rows.append(
+            (
+                "Insufficient volume offered",
+                f"below {_pct(floor)} of requirement",
+                f"at least {_pct(floor)}",
+            )
+        )
+    if not rows:
+        rows.append(("Not eligible for award", _pct(prem_pct), "review submission"))
+    return rows
 
 
 def feedback_drafts(
@@ -275,21 +328,21 @@ def feedback_drafts(
             if is_elig and not above:  # eligible AND at/below benchmark -> nothing to ask
                 continue
             prem_dollar = price - market_low
-            prem_pct = prem_dollar / market_low
+            prem_pct = premium_vs_low(price, market_low) or _ZERO
             if not is_elig:
                 # A hard ask fires on INELIGIBILITY regardless of price position — a coverage gate
                 # can hit even the cell's market-low bidder, who still needs "fix to keep
-                # participating" feedback.
-                issue, current, target = _hard_ask_reason(flags, prem_pct, ceiling, floor)
-                hard[supplier_id].append(
-                    {
-                        "DC": dc_label,
-                        "Lot": lot_label,
-                        "IssueReason": issue,
-                        "CurrentMetric": current,
-                        "TargetMetric": target,
-                    }
-                )
+                # participating" feedback — and one row PER breached gate (premium and/or coverage).
+                for issue, current, target in _hard_ask_rows(flags, prem_pct, ceiling, floor):
+                    hard[supplier_id].append(
+                        {
+                            "DC": dc_label,
+                            "Lot": lot_label,
+                            "IssueReason": issue,
+                            "CurrentMetric": current,
+                            "TargetMetric": target,
+                        }
+                    )
             else:
                 soft[supplier_id].append(
                     {
@@ -470,7 +523,7 @@ def rejection_drafts(
             count = Decimal(agg.count)
             avg_bid = agg.bid_sum / count
             avg_low = agg.low_sum / count
-            prem_pct = (avg_bid - avg_low) / avg_low if avg_low > 0 else Decimal("0")
+            prem_pct = premium_vs_low(avg_bid, avg_low) or _ZERO
             rows.append(
                 {
                     "DC": dc_name.get(dc_id, dc_id[:6]),
