@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -29,7 +29,14 @@ from app.api.v1.pilot_common import resolve_paths, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.pilot.status import read_status
-from app.pilot.vault import SUBDIR_INPUTS, RunPaths, is_rehearsal, stage_filename, write_to_run
+from app.pilot.vault import (
+    SUBDIR_INPUTS,
+    RunPaths,
+    build_run_zip,
+    is_rehearsal,
+    stage_filename,
+    write_to_run,
+)
 
 router = APIRouter()
 
@@ -268,6 +275,26 @@ def download_run_file(
         media_type=_XLSX_MEDIA_TYPE,
         filename=target.name,
         content_disposition_type="attachment",
+    )
+
+
+@router.get("/{slug}/archive", summary="Download the whole run folder as a zip")
+def download_run_archive(
+    slug: str,
+    user: CurrentUser,
+) -> Response:
+    """Stream the run's full folder set (skeleton + files) as one zip, or 404 if the run is missing.
+
+    The zip carries the inputs/outputs/memory folder skeleton plus the run's files + manifests, so
+    the console user can unzip it locally and drop each downloaded output into the folder it belongs
+    to (see `build_run_zip`).
+    """
+
+    paths = resolve_paths(slug)
+    return Response(
+        content=build_run_zip(paths),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.zip"'},
     )
 
 

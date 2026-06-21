@@ -235,6 +235,33 @@ def test_flexible_propose_then_confirm(client, seed_user, vault_root, db_session
 
 
 # --------------------------------------------------------------------------- #
+# download the whole run folder as a zip (skeleton + files)
+# --------------------------------------------------------------------------- #
+@pytest.mark.integration
+def test_download_run_archive_zip(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """GET /runs/{slug}/archive streams a zip carrying the folder skeleton + the run's files."""
+
+    import zipfile
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+
+    resp = client.get(f"{RUNS}/{slug}/archive")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert f"{slug}.zip" in resp.headers["content-disposition"]
+
+    names = zipfile.ZipFile(io.BytesIO(resp.content)).namelist()
+    # The empty-folder skeleton is present (a drop target each) ...
+    assert f"{slug}/inputs/" in names
+    assert f"{slug}/outputs/" in names
+    assert f"{slug}/memory/" in names
+    # ... alongside the created run's setup workbook + RUN.md manifest.
+    assert any(n.endswith("setup_kickoff.xlsx") for n in names)
+    assert any(n.endswith("RUN.md") for n in names)
+
+
+# --------------------------------------------------------------------------- #
 # isolation: two parallel runs never see each other's bids (the shared-DB guarantee)
 # --------------------------------------------------------------------------- #
 def _import_round1(client, slug: str) -> None:  # type: ignore[no-untyped-def]
