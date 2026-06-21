@@ -94,6 +94,9 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            # The console reads the download filename off Content-Disposition (run file + zip
+            # downloads); a browser only exposes that header cross-origin when it is listed here.
+            expose_headers=["Content-Disposition"],
         )
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)

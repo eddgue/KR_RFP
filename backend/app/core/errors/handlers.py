@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.config.settings import get_settings
 from app.core.errors.taxonomy import AppError, ErrorCode, ProblemDetail
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -57,6 +58,28 @@ async def _handle_http_exception(request: Request, exc: StarletteHTTPException) 
     return _response(problem)
 
 
+def _apply_cors_for_unexpected(request: Request, response: JSONResponse) -> None:
+    """Echo CORS headers onto the 500 envelope so the browser console can read it.
+
+    The catch-all `Exception`/500 handler runs inside Starlette's ServerErrorMiddleware, which sits
+    OUTSIDE the CORSMiddleware added in the app factory — so without this, an unexpected 500 reaches
+    a cross-origin console with no `Access-Control-Allow-Origin` and surfaces as an opaque
+    CORS/network error instead of this problem envelope. Mirror the simple-request CORS contract (a
+    500 is never a preflight): reflect an allowed Origin with credentials, and Vary on Origin. The
+    other handlers run inside CORSMiddleware, so they need none of this.
+    """
+
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    allowed = {o.strip() for o in get_settings().cors_allow_origins.split(",") if o.strip()}
+    if origin not in allowed:
+        return
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Vary"] = "Origin"
+
+
 async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
     problem = ProblemDetail(
         code=ErrorCode.INTERNAL,
@@ -65,7 +88,9 @@ async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
         status=500,
         instance=_request_id(request),
     )
-    return _response(problem)
+    response = _response(problem)
+    _apply_cors_for_unexpected(request, response)
+    return response
 
 
 def register_exception_handlers(app: FastAPI) -> None:

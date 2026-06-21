@@ -383,6 +383,38 @@ def archive_run(runpaths: RunPaths) -> Path:
     return zip_path
 
 
+def build_run_zip(runpaths: RunPaths) -> bytes:
+    """Build an IN-MEMORY zip of the run's folder set for the console's "download run folder".
+
+    Carries the inputs/outputs/memory skeleton (empty subfolders included) plus every file and the
+    NOTES.md / RUN.md / run_data.json / cycle_id.txt manifests, each under the run slug — so the
+    buyer unzips locally and drops each downloaded output straight into the folder it belongs to.
+    Unlike `archive_run` (the on-disk close-out archive) this writes nothing to the vault and always
+    includes the folder skeleton even when a subfolder is empty.
+    """
+
+    from io import BytesIO
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Folder skeleton first so empty subfolders survive the unzip (a drop target each).
+        for subdir in _SUBDIRS:
+            zf.writestr(f"{runpaths.slug}/{subdir}/", "")
+        for subdir in _SUBDIRS:
+            base = runpaths.root / subdir
+            if not base.is_dir():
+                continue
+            for item in sorted(base.rglob("*")):
+                if item.is_file() and item.name != ".gitkeep":
+                    arcname = Path(runpaths.slug) / item.relative_to(runpaths.root)
+                    zf.write(item, arcname.as_posix())
+        for filename in _ARCHIVE_FILES:
+            path = runpaths.root / filename
+            if path.is_file():
+                zf.write(path, (Path(runpaths.slug) / filename).as_posix())
+    return buffer.getvalue()
+
+
 def purge_run(vault_root: Path, slug: str) -> None:
     """Remove the run folder from the vault and commit the removal (close-out, after confirm).
 
