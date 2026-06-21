@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#16243d;background:#eceff4;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  a{text-decoration:none;color:inherit}
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#c2ccd9;border-radius:6px;border:2px solid #eceff4}
+  button{font-family:inherit;cursor:pointer}
+  input{font-family:inherit}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#eceff4">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside style="width:{{ nav.w }};flex:none;background:#0b1f3a;color:#cdd8ea;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .16s ease;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 16px 16px;justify-content:{{ nav.justify }}">
+      <div style="width:30px;height:30px;flex:none;border-radius:7px;background:#084999;display:flex;align-items:center;justify-content:center"><img src="assets/kroger-k-white.svg" alt="Kroger" style="width:17px;height:auto;display:block"></div>
+      <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#fff;letter-spacing:.2px;white-space:nowrap">RFP Console</div></sc-if>
+    </div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:6px 18px 4px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Sourcing</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <a href="Dashboard.dc.html" title="Runs" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#fff;font-weight:700;background:#13315a;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="flex:none"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Runs</span></sc-if>
+      </a>
+    </nav>
+    <div style="margin-top:auto;padding:10px">
+      <button onClick="{{ nav.toggle }}" title="Toggle navigation" style="width:100%;display:flex;align-items:center;justify-content:{{ nav.justify }};gap:10px;padding:{{ nav.pad }};border-radius:7px;border:none;background:#13294a;color:#9fb0cc;font-size:12.5px;font-weight:600">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none;transform:rotate({{ nav.chevron }});transition:transform .16s"><path d="M15 18l-6-6 6-6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span style="white-space:nowrap">Collapse</span></sc-if>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="height:56px;flex:none;background:#fff;border-bottom:1px solid #dde3ec;display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:20">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#16243d;font-weight:700">Runs</div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:30px;height:30px;border-radius:50%;background:#dbe5f3;color:#084999;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;font-family:'Montserrat'">DE</div>
+        <div style="line-height:1.15">
+          <div style="font-size:12.5px;font-weight:700;color:#16243d">Dana Ellison</div>
+          <div style="font-size:10.5px;color:#8a97a8">Sr. Sourcing Mgr</div>
+        </div>
+      </div>
+    </header>
+
+    <main style="flex:1;overflow:auto;padding:26px 30px 60px">
+      <!-- page header -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <h1 style="font-family:'Montserrat';font-weight:800;font-size:26px;letter-spacing:-.4px;color:#102a4c">Sourcing runs</h1>
+          <div style="font-size:13.5px;color:#5b6b82;margin-top:3px">Every produce RFP cycle across commodities. Open a run to set up bids, align scenarios, and freeze awards.</div>
+        </div>
+        <button style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:#084999;color:#fff;border:none;border-radius:9px;font-size:13.5px;font-weight:700;box-shadow:0 1px 2px rgba(8,73,153,.3)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>
+          New run
+        </button>
+      </div>
+
+      <!-- KPI strip -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px">
+        <sc-for list="{{ kpis }}" as="K" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #e3e8ef;border-radius:11px;padding:14px 16px">
+            <div style="font-size:11.5px;color:#8a97a8;font-weight:600;margin-bottom:6px">{{ K.label }}</div>
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-family:'Montserrat';font-weight:800;font-size:24px;color:{{ K.color }}" class="num">{{ K.value }}</span>
+              <span style="font-size:12px;color:#8a97a8;font-weight:600">{{ K.sub }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- runs table -->
+      <div style="background:#fff;border:1px solid #e3e8ef;border-radius:12px;box-shadow:0 1px 3px rgba(16,42,76,.04);overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef1f5">
+          <div style="display:flex;align-items:center;gap:10px">
+            <h2 style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#102a4c">All runs</h2>
+            <span style="padding:2px 8px;background:#eef1f5;color:#5b6b82;border-radius:5px;font-size:11.5px;font-weight:700" class="num">{{ count }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f5f7fa;border:1px solid #e3e8ef;border-radius:8px;width:240px">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a97a8" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+              <input value="{{ query }}" onInput="{{ onSearch }}" placeholder="Search commodity, cycle, owner" style="border:none;background:none;outline:none;font-size:13px;color:#16243d;width:100%">
+            </div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+          <thead>
+            <tr style="background:#f7f9fc">
+              <th style="text-align:left;padding:10px 18px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase">Commodity</th>
+              <th style="text-align:left;padding:10px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase">Cycle</th>
+              <th style="text-align:left;padding:10px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase">Owner</th>
+              <th style="text-align:left;padding:10px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;width:300px">Stage</th>
+              <th style="text-align:right;padding:10px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase">Updated</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ runs }}" as="R" hint-placeholder-count="6">
+              <tr onClick="{{ R.open }}" style="border-bottom:1px solid #f0f3f7;cursor:pointer;background:{{ R.bg }}">
+                <td style="padding:13px 18px">
+                  <div style="display:flex;align-items:center;gap:11px">
+                    <span style="width:34px;height:34px;flex:none;border-radius:9px;background:{{ R.swatchBg }};color:{{ R.swatchFg }};display:flex;align-items:center;justify-content:center;font-family:'Montserrat';font-weight:800;font-size:14px">{{ R.initial }}</span>
+                    <span style="font-weight:700;color:#16243d">{{ R.commodity }}</span>
+                  </div>
+                </td>
+                <td style="padding:13px 14px;color:#3a5170;font-weight:600">{{ R.label }}</td>
+                <td style="padding:13px 14px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="width:26px;height:26px;flex:none;border-radius:50%;background:#eef1f5;color:#5b6b82;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;font-family:'Montserrat'">{{ R.ownerInit }}</span>
+                    <span style="font-size:13px;color:#3a5170;font-weight:600">{{ R.owner }}</span>
+                  </div>
+                </td>
+                <td style="padding:13px 14px">
+                  <div style="display:inline-flex;align-items:center;gap:7px;padding:3px 9px;background:{{ R.pillBg }};border:1px solid {{ R.pillBorder }};border-radius:20px;margin-bottom:7px">
+                    <span style="width:7px;height:7px;border-radius:50%;background:{{ R.pillDot }}"></span>
+                    <span style="font-size:11.5px;font-weight:700;color:{{ R.pillFg }}">{{ R.stageLabel }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <sc-for list="{{ R.steps }}" as="St" hint-placeholder-count="5">
+                      <span style="height:4px;flex:1;border-radius:2px;background:{{ St.color }}"></span>
+                    </sc-for>
+                  </div>
+                </td>
+                <td style="padding:13px 14px;text-align:right;color:#7a8699;font-weight:600;font-size:12.5px;white-space:nowrap">{{ R.updated }}</td>
+                <td style="padding:13px 14px;text-align:right">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c2ccd9" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+        <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:40px;text-align:center;color:#8a97a8;font-size:13.5px">No runs match "{{ query }}".</div>
+        </sc-if>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { navCollapsed: false, query: '' };
+
+  RUNS() {
+    return [
+      { commodity:'Field Tomatoes', label:'Spring 2026 Tomatoes', owner:'Dana Ellison', stage:4, updated:'Jun 21, 2026', swatch:['#fdecea','#c5341f'], closed:false, href:'Run Detail.dc.html' },
+      { commodity:'Navel Oranges', label:'Winter 2026 Citrus', owner:'Marcus Reed', stage:3, updated:'Jun 20, 2026', swatch:['#fdf0e0','#b06a12'], closed:false, href:'Run Detail.dc.html' },
+      { commodity:'Yellow Onions', label:'Fall 2026 Onions', owner:'Priya Nair', stage:2, updated:'Jun 19, 2026', swatch:['#fbf6e3','#977514'], closed:false, href:'Run Detail.dc.html' },
+      { commodity:'Bagged Spinach', label:'Spring 2026 Greens', owner:'Tomás Vega', stage:1, updated:'Jun 18, 2026', swatch:['#e7f4ea','#1f7a44'], closed:false, href:'Run Detail.dc.html' },
+      { commodity:'Iceberg Lettuce', label:'Summer 2026 Lettuce', owner:'Karen Wu', stage:0, updated:'Jun 17, 2026', swatch:['#e8f0fe','#2c5fb0'], closed:false, href:'Run Detail.dc.html' },
+      { commodity:'Russet Potatoes', label:'2026 Potatoes Program', owner:'Dana Ellison', stage:5, updated:'May 30, 2026', swatch:['#efe9e2','#6b5d4f'], closed:true, href:'Run Detail.dc.html' },
+    ];
+  }
+  STAGE_LABEL = ['Awaiting setup','Round 1 bids open','Analysis sealed','Ready to award','Post-award adjustments','Closed · archived'];
+  STAGE_COLOR = {
+    0:['#eef1f5','#dde3ec','#8a97a8','#9aa7b6'],
+    1:['#eef4ff','#d6e3f8','#2c5fb0','#2478CE'],
+    2:['#eef4ff','#d6e3f8','#2c5fb0','#2478CE'],
+    3:['#fdf6e8','#f0dfb6','#8a6516','#c98a1a'],
+    4:['#e7f3ea','#cfe8da','#1a7a4f','#2f8f5e'],
+    5:['#f1f3f4','#e3e7eb','#5f6b7a','#9aa7b6'],
+  };
+
+  initials(name){ return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+
+  renderVals() {
+    const S = this.state;
+    const q = S.query.trim().toLowerCase();
+    let list = this.RUNS();
+    if (q) list = list.filter(r => (r.commodity+' '+r.label+' '+r.owner).toLowerCase().includes(q));
+    const runs = list.map((r,i) => {
+      const sc = this.STAGE_COLOR[r.stage];
+      const steps = [0,1,2,3,4].map(idx => {
+        let color = '#e7ecf3';
+        if (r.closed) color = '#cdd5de';
+        else if (idx < r.stage) color = '#2f8f5e';
+        else if (idx === r.stage) color = sc[3];
+        return { color };
+      });
+      return {
+        commodity: r.commodity, label: r.label, owner: r.owner, ownerInit: this.initials(r.owner),
+        initial: r.commodity[0], swatchBg: r.swatch[0], swatchFg: r.swatch[1],
+        stageLabel: this.STAGE_LABEL[r.stage], updated: r.updated,
+        pillBg: sc[0], pillBorder: sc[1], pillFg: sc[2], pillDot: sc[3], steps,
+        bg: i % 2 === 0 ? '#fff' : '#fcfdfe',
+        open: () => { window.location.href = r.href; },
+      };
+    });
+    const all = this.RUNS();
+    return {
+      runs, count: list.length, empty: runs.length === 0, query: S.query,
+      onSearch: (e) => this.setState({ query: e.target.value }),
+      kpis: [
+        { label:'Active runs', value: String(all.filter(r=>!r.closed).length), sub:'in flight', color:'#102a4c' },
+        { label:'Awaiting your action', value:'2', sub:'setup · award', color:'#c98a1a' },
+        { label:'Awards frozen YTD', value:'14', sub:'across commodities', color:'#1a7a4f' },
+        { label:'Tracked savings YTD', value:'$1.2M', sub:'vs incumbent', color:'#1a7a4f' },
+      ],
+      nav: {
+        expanded: !S.navCollapsed,
+        w: S.navCollapsed ? '66px' : '228px',
+        justify: S.navCollapsed ? 'center' : 'flex-start',
+        pad: S.navCollapsed ? '10px 0' : '9px 10px',
+        chevron: S.navCollapsed ? '180deg' : '0deg',
+        toggle: () => this.setState(st => ({ navCollapsed: !st.navCollapsed })),
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#16243d;background:#eceff4;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#c2ccd9;border-radius:6px;border:2px solid #eceff4}
+  button{font-family:inherit;cursor:pointer}
+  select{font-family:inherit}
+  @keyframes slideIn{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#eceff4">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside style="width:{{ nav.w }};flex:none;background:#0b1f3a;color:#cdd8ea;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .16s ease;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 16px 16px;justify-content:{{ nav.justify }}">
+      <div style="width:30px;height:30px;flex:none;border-radius:7px;background:#084999;display:flex;align-items:center;justify-content:center"><img src="assets/kroger-k-white.svg" alt="Kroger" style="width:17px;height:auto;display:block"></div>
+      <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#fff;letter-spacing:.2px;white-space:nowrap">RFP Console</div></sc-if>
+    </div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:6px 18px 4px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Sourcing</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <div title="Runs" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Runs</span></sc-if>
+      </div>
+    </nav>
+    <div style="margin:10px 14px;height:1px;background:#1c3454"></div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:2px 18px 6px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Field Tomatoes</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <div title="Overview" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Overview</span></sc-if>
+      </div>
+      <div title="Intake" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Intake</span></sc-if>
+      </div>
+      <div title="Alignment" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#fff;font-weight:700;background:#13315a;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="flex:none"><path d="M4 21V10M4 6V3M12 21v-7M12 10V3M20 21V14M20 10V3M1 10h6M9 14h6M17 10h6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Alignment</span></sc-if>
+      </div>
+      <div title="Awards" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><circle cx="12" cy="8" r="6"/><path d="M8.2 13.9 7 22l5-3 5 3-1.2-8.1"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Awards</span></sc-if>
+      </div>
+    </nav>
+    <div style="margin-top:auto;padding:10px">
+      <button onClick="{{ nav.toggle }}" title="Toggle navigation" style="width:100%;display:flex;align-items:center;justify-content:{{ nav.justify }};gap:10px;padding:{{ nav.pad }};border-radius:7px;border:none;background:#13294a;color:#9fb0cc;font-size:12.5px;font-weight:600">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none;transform:rotate({{ nav.chevron }});transition:transform .16s"><path d="M15 18l-6-6 6-6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span style="white-space:nowrap">Collapse</span></sc-if>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+    <!-- top bar -->
+    <header style="height:56px;flex:none;background:#fff;border-bottom:1px solid #dde3ec;display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:20">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#64748b">
+        <span>Runs</span><span style="color:#c2ccd9">/</span>
+        <span>Field Tomatoes</span><span style="color:#c2ccd9">/</span>
+        <span style="color:#16243d;font-weight:700">Alignment</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="position:relative">
+          <button onClick="{{ versionToggle }}" style="display:flex;align-items:center;gap:8px;padding:5px 11px;background:{{ versionBg }};border:1px solid #e0e8f4;border-radius:20px;cursor:pointer">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ versionDot }}"></span>
+            <span style="font-size:12px;color:#3a5170;font-weight:600">{{ versionLabel }}</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a97a8" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <sc-if value="{{ versionOpen }}" hint-placeholder-val="{{ false }}">
+            <div onClick="{{ versionToggle }}" style="position:fixed;inset:0;z-index:25"></div>
+            <div style="position:absolute;right:0;top:38px;width:288px;background:#fff;border:1px solid #dde3ec;border-radius:11px;box-shadow:0 10px 30px rgba(16,42,76,.18);z-index:26;overflow:hidden">
+              <div style="padding:10px 13px 7px;border-bottom:1px solid #eef1f5"><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Sealed analyses</div><div style="font-size:11px;color:#9aa7b6;margin-top:1px">Each lock is immutable. Prior versions open read-only.</div></div>
+              <sc-for list="{{ versionList }}" as="Ve" hint-placeholder-count="2">
+                <button onClick="{{ Ve.select }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 13px;border:none;border-bottom:1px solid #f4f6f9;background:{{ Ve.bg }};text-align:left;cursor:pointer">
+                  <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{ Ve.dot }}"></span>
+                  <div style="flex:1">
+                    <div style="font-size:13px;font-weight:700;color:#16243d">{{ Ve.label }}</div>
+                    <div style="font-size:11px;color:#9aa7b6">{{ Ve.when }}</div>
+                  </div>
+                  <span style="padding:1px 7px;background:{{ Ve.tagBg }};color:{{ Ve.tagFg }};border-radius:5px;font-size:9.5px;font-weight:800;letter-spacing:.3px">{{ Ve.tag }}</span>
+                  <sc-if value="{{ Ve.selected }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px">
+          <div style="width:30px;height:30px;border-radius:50%;background:#dbe5f3;color:#084999;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;font-family:'Montserrat'">DE</div>
+          <div style="line-height:1.15">
+            <div style="font-size:12.5px;font-weight:700;color:#16243d">Dana Ellison</div>
+            <div style="font-size:10.5px;color:#8a97a8">Sr. Sourcing Mgr</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- scroll area -->
+    <main style="flex:1;overflow:auto;padding:24px 26px 60px">
+
+      <!-- persistent run-status strip -->
+      <div style="display:flex;align-items:center;gap:0;background:#fff;border:1px solid #e3e8ef;border-radius:10px;overflow:hidden;margin-bottom:16px">
+        <sc-for list="{{ runStrip }}" as="St" hint-placeholder-count="4">
+          <div style="flex:1;display:flex;align-items:center;gap:9px;padding:10px 16px;border-left:{{ St.divider }}">
+            <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{ St.dot }}"></span>
+            <div style="min-width:0">
+              <div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">{{ St.label }}</div>
+              <div style="font-size:12.5px;font-weight:700;color:{{ St.color }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ St.value }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- read-only banner -->
+      <sc-if value="{{ readOnly }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:11px;padding:12px 16px;background:#fbf6ec;border:1px solid #f0e0c8;border-radius:10px;margin-bottom:16px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c98a1a" stroke-width="2.2" style="flex:none"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          <span style="font-size:12.5px;color:#6b5320;line-height:1.45;font-weight:600">{{ readOnlyText }}</span>
+          <button onClick="{{ goLive }}" style="margin-left:auto;flex:none;padding:7px 13px;background:#fff;border:1px solid #e3d6ad;border-radius:8px;font-size:12.5px;font-weight:700;color:#8a6516;cursor:pointer">View live version</button>
+        </div>
+      </sc-if>
+
+      <!-- ===== DECISION HEADER ===== -->
+      <section style="display:flex;gap:18px;align-items:stretch;margin-bottom:18px">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <h1 style="font-family:'Montserrat';font-weight:800;font-size:25px;letter-spacing:-.4px;color:#102a4c;margin-bottom:5px">Alignment workbench</h1>
+          <div style="font-size:13.5px;color:#5b6b82;margin-bottom:13px">Field Tomatoes · Spring 2026 Tomatoes</div>
+          <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600"><b style="color:#102a4c">2</b> DCs</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600"><b style="color:#102a4c">2</b> lots</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600"><b style="color:#102a4c">2</b> suppliers invited</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600"><b style="color:#102a4c">4</b> award cells</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600">13-week horizon</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600">Balanced preset</span>
+            <span style="padding:5px 10px;background:#fff;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;color:#3a5170;font-weight:600">Round 1</span>
+          </div>
+          <div style="margin-top:6px;background:#fff;border:1px solid #dde3ec;border-radius:11px;overflow:hidden;flex:1;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:stretch;flex:1">
+              <div style="width:4px;flex:none;background:{{ explain.accent }}"></div>
+              <div style="flex:1;min-width:0;padding:12px 15px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+                  <span style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Selected scenario</span>
+                  <span style="width:22px;height:22px;flex:none;border-radius:6px;background:{{ explain.badgeBg }};color:{{ explain.badgeFg }};display:flex;align-items:center;justify-content:center;font-family:'Montserrat';font-weight:800;font-size:11px">{{ explain.code }}</span>
+                  <span style="font-family:'Montserrat';font-weight:700;font-size:13.5px;color:#102a4c">{{ explain.label }}</span>
+                  <sc-if value="{{ explain.isRec }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 7px;background:#e3f3ea;color:#1a7a4f;border-radius:4px;font-size:9px;font-weight:800;letter-spacing:.3px">RECOMMENDED</span></sc-if>
+                  <sc-if value="{{ explain.isCustom }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 7px;background:#fdf6e8;color:#8a6516;border-radius:4px;font-size:9px;font-weight:800;letter-spacing:.3px">EDITABLE</span></sc-if>
+                </div>
+                <p style="font-size:12px;color:#5b6b82;line-height:1.5;text-wrap:pretty">{{ explain.desc }}</p>
+              </div>
+            </div>
+            <div style="border-top:1px solid #eef1f5;background:#fafbfd;padding:10px 16px;display:flex;align-items:center;gap:22px;flex-wrap:wrap">
+              <span style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">{{ explain.compareLabel }}</span>
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:11.5px;color:#8a97a8;font-weight:600">Spend</span><span style="font-family:'Montserrat';font-weight:800;font-size:14px;color:{{ explain.dSpendColor }}" class="num">{{ explain.dSpendF }}</span></div>
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:11.5px;color:#8a97a8;font-weight:600">Suppliers</span><span style="font-family:'Montserrat';font-weight:800;font-size:14px;color:#102a4c" class="num">{{ explain.supps }} <span style="font-size:11px;color:#9aa7b6;font-weight:600">{{ explain.dSupF }}</span></span></div>
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-size:11.5px;color:#8a97a8;font-weight:600">Cautions</span><span style="font-size:12.5px;font-weight:800;color:{{ explain.flagsColor }}">{{ explain.flagsF }}</span></div>
+              <button onClick="{{ capStatus.view }}" title="{{ capStatus.detail }}" style="margin-left:auto;display:flex;align-items:center;gap:7px;padding:5px 11px;background:{{ capStatus.bg }};border:1px solid {{ capStatus.border }};border-radius:20px;cursor:{{ capStatus.cursor }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{{ capStatus.color }}" stroke-width="2.2"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg>
+                <span style="font-size:11.5px;font-weight:700;color:{{ capStatus.color }}">{{ capStatus.text }}</span>
+                <sc-if value="{{ capStatus.clickable }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="{{ capStatus.color }}" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></sc-if>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- recommendation summary card -->
+        <div style="width:430px;flex:none;background:#fff;border:1px solid #dbe5f3;border-radius:12px;box-shadow:0 1px 3px rgba(16,42,76,.05);overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(90deg,#084999,#0a5bbf)">
+            <span style="font-size:11.5px;font-weight:700;letter-spacing:.6px;color:#cfe0f7;text-transform:uppercase">Engine recommendation</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:rgba(255,255,255,.16);border-radius:6px;font-size:12px;font-weight:800;color:#fff;font-family:'Montserrat'">Scenario {{ rec.code }}</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;padding:13px 16px 14px">
+            <div style="font-size:12px;color:#5b6b82;font-weight:600;margin-bottom:12px">{{ rec.label }}</div>
+            <div style="display:flex;gap:6px;margin-bottom:13px">
+              <div style="flex:1">
+                <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:2px">Total spend</div>
+                <div style="font-family:'Montserrat';font-weight:800;font-size:21px;color:#102a4c" class="num">{{ rec.spendF }}</div>
+                <div style="font-size:11px;color:#8a97a8;font-weight:600" class="num">vs $280,800 incumbent</div>
+              </div>
+              <div style="flex:1;border-left:1px solid #eef1f5;padding-left:14px">
+                <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:2px">Save vs incumbent</div>
+                <div style="font-family:'Montserrat';font-weight:800;font-size:21px;color:#1a8a5a" class="num">{{ rec.saveIncF }}</div>
+                <div style="font-size:11px;color:#1a8a5a;font-weight:700" class="num">{{ rec.saveIncPctF }} of incumbent baseline</div>
+              </div>
+            </div>
+            <div style="height:1px;background:#eef1f5;margin-bottom:12px"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 14px">
+              <div>
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:1px"><span style="font-size:10.5px;color:#8a97a8;font-weight:600">Save vs STLY</span><span title="No same-time-last-year feed exists. STLY is modeled as incumbent baseline + ~4%; treat as directional, secondary to Save vs incumbent." style="padding:0 5px;background:#f1ece0;color:#9a7b3c;border-radius:4px;font-size:8.5px;font-weight:800;letter-spacing:.3px;cursor:help">MODELED</span></div>
+                <div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#9aa7b6" class="num">{{ rec.saveStlyF }} <span style="font-size:11px;font-weight:600">{{ rec.saveStlyPctF }}</span></div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;color:#8a97a8;font-weight:600;margin-bottom:1px">Awarded volume</div>
+                <div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#16243d" class="num">{{ rec.volumeF }} cases</div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;color:#8a97a8;font-weight:600;margin-bottom:1px">Avg awarded $/case</div>
+                <div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#16243d" class="num">{{ rec.avgF }}</div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;color:#8a97a8;font-weight:600;margin-bottom:1px">Incumbent retained</div>
+                <div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#16243d">{{ rec.retainedF }}</div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#f7f9fc;border-top:1px solid #eef1f5">
+            <div style="display:flex;gap:16px;font-size:12px;color:#5b6b82">
+              <span><b style="color:#16243d">{{ rec.supps }}</b> suppliers</span>
+              <span><b style="color:#16243d">4</b> cells</span>
+              <span style="color:#1a8a5a;font-weight:700">No cautions</span>
+            </div>
+            <button onClick="{{ openFreeze }}" style="display:flex;align-items:center;gap:7px;padding:8px 15px;background:{{ recFreezeBg }};color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;box-shadow:0 1px 2px rgba(8,73,153,.3)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+              Freeze award
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== LENS RAIL ===== -->
+      <section style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <h2 style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#102a4c">Scenario lenses</h2>
+            <span style="font-size:12px;color:#8a97a8">Each lens reshapes the award below. Select one to inspect; the recommendation is B.</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;font-size:11px;color:#8a97a8">
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:2px;background:#c98a1a"></span>Concentration</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:2px;background:#b3261e"></span>Capacity (stated)</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:9px">
+          <sc-for list="{{ lenses }}" as="L" hint-placeholder-count="7">
+            <button onClick="{{ L.select }}" style="text-align:left;padding:11px 11px 10px;border-radius:10px;background:{{ L.bg }};border:1.5px solid {{ L.border }};box-shadow:{{ L.shadow }};position:relative;transition:all .12s">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+                <span style="font-family:'Montserrat';font-weight:800;font-size:13px;color:{{ L.codeColor }}">{{ L.code }}</span>
+                <span style="display:flex;gap:3px">
+                  <sc-if value="{{ L.concFlag }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:2px;background:#c98a1a"></span></sc-if>
+                  <sc-if value="{{ L.capFlag }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:2px;background:#b3261e"></span></sc-if>
+                </span>
+              </div>
+              <div style="font-size:11.5px;font-weight:700;color:#1f3253;line-height:1.25;height:29px;margin-bottom:7px">{{ L.label }}</div>
+              <div style="font-family:'Montserrat';font-weight:800;font-size:15px;color:#102a4c;line-height:1" class="num">{{ L.spendF }}</div>
+              <div style="font-size:11px;font-weight:700;color:{{ L.saveColor }};margin-top:2px" class="num">{{ L.saveIncPctF }} vs inc</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:7px;padding-top:7px;border-top:1px solid {{ L.divider }}">
+                <span style="font-size:10.5px;color:#8a97a8">{{ L.supps }} supplier(s)</span>
+                <sc-if value="{{ L.recommended }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 6px;background:#e3f3ea;color:#1a7a4f;border-radius:4px;font-size:9.5px;font-weight:800;letter-spacing:.3px">REC</span></sc-if>
+              </div>
+            </button>
+          </sc-for>
+        </div>
+      </section>
+
+      <!-- ===== WORKBENCH BODY ===== -->
+      <section>
+        <!-- view tabs -->
+        <div style="display:flex;flex-wrap:wrap;gap:3px;background:#fff;border:1px solid #dde3ec;border-radius:11px;padding:5px;margin-bottom:14px">
+          <sc-for list="{{ views }}" as="V" hint-placeholder-count="8">
+            <button onClick="{{ V.select }}" style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 10px;border:none;border-radius:8px;background:{{ V.bg }};white-space:nowrap">
+              <span style="font-size:13px;font-weight:{{ V.weight }};color:{{ V.color }}">{{ V.short }}</span>
+              <sc-if value="{{ V.flag }}" hint-placeholder-val="{{ false }}"><span style="width:7px;height:7px;border-radius:2px;background:{{ V.flagColor }}"></span></sc-if>
+            </button>
+          </sc-for>
+        </div>
+
+        <!-- main panel -->
+        <div style="background:#fff;border:1px solid #dde3ec;border-radius:11px;box-shadow:0 1px 3px rgba(16,42,76,.04);overflow:hidden">
+
+          <!-- panel header -->
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:15px 18px 13px;border-bottom:1px solid #eef1f5">
+            <div>
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:3px">
+                <h3 style="font-family:'Montserrat';font-weight:700;font-size:16px;color:#102a4c">{{ panel.title }}</h3>
+                <span style="padding:2px 8px;background:#eef4ff;border:1px solid #d6e3f8;border-radius:5px;font-size:11px;font-weight:700;color:#2c4a78">Lens {{ activeCode }}</span>
+              </div>
+              <div style="font-size:12.5px;color:#7a8699">{{ panel.note }}</div>
+            </div>
+            <sc-if value="{{ isCustom }}" hint-placeholder-val="{{ false }}">
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:#fdf6e8;border:1px solid #f0dfb6;border-radius:7px;font-size:11.5px;color:#8a6516;font-weight:700">Editable — change supplier per cell</span>
+            </sc-if>
+            <sc-if value="{{ panel.groupToggle.show }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ panel.groupToggle.toggle }}" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:#fff;border:1px solid #d4dce8;border-radius:7px;font-size:11.5px;color:#3a5170;font-weight:700;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3a5170" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></svg>{{ panel.groupToggle.btnLabel }}</button>
+            </sc-if>
+          </div>
+
+          <!-- active filters -->
+          <sc-if value="{{ anyFilter }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:8px;padding:9px 18px;border-bottom:1px solid #eef1f5;background:#fafbfd;flex-wrap:wrap">
+              <span style="font-size:10.5px;color:#8a97a8;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Filtered</span>
+              <sc-for list="{{ chips }}" as="Ch" hint-placeholder-count="1">
+                <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 10px;background:#eef4ff;border:1px solid #d6e3f8;border-radius:20px;font-size:11.5px;font-weight:700;color:#2c4a78">{{ Ch.label }}<button onClick="{{ Ch.clear }}" style="border:none;background:none;display:flex;padding:0;cursor:pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2c4a78" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg></button></span>
+              </sc-for>
+              <button onClick="{{ clearAll }}" style="font-size:11.5px;color:#7a8699;font-weight:700;border:none;background:none;cursor:pointer">Clear all</button>
+              <span style="margin-left:auto;font-size:11.5px;color:#9aa7b6;font-weight:600">{{ countLabel }}</span>
+            </div>
+          </sc-if>
+
+          <!-- ===== SUPPLIER COMPARISON MATRIX (centerpiece) ===== -->
+          <sc-if value="{{ showMatrix }}" hint-placeholder-val="{{ true }}">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:880px">
+              <thead>
+                <tr style="background:#f7f9fc">
+                  <th style="text-align:left;padding:9px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px;cursor:help" onMouseEnter="{{ mt.cell }}" onMouseLeave="{{ tipLeave }}">Award cell</span><button onClick="{{ awardFilter.click }}" title="Filter DC / Lot" style="border:none;background:none;padding:0 0 0 6px;cursor:pointer;vertical-align:middle"><svg width="12" height="12" viewBox="0 0 24 24" fill="{{ awardFilter.fill }}" stroke="{{ awardFilter.color }}" stroke-width="2"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg></button></th>
+                  <th style="text-align:right;padding:9px 10px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;cursor:help" onMouseEnter="{{ mt.demand }}" onMouseLeave="{{ tipLeave }}"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px">Demand</span></th>
+                  <th style="text-align:right;padding:9px 10px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;cursor:help" onMouseEnter="{{ mt.baseline }}" onMouseLeave="{{ tipLeave }}"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px">Baseline</span></th>
+                  <th style="text-align:center;padding:9px 12px;font-size:10.5px;letter-spacing:.4px;color:#1f6b3f;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;border-left:1px solid #eef1f5;cursor:help" onMouseEnter="{{ mt.gvf }}" onMouseLeave="{{ tipLeave }}"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px">Green Valley Farms</span><div style="font-size:9px;color:#9aa7b6;font-weight:600;letter-spacing:0">incumbent · preserve</div></th>
+                  <th style="text-align:center;padding:9px 12px;font-size:10.5px;letter-spacing:.4px;color:#7a5ba8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;cursor:help" onMouseEnter="{{ mt.sun }}" onMouseLeave="{{ tipLeave }}"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px">Sunbelt Produce</span><div style="font-size:9px;color:#9aa7b6;font-weight:600;letter-spacing:0">challenger · create</div></th>
+                  <th style="text-align:left;padding:9px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;border-left:1px solid #eef1f5;cursor:help" onMouseEnter="{{ mt.rec }}" onMouseLeave="{{ tipLeave }}"><span style="border-bottom:1px dotted #b9c4d2;padding-bottom:1px">Recommended</span></th>
+                  <th style="text-align:right;padding:9px 14px;font-size:10.5px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ matrix }}" as="R" hint-placeholder-count="4">
+                  <tr onClick="{{ R.open }}" style="background:{{ R.rowBg }};border-bottom:1px solid #f0f3f7;cursor:pointer">
+                    <td style="padding:11px 14px">
+                      <div style="font-weight:700;color:#16243d;font-size:13.5px">{{ R.dc }}</div>
+                      <div style="font-size:11.5px;color:#7a8699">{{ R.lot }} · {{ R.item }}</div>
+                    </td>
+                    <td style="text-align:right;padding:11px 10px;color:#3a5170;font-weight:600" class="num">{{ R.demandF }}</td>
+                    <td style="text-align:right;padding:11px 10px;color:#9aa7b6;font-weight:600" class="num">{{ R.baselineF }}</td>
+                    <!-- GVF cell -->
+                    <td style="text-align:center;padding:8px 12px;border-left:1px solid #eef1f5;background:{{ R.s1.cellBg }}">
+                      <div style="display:inline-flex;align-items:center;gap:6px">
+                        <span style="font-family:'Montserrat';font-weight:{{ R.s1.weight }};font-size:14.5px;color:{{ R.s1.color }}" class="num">{{ R.s1.priceF }}</span>
+                        <sc-if value="{{ R.s1.isLow }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 5px;background:#e3f3ea;color:#1a7a4f;border-radius:4px;font-size:9px;font-weight:800">LOW</span></sc-if>
+                        <sc-if value="{{ R.s1.gated }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 5px;background:#fbe9e7;color:#b3261e;border-radius:4px;font-size:9px;font-weight:800" title="Above 12% premium ceiling vs market low">GATED</span></sc-if>
+                      </div>
+                    </td>
+                    <!-- Sunbelt cell -->
+                    <td style="text-align:center;padding:8px 12px;background:{{ R.s2.cellBg }}">
+                      <div style="display:inline-flex;align-items:center;gap:6px">
+                        <span style="font-family:'Montserrat';font-weight:{{ R.s2.weight }};font-size:14.5px;color:{{ R.s2.color }}" class="num">{{ R.s2.priceF }}</span>
+                        <sc-if value="{{ R.s2.isLow }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 5px;background:#e3f3ea;color:#1a7a4f;border-radius:4px;font-size:9px;font-weight:800">LOW</span></sc-if>
+                        <sc-if value="{{ R.s2.gated }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 5px;background:#fbe9e7;color:#b3261e;border-radius:4px;font-size:9px;font-weight:800">GATED</span></sc-if>
+                      </div>
+                    </td>
+                    <!-- recommended -->
+                    <td style="padding:8px 14px;border-left:1px solid #eef1f5">
+                      <sc-if value="{{ isCustom }}" hint-placeholder-val="{{ false }}">
+                        <select onChange="{{ R.change }}" value="{{ R.pickName }}" style="width:100%;padding:6px 8px;border:1.5px solid #cdd8e8;border-radius:7px;font-size:12.5px;font-weight:700;color:#16243d;background:#fff">
+                          <option value="Green Valley Farms">Green Valley Farms</option>
+                          <option value="Sunbelt Produce">Sunbelt Produce</option>
+                        </select>
+                      </sc-if>
+                      <sc-if value="{{ notCustom }}" hint-placeholder-val="{{ true }}">
+                        <div style="display:flex;align-items:center;gap:7px">
+                          <span style="width:7px;height:7px;border-radius:50%;background:{{ R.pickDot }}"></span>
+                          <span style="font-weight:700;color:#16243d;font-size:13px">{{ R.pickName }}</span>
+                        </div>
+                        <div style="font-size:11px;color:#8a97a8;margin-top:1px;padding-left:14px">RecScore {{ R.recScoreF }}</div>
+                      </sc-if>
+                    </td>
+                    <td style="text-align:right;padding:11px 14px">
+                      <div style="display:inline-flex;align-items:center;gap:11px">
+                        <button onClick="{{ R.openNote }}" title="Decision note" style="border:none;background:none;padding:0;cursor:pointer;display:inline-flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="{{ R.noteFill }}" stroke="{{ R.noteColor }}" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+                        <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#2478CE;font-weight:700">Why<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2478CE" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></span>
+                      </div>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+              <tfoot>
+                <tr style="background:#f7f9fc;border-top:2px solid #e7ecf3">
+                  <td style="padding:11px 14px;font-weight:800;color:#102a4c;font-family:'Montserrat'">{{ matrixFooter.label }}</td>
+                  <td style="text-align:right;padding:11px 10px;font-weight:700;color:#3a5170" class="num">{{ matrixFooter.casesF }}</td>
+                  <td colspan="3" style="text-align:right;padding:11px 12px;font-weight:800;color:#102a4c;font-family:'Montserrat';font-size:15px" class="num">{{ matrixFooter.spendF }}</td>
+                  <td colspan="2" style="text-align:right;padding:11px 14px;font-weight:700;color:{{ matrixFooter.saveColor }}" class="num">{{ matrixFooter.saveText }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <!-- caution strip for active lens -->
+          <sc-if value="{{ active.hasCaution }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:10px;padding:11px 16px;background:#fdf6ee;border-top:1px solid #f0e0c8">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c98a1a" stroke-width="2.2" style="flex:none;margin-top:1px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              <div style="font-size:12.5px;color:#6b5320;line-height:1.5">{{ active.cautionText }}</div>
+            </div>
+          </sc-if>
+          </sc-if>
+
+          <!-- ===== GENERIC ANALYTICAL VIEW ===== -->
+          <sc-if value="{{ showTable }}" hint-placeholder-val="{{ false }}">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+              <thead>
+                <tr style="background:#f7f9fc">
+                  <sc-for list="{{ panel.columns }}" as="GCol" hint-placeholder-count="6">
+                    <th style="text-align:{{ GCol.align }};padding:9px 13px;font-size:10px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;border-bottom:1px solid #e7ecf3;white-space:nowrap"><span style="border-bottom:{{ GCol.underline }};padding-bottom:1px;cursor:{{ GCol.cursor }}" onMouseEnter="{{ GCol.onEnter }}" onMouseLeave="{{ tipLeave }}" onClick="{{ GCol.onSort }}">{{ GCol.label }}</span><sc-if value="{{ GCol.sortable }}" hint-placeholder-val="{{ false }}"><button onClick="{{ GCol.onSort }}" title="Sort within DC" style="border:none;background:none;padding:0 0 0 4px;cursor:pointer;vertical-align:middle;font-size:10px;color:{{ GCol.sortColor }};font-weight:800">{{ GCol.sortArrow }}</button></sc-if><sc-if value="{{ GCol.hasFilter }}" hint-placeholder-val="{{ false }}"><button onClick="{{ GCol.onFilter }}" title="Filter" style="border:none;background:none;padding:0 0 0 6px;cursor:pointer;vertical-align:middle"><svg width="12" height="12" viewBox="0 0 24 24" fill="{{ GCol.funnelFill }}" stroke="{{ GCol.funnelColor }}" stroke-width="2"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg></button></sc-if></th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ panel.rows }}" as="GRow" hint-placeholder-count="6">
+                  <tr style="border-bottom:1px solid #f0f3f7;background:{{ GRow.bg }}">
+                    <sc-for list="{{ GRow.cells }}" as="GCell" hint-placeholder-count="6">
+                      <td style="text-align:{{ GCell.align }};padding:9px 13px;color:{{ GCell.color }};font-weight:{{ GCell.weight }};white-space:nowrap" class="num">{{ GCell.t }}</td>
+                    </sc-for>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <sc-if value="{{ panel.footnote }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:11px 16px;background:#f7f9fc;border-top:1px solid #eef1f5;font-size:12px;color:#7a8699;line-height:1.5">{{ panel.footnote }}</div>
+          </sc-if>
+          </sc-if>
+
+        </div>
+      </section>
+
+      <!-- governance footer -->
+      <div style="display:flex;align-items:center;justify-content:center;gap:9px;margin-top:22px;padding-top:18px;border-top:1px solid #dde3ec">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a97a8" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span style="font-size:12px;color:#7a8699;font-weight:600">Engine output — decision support only. A human asserts every governed action; each assertion is audit-evented.</span>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== CELL DRILL SLIDE-OVER ===== -->
+  <sc-if value="{{ drill }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeCell }}" style="position:fixed;inset:0;background:rgba(15,31,58,.32);z-index:40;animation:fadeIn .12s"></div>
+    <aside style="position:fixed;top:0;right:0;width:520px;height:100vh;background:#f7f9fc;z-index:41;box-shadow:-8px 0 32px rgba(16,42,76,.18);display:flex;flex-direction:column;animation:slideIn .16s ease-out">
+      <div style="padding:16px 20px;background:#fff;border-bottom:1px solid #e7ecf3">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between">
+          <div>
+            <div style="font-size:11px;letter-spacing:.5px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:3px">Supplier comparison · cell drill-down</div>
+            <h3 style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c">{{ drill.dc }}</h3>
+            <div style="font-size:13px;color:#5b6b82">{{ drill.lot }} · {{ drill.item }} · {{ drill.tf }}</div>
+          </div>
+          <button onClick="{{ closeCell }}" style="width:30px;height:30px;border-radius:7px;border:1px solid #e0e6ee;background:#fff;color:#8a97a8;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
+        </div>
+        <div style="display:flex;gap:18px;margin-top:12px">
+          <div><div style="font-size:11px;color:#8a97a8;font-weight:600">Demand</div><div style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#16243d" class="num">{{ drill.demandF }}</div></div>
+          <div><div style="font-size:11px;color:#8a97a8;font-weight:600">Incumbent</div><div style="font-weight:700;font-size:14px;color:#16243d">Green Valley Farms</div></div>
+          <div><div style="font-size:11px;color:#8a97a8;font-weight:600">Recommended</div><div style="font-weight:700;font-size:14px;color:#1a7a4f">{{ drill.recName }}</div></div>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow:auto;padding:18px 20px">
+        <!-- bid-by-bid scoring -->
+        <div style="font-size:11px;letter-spacing:.5px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:9px">Why this pick — 5-factor scoring</div>
+        <sc-for list="{{ drill.bids }}" as="B" hint-placeholder-count="2">
+          <div style="background:#fff;border:1.5px solid {{ B.border }};border-radius:10px;padding:13px 14px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="width:8px;height:8px;border-radius:50%;background:{{ B.dot }}"></span>
+                <span style="font-weight:800;font-size:14px;color:#16243d;font-family:'Montserrat'">{{ B.name }}</span>
+                <span style="font-size:11px;color:#8a97a8">{{ B.role }}</span>
+                <sc-if value="{{ B.isPick }}" hint-placeholder-val="{{ false }}"><span style="padding:1px 7px;background:#e3f3ea;color:#1a7a4f;border-radius:4px;font-size:9.5px;font-weight:800">RECOMMENDED</span></sc-if>
+              </div>
+              <div style="text-align:right">
+                <span style="font-family:'Montserrat';font-weight:800;font-size:17px;color:#102a4c" class="num">{{ B.priceF }}</span>
+                <span style="font-size:11px;color:#8a97a8">/case</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;margin-bottom:11px">
+              <div style="font-size:11.5px;color:#5b6b82">Premium vs low <b style="color:{{ B.premColor }}" class="num">{{ B.premF }}</b></div>
+              <div style="font-size:11.5px;color:#5b6b82">Z-score <b style="color:#16243d" class="num">{{ B.zF }}</b></div>
+              <div style="font-size:11.5px;color:#5b6b82;margin-left:auto">RecScore <b style="font-family:'Montserrat';color:#084999;font-size:13px" class="num">{{ B.recF }}</b></div>
+            </div>
+            <sc-for list="{{ B.factors }}" as="F" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:5px">
+                <span style="width:64px;font-size:11px;color:#7a8699;font-weight:600">{{ F.name }}</span>
+                <div style="flex:1;height:7px;background:#eef1f5;border-radius:4px;overflow:hidden">
+                  <div style="height:100%;width:{{ F.pct }};background:{{ F.color }};border-radius:4px"></div>
+                </div>
+                <span style="width:26px;text-align:right;font-size:11px;font-weight:700;color:#16243d" class="num">{{ F.val }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+
+        <!-- checks grid -->
+        <div style="font-size:11px;letter-spacing:.5px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin:16px 0 9px">Diligence checks</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+          <div style="background:#fff;border:1px solid #e7ecf3;border-radius:9px;padding:11px 12px">
+            <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:3px">Lowest-cost check</div>
+            <div style="font-weight:700;font-size:13px;color:#1a7a4f">{{ drill.lowestText }}</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7ecf3;border-radius:9px;padding:11px 12px">
+            <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:3px">Coverage</div>
+            <div style="font-weight:700;font-size:13px;color:#16243d">{{ drill.coverText }}</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7ecf3;border-radius:9px;padding:11px 12px">
+            <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:3px">Landed (all-in)</div>
+            <div style="font-weight:700;font-size:13px;color:#16243d">{{ drill.landedText }}</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7ecf3;border-radius:9px;padding:11px 12px">
+            <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:3px">Incumbent retention</div>
+            <div style="font-weight:700;font-size:13px;color:{{ drill.retainColor }}">{{ drill.retainText }}</div>
+          </div>
+        </div>
+
+        <!-- capacity (distinct) -->
+        <div style="background:#fff;border:1px solid {{ drill.capBorder }};border-radius:9px;padding:12px 13px;margin-top:9px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="font-size:11px;color:#8a97a8;font-weight:700;letter-spacing:.4px;text-transform:uppercase">Stated capacity (E-38)</span>
+              <span style="padding:1px 6px;background:#eef1f5;color:#7a8699;border-radius:4px;font-size:9.5px;font-weight:700" title="Distinct from concentration — this is the supplier's own stated supply ceiling">distinct check</span>
+            </div>
+            <span style="font-size:11.5px;font-weight:700;color:{{ drill.capColor }}">{{ drill.capStatus }}</span>
+          </div>
+          <div style="font-size:12px;color:#5b6b82;line-height:1.5">{{ drill.capText }}</div>
+        </div>
+      </div>
+    </aside>
+  </sc-if>
+
+  <!-- ===== FREEZE CONFIRM MODAL ===== -->
+  <sc-if value="{{ freezeOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeFreeze }}" style="position:fixed;inset:0;background:rgba(15,31,58,.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn .12s">
+      <div onClick="{{ stop }}" style="width:560px;max-height:88vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 64px rgba(16,42,76,.3);animation:slideIn .16s ease-out">
+        <div style="padding:18px 22px 14px;border-bottom:1px solid #eef1f5">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2.3"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            <h3 style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c">Freeze award — governed action</h3>
+          </div>
+          <div style="font-size:13px;color:#5b6b82">You are asserting <b style="color:#16243d">Scenario {{ activeCode }} · {{ active.label }}</b> as the official award for Field Tomatoes, Round 1, from <b style="color:#16243d">sealed analysis {{ freezeVersion }}</b>. This writes a <b style="color:#16243d">FROZEN</b> event to the audit trail and creates an immutable baseline.</div>
+        </div>
+        <div style="padding:16px 22px">
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1;background:#f7f9fc;border:1px solid #e7ecf3;border-radius:9px;padding:11px 13px">
+              <div style="font-size:11px;color:#8a97a8;font-weight:600">Total spend</div>
+              <div style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c" class="num">{{ active.spendF }}</div>
+            </div>
+            <div style="flex:1;background:#f7f9fc;border:1px solid #e7ecf3;border-radius:9px;padding:11px 13px">
+              <div style="font-size:11px;color:#8a97a8;font-weight:600">Save vs incumbent</div>
+              <div style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#1a8a5a" class="num">{{ active.saveIncF }}</div>
+            </div>
+            <div style="flex:1;background:#f7f9fc;border:1px solid #e7ecf3;border-radius:9px;padding:11px 13px">
+              <div style="font-size:11px;color:#8a97a8;font-weight:600">Cells · suppliers</div>
+              <div style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c" class="num">4 · {{ active.supps }}</div>
+            </div>
+          </div>
+
+          <div style="font-size:11px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:7px">Awarded cells</div>
+          <div style="border:1px solid #e7ecf3;border-radius:9px;overflow:hidden;margin-bottom:14px">
+            <sc-for list="{{ freezeRows }}" as="FR" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid #f0f3f7">
+                <div><span style="font-weight:700;color:#16243d;font-size:13px">{{ FR.cell }}</span></div>
+                <div style="display:flex;align-items:center;gap:14px">
+                  <span style="font-size:12.5px;color:#3a5170;font-weight:600">{{ FR.supplier }}</span>
+                  <span style="font-family:'Montserrat';font-weight:700;font-size:13px;color:#102a4c;width:54px;text-align:right" class="num">{{ FR.priceF }}</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:10px 13px;background:{{ capStatus.bg }};border:1px solid {{ capStatus.border }};border-radius:9px;margin-bottom:14px">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="{{ capStatus.color }}" stroke-width="2.2" style="flex:none"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg>
+            <div><span style="font-size:12.5px;font-weight:700;color:{{ capStatus.color }}">Capacity (stated): {{ capStatus.text }}</span><div style="font-size:11px;color:#7a8699;margin-top:1px">{{ capStatus.detail }}</div></div>
+          </div>
+
+          <sc-if value="{{ active.hasCaution }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:9px;padding:11px 13px;background:#fdf6ee;border:1px solid #f0e0c8;border-radius:9px;margin-bottom:14px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c98a1a" stroke-width="2.2" style="flex:none;margin-top:1px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              <div style="font-size:12px;color:#6b5320;line-height:1.5">{{ active.cautionText }} Acknowledge before asserting.</div>
+            </div>
+          </sc-if>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:11.5px;color:#5b6b82;font-weight:700;margin-bottom:6px">Decision rationale <span style="color:#9aa7b6;font-weight:600">(optional — stored with the award)</span></div>
+            <textarea value="{{ freezeNote }}" onInput="{{ setFreezeNote }}" placeholder="Why this scenario over the alternatives? Any conditions, exceptions, or context for the audit trail…" style="width:100%;min-height:64px;resize:vertical;padding:10px 12px;border:1px solid #d4dce8;border-radius:9px;font-size:13px;color:#16243d;line-height:1.5;outline:none"></textarea>
+          </div>
+
+          <label style="display:flex;align-items:flex-start;gap:9px;padding:11px 13px;background:#f7f9fc;border:1.5px solid {{ assertBorder }};border-radius:9px;cursor:pointer">
+            <input type="checkbox" checked="{{ asserted }}" onChange="{{ toggleAssert }}" style="width:17px;height:17px;margin-top:1px;accent-color:#084999">
+            <span style="font-size:12.5px;color:#16243d;line-height:1.45">I, <b>Dana Ellison</b>, assert this award decision. I understand it is recorded against my name in the audit trail and the baseline becomes immutable.</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 22px;border-top:1px solid #eef1f5;background:#fbfcfe">
+          <button onClick="{{ closeFreeze }}" style="padding:9px 16px;background:#fff;border:1px solid #d4dce8;border-radius:8px;font-size:13px;font-weight:700;color:#3a5170">Cancel</button>
+          <button onClick="{{ confirmFreeze }}" disabled="{{ freezeDisabled }}" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:{{ freezeBtnBg }};color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;opacity:{{ freezeBtnOpacity }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            Freeze award
+          </button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== DECISION NOTE POPOVER ===== -->
+  <sc-if value="{{ notePop }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeNote }}" style="position:fixed;inset:0;z-index:72"></div>
+    <div style="position:fixed;left:{{ notePop.x }}px;top:{{ notePop.y }}px;z-index:73;width:286px;background:#fff;border:1px solid #dde3ec;border-radius:11px;box-shadow:0 10px 30px rgba(16,42,76,.2);overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 13px;border-bottom:1px solid #eef1f5">
+        <div><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Decision note</div><div style="font-size:12.5px;font-weight:700;color:#16243d">{{ notePop.label }}</div></div>
+        <button onClick="{{ closeNote }}" style="border:none;background:none;color:#9aa7b6;font-size:15px;cursor:pointer;padding:0">✕</button>
+      </div>
+      <div style="padding:11px 13px">
+        <textarea value="{{ notePop.text }}" onInput="{{ setNote }}" placeholder="Note your reasoning for this cell’s supplier choice…" style="width:100%;min-height:88px;resize:vertical;padding:9px 11px;border:1px solid #d4dce8;border-radius:8px;font-size:12.5px;color:#16243d;line-height:1.5;outline:none"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:9px">
+          <span style="font-size:10.5px;color:#9aa7b6;font-weight:600">Saved to this cell</span>
+          <button onClick="{{ closeNote }}" style="padding:6px 14px;background:#084999;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">Done</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== FILTER POPOVER ===== -->
+  <sc-if value="{{ filterPop }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closePop }}" style="position:fixed;inset:0;z-index:70"></div>
+    <div style="position:fixed;left:{{ filterPop.x }}px;top:{{ filterPop.y }}px;z-index:71;background:#fff;border:1px solid #dde3ec;border-radius:10px;box-shadow:0 8px 28px rgba(16,42,76,.18);min-width:188px;padding:5px">
+      <sc-for list="{{ filterPop.sections }}" as="Sec" hint-placeholder-count="1">
+        <div style="padding:7px 9px 4px;font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">{{ Sec.label }}</div>
+        <sc-for list="{{ Sec.options }}" as="Op" hint-placeholder-count="3">
+          <button onClick="{{ Op.click }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;border:none;background:{{ Op.bg }};border-radius:6px;text-align:left;font-size:12.5px;font-weight:{{ Op.weight }};color:{{ Op.color }};cursor:pointer">
+            <span>{{ Op.text }}</span>
+            <sc-if value="{{ Op.active }}" hint-placeholder-val="{{ false }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg></sc-if>
+          </button>
+        </sc-for>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <!-- ===== HOVER TOOLTIP ===== -->
+  <sc-if value="{{ tip }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;left:{{ tip.x }}px;top:{{ tip.y }}px;transform:translate(-50%,-118%);z-index:80;width:max-content;max-width:248px;background:#0b1f3a;color:#eaf1fb;font-size:11.5px;line-height:1.5;font-weight:500;padding:8px 11px;border-radius:8px;box-shadow:0 8px 24px rgba(11,31,58,.34);pointer-events:none">{{ tip.text }}</div>
+  </sc-if>
+
+  <!-- ===== FROZEN TOAST ===== -->
+  <sc-if value="{{ frozen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:11px;padding:13px 20px;background:#0b1f3a;color:#fff;border-radius:11px;box-shadow:0 12px 32px rgba(16,42,76,.3);animation:slideIn .2s">
+      <span style="width:24px;height:24px;border-radius:50%;background:#1a8a5a;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span>
+      <div>
+        <div style="font-weight:700;font-size:13.5px">Award frozen · Scenario {{ activeCode }}</div>
+        <div style="font-size:11.5px;color:#9fb0cc">AWD-2026-TOMATO-1 · asserted by Dana Ellison · audit event recorded</div>
+      </div>
+      <button onClick="{{ dismiss }}" style="margin-left:8px;background:none;border:none;color:#9fb0cc;font-size:15px">✕</button>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 1440, &quot;height&quot;: 900 },
+  &quot;weightsPreset&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;Balanced&quot;, &quot;Price focus&quot;, &quot;Coverage focus&quot;, &quot;Risk averse&quot;], &quot;default&quot;: &quot;Balanced&quot;, &quot;tsType&quot;: &quot;string&quot; },
+  &quot;premiumCeilingPct&quot;: { &quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 12, &quot;min&quot;: 5, &quot;max&quot;: 25, &quot;tsType&quot;: &quot;number&quot; },
+  &quot;defaultView&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;supplier&quot;, &quot;lowest&quot;, &quot;coverage&quot;, &quot;scoring&quot;, &quot;landed&quot;, &quot;share&quot;, &quot;incumbent&quot;, &quot;negotiation&quot;], &quot;default&quot;: &quot;supplier&quot;, &quot;tsType&quot;: &quot;string&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    lens: 'B', view: 'supplier', cell: null,
+    custom: { A1:'Green Valley Farms', A2:'Sunbelt Produce', D1:'Green Valley Farms', D2:'Sunbelt Produce' },
+    freezeOpen: false, asserted: false, frozen: false, tip: null, navCollapsed: false,
+    filters: { dc: 'all', lot: 'all', supplier: 'all' }, filterPop: null,
+    notes: {}, noteOpen: null, freezeNote: '', versionId: 'v2', versionOpen: false, colCollapse: {}, sort: { key: null, dir: 1 }
+  };
+
+  sortBy(key){ this.setState(st => ({ sort: st.sort.key === key ? (st.sort.dir === 1 ? { key, dir: -1 } : { key: null, dir: 1 }) : { key, dir: 1 } })); }
+  DC_RANK = { 'Atlanta DC': 0, 'Dallas DC': 1 };
+
+  openPopFactory(groups){ return (e) => { const r = e.currentTarget.getBoundingClientRect(); const vw = window.innerWidth || 1440; this.setState({ filterPop: { groups, x: Math.max(10, Math.min(r.left, vw - 210)), y: r.bottom + 6 } }); }; }
+  setFilter(dim, val){ this.setState(st => ({ filters: { ...st.filters, [dim]: val }, filterPop: null })); }
+
+  weights(){
+    const M = {
+      'Balanced':{price:0.31,cov:0.22,hist:0.18,zr:0.09,cont:0.20},
+      'Price focus':{price:0.45,cov:0.18,hist:0.13,zr:0.09,cont:0.15},
+      'Coverage focus':{price:0.22,cov:0.34,hist:0.16,zr:0.10,cont:0.18},
+      'Risk averse':{price:0.22,cov:0.20,hist:0.18,zr:0.22,cont:0.18},
+    };
+    return M[this.props.weightsPreset] || M['Balanced'];
+  }
+  pcPct(){ return this.props.premiumCeilingPct ?? 12; }
+  pc(){ return this.pcPct()/100; }
+  componentDidMount(){ const v = this.props.defaultView; if (v && v !== this.state.view) this.setState({ view: v }); }
+
+  passCell(c){ const f = this.state.filters; return (f.dc === 'all' || c.dc === f.dc) && (f.lot === 'all' || c.lot.indexOf(f.lot) >= 0); }
+  passSup(name){ const f = this.state.filters; return f.supplier === 'all' || name === f.supplier; }
+
+  tipEnterFactory(text){ return (e) => this.setState({ tip: { text, x: e.clientX, y: e.clientY } }); }
+
+  // ---- static data ----
+  CELLS() {
+    const mk = (id, dc, lot, item, gvf, sun) => ({ id, dc, lot, item, tf:'Spring 2026', demand:5200, baseline:13.50, offered:7800, bids:{ 'Green Valley Farms':gvf, 'Sunbelt Produce':sun } });
+    return [
+      mk('A1','Atlanta DC','Lot 1 · Grape','Premium Grape Tomato',10.50,11.80),
+      mk('A2','Atlanta DC','Lot 2 · Roma','Roma Tomato Bulk 25lb',11.80,10.50),
+      mk('D1','Dallas DC','Lot 1 · Grape','Premium Grape Tomato',10.50,11.80),
+      mk('D2','Dallas DC','Lot 2 · Roma','Roma Tomato Bulk 25lb',11.80,10.50),
+    ];
+  }
+  CAP() { return { 'Green Valley Farms':16000, 'Sunbelt Produce':18000 }; }
+  INC_BASELINE = 280800; STLY = 292032; TOTVOL = 20800;
+  VERSIONS = [
+    { id:'v2', label:'v1', round:'Round 1', when:'Jun 21, 2026 · 6:53 PM', live:true },
+    { id:'v1', label:'v1 · initial seal', round:'Round 1', when:'Jun 21, 2026 · 6:41 PM', live:false },
+  ];
+
+  score(cell, sup) {
+    const isGrape = cell.lot.indexOf('Grape') >= 0;
+    const low = cell.bids[sup] <= Math.min(...Object.values(cell.bids));
+    // factor bands derived from the workbook sample
+    const price = low ? 100 : 20;
+    const cov = 95, hist = 100, zr = 100;
+    let cont;
+    if (sup === 'Green Valley Farms') cont = 100; else cont = 0; // incumbent continuity
+    const W = this.weights();
+    const rec = price*W.price + cov*W.cov + hist*W.hist + zr*W.zr + cont*W.cont;
+    const mn = Math.min(...Object.values(cell.bids));
+    const prem = (cell.bids[sup] - mn) / mn;
+    const z = low ? -1 : 1;
+    return { price, cov, hist, zr, cont, rec, prem, z };
+  }
+
+  pickFor(lens, cell) {
+    const gvf='Green Valley Farms', sun='Sunbelt Produce';
+    const low = cell.bids[gvf] <= cell.bids[sun] ? gvf : sun;
+    if (lens==='A'||lens==='B'||lens==='D') return low;
+    if (lens==='C'||lens==='E'||lens==='G') return gvf;
+    if (lens==='F') return this.state.custom[cell.id];
+    return low;
+  }
+
+  lensStats(lens) {
+    const cells = this.CELLS();
+    let spend = 0; const used = new Set(); const alloc = {};
+    for (const c of cells) { const p = this.pickFor(lens, c); spend += c.bids[p]*c.demand; used.add(p); alloc[p]=(alloc[p]||0)+c.demand; }
+    const saveInc = this.INC_BASELINE - spend;
+    const saveStly = this.STLY - spend;
+    let conc = false, maxShare = 0;
+    for (const s in alloc) { const sh = alloc[s]/this.TOTVOL; if (sh > maxShare) maxShare = sh; if (sh > 0.6) conc = true; }
+    const cap = this.CAP(); let capFlag = false, capWho = '', capOver = 0;
+    for (const s in alloc) { if (alloc[s] > cap[s]) { capFlag = true; capWho = s; capOver = alloc[s]-cap[s]; } }
+    return { spend, saveInc, saveStly, saveIncPct:saveInc/this.INC_BASELINE, saveStlyPct:saveStly/this.STLY,
+      supps: used.size, conc, capFlag, capWho, capOver, alloc, maxShare };
+  }
+
+  // ---- formatters ----
+  d(v){ return '$'+Math.round(v).toLocaleString(); }
+  c(v){ return '$'+v.toFixed(2); }
+  p(v){ return (v*100).toFixed(1)+'%'; }
+  n(v){ return Math.round(v).toLocaleString(); }
+
+  LENS_META = {
+    A:{label:'Lowest-cost reference'}, B:{label:'Risk-adjusted recommendation'},
+    C:{label:'Incumbent defense'}, D:{label:'Max-N per DC'},
+    E:{label:'Exclusion applied'}, F:{label:'Custom build'}, G:{label:'Preferred supplier'}
+  };
+  VIEW_META = [
+    ['supplier','Supplier comparison','Suppliers'], ['lowest','Lowest-cost check','Lowest-cost'], ['coverage','Coverage & eligibility','Coverage'],
+    ['scoring','Detailed scoring','Scoring'], ['landed','Landed & hidden costs','Landed'], ['share','Share & relationships','Share'],
+    ['incumbent','Incumbent retention','Incumbent'], ['negotiation','Negotiation dynamics','Negotiation']
+  ];
+
+  renderVals() {
+    const S = this.state;
+    const cur = this.VERSIONS.find(v => v.id === S.versionId) || this.VERSIONS[0];
+    const readOnly = !cur.live;
+    const active = this.lensStats(S.lens);
+    const recStats = this.lensStats('B');
+    const cells = this.CELLS();
+
+    // lens rail
+    const lenses = ['A','B','C','D','E','F','G'].map(code => {
+      const st = this.lensStats(code);
+      const sel = code === S.lens;
+      const rec = code === 'B';
+      return {
+        code, label: this.LENS_META[code].label,
+        spendF: this.d(st.spend), saveIncPctF: this.p(st.saveIncPct),
+        supps: st.supps, recommended: rec, concFlag: st.conc, capFlag: st.capFlag,
+        saveColor: st.saveInc >= recStats.saveInc ? '#1a8a5a' : '#c98a1a',
+        bg: sel ? '#eef4ff' : (rec ? '#f3f9f5' : '#fff'),
+        border: sel ? '#084999' : (rec ? '#cfe8da' : '#e3e8ef'),
+        shadow: sel ? '0 2px 8px rgba(8,73,153,.14)' : '0 1px 2px rgba(16,42,76,.03)',
+        codeColor: sel ? '#084999' : '#3a5170',
+        divider: sel ? '#cfe0f7' : '#eef1f5',
+        select: () => this.setState({ lens: code, cell: null }),
+      };
+    });
+    // add custom as F lens card label tweak
+    lenses[5].label = 'Custom build (live)';
+
+    // views nav
+    const views = this.VIEW_META.map(([key,label,short]) => ({
+      key, label, short,
+      bg: key===S.view ? '#eef4ff' : 'transparent',
+      color: key===S.view ? '#084999' : '#3a5170',
+      weight: key===S.view ? '700' : '600',
+      flag: (key==='share' && active.conc) || (key==='coverage' && active.capFlag),
+      flagColor: key==='share' ? '#c98a1a' : '#b3261e',
+      select: () => this.setState({ view: key }),
+    }));
+
+    const isCustom = S.lens === 'F';
+
+    // matrix rows (DC / Lot filtered, then sorted)
+    const visCells = cells.filter(c => this.passCell(c));
+    const sortKey = S.sort.key;
+    if (sortKey) {
+      const val = (c) => {
+        if (sortKey === 'demand') return c.demand;
+        if (sortKey === 'baseline') return c.baseline;
+        if (sortKey === 'gvf') return c.bids['Green Valley Farms'];
+        if (sortKey === 'sun') return c.bids['Sunbelt Produce'];
+        if (sortKey === 'rec') return this.score(c, this.pickFor(S.lens, c)).rec;
+        return 0;
+      };
+      // DC stays the locked primary grouping; the measure orders rows within each DC
+      visCells.sort((a,b) => (this.DC_RANK[a.dc]-this.DC_RANK[b.dc]) || (val(a)-val(b)) * S.sort.dir);
+    }
+    const matrix = visCells.map(cell => {
+      const mn = Math.min(...Object.values(cell.bids));
+      const pick = this.pickFor(S.lens, cell);
+      const recScore = this.score(cell, pick).rec;
+      const supObj = (name) => {
+        const price = cell.bids[name];
+        const isLow = price <= mn;
+        const isPick = pick === name;
+        const isInc = name === 'Green Valley Farms';
+        const gated = isInc && !isLow && (this.score(cell,name).prem > this.pc());
+        return {
+          name, priceF: this.c(price), isLow, isPick, gated,
+          color: isPick ? '#102a4c' : (isLow ? '#1a7a4f' : '#7a8699'),
+          weight: isPick ? '800' : '600',
+          cellBg: isPick ? 'rgba(36,120,206,.07)' : 'transparent',
+        };
+      };
+      return {
+        id: cell.id, dc: cell.dc, lot: cell.lot, item: cell.item,
+        demandF: this.n(cell.demand), baselineF: this.c(cell.baseline),
+        s1: supObj('Green Valley Farms'), s2: supObj('Sunbelt Produce'),
+        pickName: pick, recScoreF: recScore.toFixed(1),
+        pickDot: pick==='Green Valley Farms' ? '#2f8f5e' : '#7a5ba8',
+        rowBg: S.cell===cell.id ? 'rgba(36,120,206,.05)' : '#fff',
+        open: () => this.setState({ cell: cell.id }),
+        hasNote: !!(S.notes[cell.id] && S.notes[cell.id].trim()),
+        noteColor: (S.notes[cell.id] && S.notes[cell.id].trim()) ? '#084999' : '#c2ccd9',
+        noteFill: (S.notes[cell.id] && S.notes[cell.id].trim()) ? '#dbe8fb' : 'none',
+        openNote: (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const vw = window.innerWidth || 1440; this.setState({ noteOpen: { id: cell.id, label: cell.dc + ' · ' + cell.lot, x: Math.min(r.left, vw - 300), y: r.bottom + 6 } }); },
+        change: (e) => { const v = e.target.value; this.setState(st => ({ custom: { ...st.custom, [cell.id]: v } })); },
+      };
+    });
+
+    // active caution text
+    let cautionText = '';
+    if (active.conc && active.capFlag) cautionText = `This lens consolidates ${this.p(active.maxShare)} of volume to ${active.capWho} (concentration) AND allocates ${this.n(active.alloc[active.capWho])} cases against a stated ceiling of ${this.n(this.CAP()[active.capWho])} — over by ${this.n(active.capOver)} cases (stated-capacity check, E-38). These are two distinct risks.`;
+    else if (active.conc) cautionText = `One supplier carries ${this.p(active.maxShare)} of volume — supplier-concentration risk.`;
+    else if (active.capFlag) cautionText = `${active.capWho} is allocated ${this.n(active.alloc[active.capWho])} cases against a stated ceiling of ${this.n(this.CAP()[active.capWho])} — over stated capacity by ${this.n(active.capOver)} cases.`;
+
+    // panel for active view
+    const panel = this.buildPanel(S.view, S.lens, active, isCustom);
+    const showMatrix = S.view === 'supplier';
+
+    // collapsible column groups (keep wide tables manageable)
+    const COLGROUP = { scoring: { label:'factor scores', drop:[4,5,6,7,8] }, landed: { label:'cost build-up', drop:[4,5,6] } };
+    const cg = COLGROUP[S.view];
+    if (cg) {
+      const collapsed = !!S.colCollapse[S.view];
+      if (collapsed) {
+        const keep = (arr) => arr.filter((_,i) => !cg.drop.includes(i));
+        panel.columns = keep(panel.columns);
+        panel.rows = panel.rows.map(r => ({ ...r, cells: keep(r.cells) }));
+      }
+      panel.groupToggle = { show:true, collapsed, btnLabel: (collapsed ? 'Show ' : 'Hide ') + cg.label,
+        toggle: () => this.setState(st => ({ colCollapse: { ...st.colCollapse, [S.view]: !st.colCollapse[S.view] } })) };
+    } else {
+      panel.groupToggle = { show:false };
+    }
+
+    // selected-scenario explanation
+    const EX = {
+      A: "Awards every cell to the cheapest compliant bid \u2014 no weighting for risk or relationship. It's the price floor every other lens is measured against, rarely the final award.",
+      B: "The engine's default. Blends price with coverage, historical performance, supply risk and continuity (balanced preset), so it takes the low bid only where it's also low-risk and guards against thin or outlier offers.",
+      C: "Retains the incumbent on every cell \u2014 including the two Roma cells where it sits above the 12% premium ceiling. Buys relationship continuity, but costs more and concentrates all volume with one supplier.",
+      D: "Caps suppliers per DC so each distribution center stays dual-sourced. For this cycle it matches the recommendation \u2014 both DCs already split across two suppliers.",
+      E: "Drops the challenger from consideration \u2014 e.g. a quality or compliance hold \u2014 and re-solves with the remaining suppliers. Here that forces all volume to the incumbent.",
+      F: "Your own allocation. Override the supplier on any cell in the matrix below and spend, savings and cautions recompute live against the recommendation.",
+      G: "Weights toward a designated preferred supplier, keeping it wherever eligible. For this cycle it resolves the same as incumbent defense.",
+    };
+    const exBase = S.lens === 'B' ? this.lensStats('A') : recStats;
+    const dSpend = active.spend - exBase.spend;
+    const dSup = active.supps - exBase.supps;
+    const exFlags = [];
+    if (active.conc) exFlags.push('Concentration');
+    if (active.capFlag) exFlags.push('Capacity');
+    const signed = (v) => (v > 0 ? '+$' : v < 0 ? '\u2212$' : '$') + Math.abs(v).toLocaleString();
+    const accent = S.lens === 'B' ? '#2f8f5e' : (S.lens === 'F' ? '#c98a1a' : '#2478CE');
+    const badgeBg = S.lens === 'B' ? '#e7f3ea' : (S.lens === 'F' ? '#fdf6e8' : '#eef4ff');
+    const badgeFg = S.lens === 'B' ? '#1a7a4f' : (S.lens === 'F' ? '#8a6516' : '#2c4a78');
+    // scenario capacity feasibility (stated-capacity, E-38 — distinct from concentration)
+    const capObj = this.CAP();
+    let capCells = 0;
+    if (active.capFlag) capCells = cells.filter(c => this.pickFor(S.lens, c) === active.capWho).length;
+    const capFeasible = !active.capFlag;
+    const capStatus = {
+      feasible: capFeasible,
+      text: capFeasible ? 'Feasible against stated capacity' : 'Exceeds stated capacity in ' + capCells + (capCells === 1 ? ' cell' : ' cells'),
+      detail: capFeasible
+        ? 'Every supplier\u2019s allocation sits within their stated period ceiling (E-38).'
+        : active.capWho + ' is allocated ' + this.n(active.alloc[active.capWho]) + ' cases vs a stated ceiling of ' + this.n(capObj[active.capWho]) + ' \u2014 over by ' + this.n(active.capOver) + '. Distinct from supplier-concentration.',
+      color: capFeasible ? '#1a7a4f' : '#b3261e',
+      bg: capFeasible ? '#eef6f1' : '#fbeeec',
+      border: capFeasible ? '#cfe8da' : '#f0c8c4',
+      who: active.capWho, cells: capCells,
+      cursor: active.capFlag ? 'pointer' : 'default',
+      clickable: active.capFlag,
+      view: () => { if (active.capFlag) this.setState({ filters: { dc:'all', lot:'all', supplier: active.capWho }, view:'supplier' }); },
+    };
+
+    const explain = {
+      code: S.lens, label: this.LENS_META[S.lens].label, desc: EX[S.lens],
+      isRec: S.lens === 'B', isCustom: S.lens === 'F', accent, badgeBg, badgeFg,
+      compareLabel: S.lens === 'B' ? 'vs lowest-cost floor (A)' : 'vs recommendation (B)',
+      dSpendF: dSpend === 0 ? 'Same' : signed(dSpend),
+      dSpendColor: dSpend > 0 ? '#b3261e' : (dSpend < 0 ? '#1a7a4f' : '#5b6b82'),
+      supps: active.supps,
+      dSupF: dSup === 0 ? '(same)' : '(' + (dSup > 0 ? '+' + dSup : dSup) + ')',
+      flagsF: exFlags.length ? exFlags.join(' + ') : 'None',
+      flagsColor: exFlags.length ? '#c98a1a' : '#1a7a4f',
+    };
+
+    // drill
+    let drill = null;
+    if (S.cell) drill = this.buildDrill(S.cell, S.lens);
+
+    // freeze rows
+    const freezeRows = cells.map(cell => {
+      const pick = this.pickFor(S.lens, cell);
+      return { cell: `${cell.dc} · ${cell.lot}`, supplier: pick, priceF: this.c(cell.bids[pick]) };
+    });
+
+    const freezeDisabled = !S.asserted;
+
+    // ---- filtering UI ----
+    const F = S.filters;
+    const anyFilter = F.dc !== 'all' || F.lot !== 'all' || F.supplier !== 'all';
+    let visSpend = 0, visCases = 0;
+    for (const c of visCells) { const p = this.pickFor(S.lens, c); visSpend += c.bids[p]*c.demand; visCases += c.demand; }
+    const matrixFooter = {
+      label: anyFilter ? 'Subtotal · filtered' : 'Total · ' + S.lens,
+      casesF: visCases.toLocaleString(),
+      spendF: this.d(visSpend),
+      saveText: anyFilter ? (visCells.length + ' of ' + cells.length + ' cells shown') : (this.d(active.saveInc) + ' · ' + this.p(active.saveIncPct) + ' vs incumbent'),
+      saveColor: anyFilter ? '#9aa7b6' : '#1a8a5a',
+    };
+    const awOn = F.dc !== 'all' || F.lot !== 'all';
+    const awardFilter = { click: this.openPopFactory(['dc','lot']), color: awOn ? '#084999' : '#c2ccd9', fill: awOn ? '#084999' : 'none' };
+    const lotText = (v) => v === 'Grape' ? 'Lot 1 · Grape' : (v === 'Roma' ? 'Lot 2 · Roma' : v);
+    const chips = [];
+    if (F.dc !== 'all') chips.push({ label: F.dc, clear: () => this.setFilter('dc','all') });
+    if (F.lot !== 'all') chips.push({ label: lotText(F.lot), clear: () => this.setFilter('lot','all') });
+    if (F.supplier !== 'all') chips.push({ label: F.supplier, clear: () => this.setFilter('supplier','all') });
+    const VIEW_TOTAL = { supplier:4, lowest:4, incumbent:4, coverage:8, scoring:8, landed:8, share:2, negotiation:2 };
+    const shownRows = showMatrix ? visCells.length : panel.rows.length;
+    const totalRows = showMatrix ? cells.length : (VIEW_TOTAL[S.view] || panel.rows.length);
+    const countLabel = 'Showing ' + shownRows + ' of ' + totalRows;
+    let filterPop = null;
+    if (S.filterPop) {
+      const OPTS = {
+        dc: { label:'Distribution center', items:[['all','All DCs'],['Atlanta DC','Atlanta DC'],['Dallas DC','Dallas DC']] },
+        lot: { label:'Lot', items:[['all','All lots'],['Grape','Lot 1 · Grape'],['Roma','Lot 2 · Roma']] },
+        supplier: { label:'Supplier', items:[['all','All suppliers'],['Green Valley Farms','Green Valley Farms'],['Sunbelt Produce','Sunbelt Produce']] },
+      };
+      const sections = S.filterPop.groups.map(dim => ({
+        label: OPTS[dim].label,
+        options: OPTS[dim].items.map(([val,text]) => {
+          const act = F[dim] === val;
+          return { text, active: act, bg: act ? '#eef4ff' : 'transparent', weight: act ? '700' : '600', color: act ? '#084999' : '#3a5170', click: () => this.setFilter(dim, val) };
+        }),
+      }));
+      filterPop = { x: S.filterPop.x, y: S.filterPop.y, sections };
+    }
+
+    const mt = {
+      cell: this.tipEnterFactory('One DC \u00d7 Lot \u00d7 Timeframe \u2014 the smallest unit a supplier is awarded.'),
+      demand: this.tipEnterFactory('Projected volume for this cell over the 13-week period, in cases.'),
+      baseline: this.tipEnterFactory('Incumbent price per case today \u2014 the reference savings are measured against.'),
+      gvf: this.tipEnterFactory('Incumbent bid in $/case. LOW = market low \u00b7 GATED = above the 12% premium ceiling.'),
+      sun: this.tipEnterFactory('Challenger bid in $/case. LOW = market low for the cell.'),
+      rec: this.tipEnterFactory('The engine\u2019s risk-adjusted pick for the active lens, with its RecScore (0\u2013100).'),
+    };
+    return {
+      rec: { code:'B', label:this.LENS_META.B.label, spendF:this.d(recStats.spend), saveIncF:this.d(recStats.saveInc),
+             saveIncPctF:this.p(recStats.saveIncPct), saveStlyPctF:this.p(recStats.saveStlyPct), supps:recStats.supps,
+             saveStlyF:this.d(recStats.saveStly), volumeF:this.n(this.TOTVOL), avgF:this.c(recStats.spend/this.TOTVOL),
+             retainedF: cells.filter(c => this.pickFor('B',c)==='Green Valley Farms').length + ' of 4 cells' },
+      lenses, views, isCustom, notCustom: !isCustom, activeCode: S.lens,
+      active: { label:this.LENS_META[S.lens].label, spendF:this.d(active.spend), saveIncF:this.d(active.saveInc),
+                saveIncPctF:this.p(active.saveIncPct), supps:active.supps,
+                hasCaution: active.conc || active.capFlag, cautionText },
+      matrix, panel, showMatrix, showTable: !showMatrix,
+      drill, freezeRows, explain, capStatus, freezeVersion: cur.label,
+      runStrip: [
+        { label:'Run state', value: readOnly ? 'Historic view' : 'Live · Round 1', dot: readOnly ? '#c98a1a' : '#1a8a5a', color:'#16243d', divider:'none' },
+        { label:'Analysis', value:'Sealed · ' + cur.label, dot:'#2478CE', color:'#16243d', divider:'1px solid #eef1f5' },
+        { label:'Award', value: S.frozen ? 'Frozen · Scenario B' : 'Not yet frozen', dot: S.frozen ? '#1a8a5a' : '#c2ccd9', color: S.frozen ? '#16243d' : '#8a97a8', divider:'1px solid #eef1f5' },
+        { label:'Audit', value:'Hash-chain current', dot:'#1a8a5a', color:'#16243d', divider:'1px solid #eef1f5' },
+      ],
+      matrixFooter, awardFilter, chips, anyFilter, countLabel, filterPop,
+      closePop: () => this.setState({ filterPop: null }),
+      clearAll: () => this.setState({ filters: { dc:'all', lot:'all', supplier:'all' }, filterPop: null }),
+      nav: {
+        expanded: !S.navCollapsed,
+        w: S.navCollapsed ? '66px' : '228px',
+        justify: S.navCollapsed ? 'center' : 'flex-start',
+        pad: S.navCollapsed ? '10px 0' : '9px 10px',
+        chevron: S.navCollapsed ? '180deg' : '0deg',
+        toggle: () => this.setState(st => ({ navCollapsed: !st.navCollapsed })),
+      },
+      tip: S.tip, mt, tipLeave: () => this.setState({ tip: null }),
+      freezeOpen: S.freezeOpen, asserted: S.asserted, frozen: S.frozen,
+      freezeDisabled, freezeBtnBg: freezeDisabled ? '#9fb6d6' : '#084999',
+      freezeBtnOpacity: freezeDisabled ? '0.7' : '1',
+      assertBorder: S.asserted ? '#084999' : '#e0e6ee',
+      openFreeze: () => { if (!cur.live) return; this.setState({ freezeOpen:true, lens:'B', asserted:false }); },
+      readOnly, readOnlyText: 'You’re viewing a sealed, read-only analysis (Round 1 · ' + cur.label + ', locked ' + cur.when + '). Governed actions are disabled — switch to the live version to build or freeze.',
+      recFreezeBg: readOnly ? '#aab8cc' : '#084999', recFreezeCursor: readOnly ? 'not-allowed' : 'pointer',
+      versionLabel: (readOnly ? 'Viewing sealed · ' : 'Analysis sealed · ') + cur.label,
+      versionDot: readOnly ? '#c98a1a' : '#1a8a5a',
+      versionBg: S.versionOpen ? '#e8eff8' : '#f1f5fb',
+      versionOpen: S.versionOpen,
+      versionToggle: () => this.setState(st => ({ versionOpen: !st.versionOpen })),
+      goLive: () => this.setState({ versionId: 'v2', versionOpen: false }),
+      versionList: this.VERSIONS.map(v => ({
+        label: v.round + ' · ' + v.label, when: v.when,
+        tag: v.live ? 'Live' : 'Read-only', tagBg: v.live ? '#e7f3ea' : '#fbf1e0', tagFg: v.live ? '#1a7a4f' : '#9a6a14',
+        dot: v.live ? '#1a8a5a' : '#c98a1a', selected: v.id === cur.id,
+        bg: v.id === cur.id ? '#f3f7fd' : '#fff',
+        select: () => this.setState({ versionId: v.id, versionOpen: false }),
+      })),
+      closeFreeze: () => this.setState({ freezeOpen:false }),
+      freezeNote: S.freezeNote,
+      setFreezeNote: (e) => this.setState({ freezeNote: e.target.value }),
+      notePop: S.noteOpen ? { x: S.noteOpen.x, y: S.noteOpen.y, label: S.noteOpen.label, text: S.notes[S.noteOpen.id] || '' } : null,
+      setNote: (e) => { const v = e.target.value; const id = this.state.noteOpen && this.state.noteOpen.id; if (id) this.setState(st => ({ notes: { ...st.notes, [id]: v } })); },
+      closeNote: () => this.setState({ noteOpen: null }),
+      toggleAssert: () => this.setState(st => ({ asserted: !st.asserted })),
+      confirmFreeze: () => { if (this.state.asserted) this.setState({ freezeOpen:false, frozen:true }); },
+      closeCell: () => this.setState({ cell:null }),
+      dismiss: () => this.setState({ frozen:false }),
+      stop: (e) => e.stopPropagation(),
+    };
+  }
+
+  buildDrill(cellId, lens) {
+    const cell = this.CELLS().find(c => c.id === cellId);
+    const mn = Math.min(...Object.values(cell.bids));
+    const pick = this.pickFor(lens, cell);
+    const cap = this.CAP();
+    const FAC = [['Price','price'],['Coverage','cov'],['Historical','hist'],['Z-Risk','zr'],['Continuity','cont']];
+    const bids = ['Green Valley Farms','Sunbelt Produce'].map(name => {
+      const sc = this.score(cell, name);
+      const isPick = pick === name;
+      const isInc = name === 'Green Valley Farms';
+      return {
+        name, role: isInc ? 'Incumbent · preserve' : 'Challenger · create',
+        priceF: this.c(cell.bids[name]), premF: this.p(sc.prem), zF: sc.z.toFixed(1), recF: sc.rec.toFixed(1),
+        isPick, dot: isInc ? '#2f8f5e' : '#7a5ba8',
+        border: isPick ? '#cfe8da' : '#e7ecf3',
+        premColor: sc.prem > this.pc() ? '#b3261e' : (sc.prem>0 ? '#c98a1a' : '#1a7a4f'),
+        factors: FAC.map(([n,k]) => ({ name:n, val:sc[k], pct:sc[k]+'%',
+          color: sc[k]>=80 ? '#1a8a5a' : (sc[k]>=50 ? '#2478CE' : '#c98a1a') })),
+      };
+    });
+    const recPrice = cell.bids[pick];
+    const isLowest = recPrice <= mn;
+    const incPrice = cell.bids['Green Valley Farms'];
+    const incGated = pick !== 'Green Valley Farms';
+    const deltaRetain = incPrice - recPrice;
+    const allocWho = this.lensStats(lens).alloc[pick] || 0;
+    const over = allocWho > cap[pick];
+    return {
+      dc: cell.dc, lot: cell.lot, item: cell.item, tf: cell.tf,
+      demandF: this.n(cell.demand)+' cases', recName: pick, bids,
+      lowestText: isLowest ? 'Yes — recommended pick is the market low' : 'No — see premium vs low above',
+      coverText: `Offered ${this.n(cell.offered)} vs req ${this.n(cell.demand)} · ratio 1.5 · Surplus`,
+      landedText: `FOB ${this.c(recPrice-1)} + delivery $1.00 = ${this.c(recPrice)} all-in`,
+      retainText: incGated ? `Incumbent gated by ${this.pcPct()}% premium · +${this.c(deltaRetain)}/case (${this.d(deltaRetain*cell.demand)}) to retain` : 'Incumbent retained — recommended',
+      retainColor: incGated ? '#c98a1a' : '#1a7a4f',
+      capStatus: over ? 'Over stated ceiling' : 'Within stated ceiling',
+      capColor: over ? '#b3261e' : '#1a7a4f',
+      capBorder: over ? '#f0c8c4' : '#e7ecf3',
+      capText: `${pick} stated period capacity ${this.n(cap[pick])} cases. This lens allocates ${this.n(allocWho)} cases to them across all cells. ${over ? 'Allocation exceeds stated capacity — a distinct check from supplier-concentration.' : 'Allocation is within stated capacity. This is separate from the concentration flag.'}`,
+    };
+  }
+
+  buildPanel(view, lens, active, isCustom) {
+    const cells = this.CELLS();
+    const meta = { color:'#16243d', align:'left', weight:'600' };
+    const C = (t, o={}) => ({ t, align:o.align||'left', color:o.color||'#16243d', weight:o.weight||'600' });
+    const S2 = this.state;
+    const col = (label, align='left', tip='', sortKey=null) => {
+      const dim = label==='DC' ? 'dc' : (label==='Lot' ? 'lot' : (label==='Supplier' ? 'supplier' : null));
+      const fv = dim ? this.state.filters[dim] : 'all';
+      const on = dim && fv !== 'all';
+      const sortOn = sortKey && S2.sort.key === sortKey;
+      return { label, align, tip, onEnter: tip ? this.tipEnterFactory(tip) : null, cursor: (tip||sortKey) ? 'pointer' : 'default', underline: tip ? '1px dotted #b9c4d2' : '1px solid transparent',
+        hasFilter: !!dim, onFilter: dim ? this.openPopFactory([dim]) : null,
+        funnelColor: on ? '#084999' : '#c2ccd9', funnelFill: on ? '#084999' : 'none',
+        sortable: !!sortKey, onSort: sortKey ? (() => this.sortBy(sortKey)) : null,
+        sortArrow: sortOn ? (S2.sort.dir === 1 ? '▲' : '▼') : '↕', sortColor: sortOn ? '#084999' : '#cdd5de' };
+    };
+    const fcells = cells.filter(c => this.passCell(c));
+    const sups = ['Green Valley Farms','Sunbelt Produce'].filter(s => this.passSup(s));
+
+    if (view === 'lowest') {
+      const rows = fcells.map(cell => {
+        const pick = this.pickFor(lens, cell);
+        const mn = Math.min(...Object.values(cell.bids));
+        const price = cell.bids[pick];
+        const prem = (price-mn)/mn;
+        const isLow = price<=mn;
+        return { bg:'#fff', cells:[
+          C(cell.dc), C(cell.lot), C(pick,{weight:'700'}), C(this.c(price),{align:'right'}),
+          C(this.c(mn),{align:'right',color:'#7a8699'}),
+          C(this.p(prem),{align:'right',color: prem>0?'#b3261e':'#1a7a4f',weight:'700'}),
+          C(isLow?'Yes':'No',{align:'center',color:isLow?'#1a7a4f':'#b3261e',weight:'700'}),
+        ]};
+      });
+      return { title:'Lowest-cost check', note:'Per cell: is the recommended pick the market low? If not, the premium is shown.',
+        columns:[col('DC'),col('Lot'),col('Recommended','left','The engine\u2019s pick for this cell under the active lens.'),col('Rec $/case','right','Price per case of the recommended supplier.'),col('Market low','right','Lowest bid received for this cell across all suppliers.'),col('Premium vs low','right','How much the recommended pick costs above the market low. 0% means it IS the cheapest.'),col('Is lowest?','center','Whether the recommended pick is also the cheapest bid.')], rows,
+        footnote:'Premium-bearing picks are justified by the 5-factor RecScore (continuity, coverage, risk) — open a cell to see why.' };
+    }
+    if (view === 'coverage') {
+      const rows = [];
+      for (const cell of fcells) for (const sup of sups) {
+        const elig = cell.bids[sup] <= Math.min(...Object.values(cell.bids)) || sup==='Green Valley Farms' && false;
+        const pick = this.pickFor(lens, cell);
+        rows.push({ bg:'#fff', cells:[
+          C(cell.dc), C(cell.lot), C(sup), C(this.c(cell.bids[sup]),{align:'right'}),
+          C(this.n(cell.demand),{align:'right',color:'#7a8699'}), C(this.n(cell.offered),{align:'right'}),
+          C('1.5×',{align:'right',weight:'700',color:'#1a7a4f'}), C('Surplus',{align:'center',color:'#1a7a4f'}),
+          C(pick===sup?'Yes':'—',{align:'center',weight:'700',color:pick===sup?'#084999':'#c2ccd9'}),
+        ]});
+      }
+      return { title:'Coverage & eligibility', note:'Offered volume vs required, per supplier per cell. Capacity (stated) is a separate, distinct check.',
+        columns:[col('DC'),col('Lot'),col('Supplier'),col('$/case','right','Supplier\u2019s bid price per case for this cell.'),col('Req','right','Cases required (projected demand) for this cell.'),col('Offered','right','Cases the supplier OFFERED to supply in their bid.'),col('Cover','right','Offered \u00f7 required. Above 1.0\u00d7 means they offered more than needed.'),col('Band','center','Coverage band \u2014 Surplus, Adequate, or Short vs demand.'),col('Rec?','center','Whether this supplier is the recommended pick for the cell.')], rows,
+        footnote:'Coverage = whether the supplier OFFERED enough in their bid. Stated capacity (E-38) — their declared supply ceiling — is checked separately and shown in the cell drill-down.' };
+    }
+    if (view === 'scoring') {
+      const rows = [];
+      const sk = S2.sort.key;
+      for (const cell of fcells) {
+        const pairs = sups.map(sup => ({ sup, sc: this.score(cell, sup) }));
+        if (sk && sk.indexOf('sc_') === 0) {
+          const m = sk.slice(3);
+          pairs.sort((a,b) => ((a.sc[m]) - (b.sc[m])) * S2.sort.dir);
+        }
+        const pick = this.pickFor(lens, cell);
+        for (const { sup, sc } of pairs) {
+          rows.push({ bg: pick===sup?'rgba(36,120,206,.05)':'#fff', cells:[
+            C(cell.dc), C(cell.lot), C(sup,{weight:pick===sup?'700':'600'}),
+            C(this.c(cell.bids[sup]),{align:'right'}),
+            C(sc.price,{align:'right'}), C(sc.cov,{align:'right'}), C(sc.hist,{align:'right'}),
+            C(sc.zr,{align:'right'}), C(sc.cont,{align:'right'}),
+            C(sc.rec.toFixed(1),{align:'right',weight:'800',color:'#084999'}),
+          ]});
+        }
+      }
+      return { title:'Detailed scoring', note:'The five banded factors (0–100) and the weighted RecScore behind every bid. Sort orders suppliers within each DC · lot.',
+        columns:[col('DC'),col('Lot'),col('Supplier'),col('$/case','right','Supplier\u2019s bid price per case.'),col('Price','right','Price factor (0\u2013100) \u2014 highest for the market-low bid.','sc_price'),col('Cov','right','Coverage factor (0\u2013100) \u2014 rewards offering enough volume.','sc_cov'),col('Hist','right','Historical factor (0\u2013100) \u2014 prior performance & relationship.','sc_hist'),col('Z-Risk','right','Price-outlier risk (0\u2013100) \u2014 flags bids far from the market average.','sc_zr'),col('Cont','right','Continuity factor (0\u2013100) \u2014 rewards keeping the incumbent.','sc_cont'),col('RecScore','right','Weighted blend of the five factors (0\u2013100). Higher = stronger recommendation.','sc_rec')], rows,
+        footnote:'Weights — Price 0.31 · Coverage 0.22 · Historical 0.18 · Z-Risk 0.09 · Continuity 0.20 (balanced preset).' };
+    }
+    if (view === 'landed') {
+      const rows = [];
+      for (const cell of fcells) for (const sup of sups) {
+        const fob = cell.bids[sup]-1;
+        rows.push({ bg:'#fff', cells:[
+          C(cell.lot), C(cell.dc), C(cell.dc==='Atlanta DC'?'East':'South',{color:'#7a8699'}), C(sup),
+          C(this.c(fob),{align:'right'}), C('$1.00',{align:'right',color:'#7a8699'}), C('$0.00',{align:'right',color:'#7a8699'}),
+          C(this.c(cell.bids[sup]),{align:'right',weight:'700'}),
+          C('8.7%',{align:'right',color:'#7a8699'}), C('—',{align:'center',color:'#c2ccd9'}),
+        ]});
+      }
+      return { title:'Landed & hidden costs', note:'Beyond FOB price — delivery, cooling and freight share of the all-in cost.',
+        columns:[col('Lot'),col('DC'),col('Region'),col('Supplier'),col('FOB','right','Free-on-board price \u2014 the bid before delivery & handling.'),col('+Delivery','right','Added per-case freight / delivery cost to the DC.'),col('+Cooling','right','Added cold-chain / cooling handling cost.'),col('All-in','right','Total landed cost per case (FOB + delivery + cooling).'),col('Freight %','right','Freight\u2019s share of the all-in cost.'),col('Transit','center','Days in transit from supplier to DC.')], rows,
+        footnote:'Freight and cooling are placeholders in this demo cycle; populate from logistics feeds to surface true landed cost.' };
+    }
+    if (view === 'share') {
+      const al = active.alloc;
+      const rows = sups.map(sup => {
+        const share = (al[sup]||0)/this.TOTVOL;
+        const isInc = sup==='Green Valley Farms';
+        return { bg:'#fff', cells:[
+          C(sup,{weight:'700'}), C(isInc?'Preserve':'Create',{color:isInc?'#2f8f5e':'#7a5ba8',weight:'700'}),
+          C(this.p(share),{align:'right',weight:'800'}),
+          C(share>0.6?'Concentration':'Balanced',{align:'center',color:share>0.6?'#c98a1a':'#1a7a4f',weight:'700'}),
+        ]};
+      });
+      return { title:'Share & relationships', note:'Who carries the volume under this lens, and whether any single supplier is over-concentrated.',
+        columns:[col('Supplier'),col('Relationship'),col('Volume share','right','Share of total awarded volume this supplier carries under the active lens.'),col('Signal','center','Concentration if one supplier exceeds 60% of volume \u2014 a relationship risk, NOT the stated-capacity check.')], rows,
+        footnote:'Concentration (>60% to one supplier) is a relationship/continuity risk — DISTINCT from the stated-capacity check, which compares allocation against a supplier’s declared ceiling.' };
+    }
+    if (view === 'incumbent') {
+      const rows = fcells.map(cell => {
+        const pick = this.pickFor(lens, cell);
+        const incPrice = cell.bids['Green Valley Farms'];
+        const retained = pick === 'Green Valley Farms';
+        const delta = incPrice - cell.bids[pick];
+        return { bg:'#fff', cells:[
+          C(cell.dc), C(cell.lot), C('Green Valley Farms'), C(this.c(incPrice),{align:'right'}),
+          C(retained?'Retained':'Gated by premium',{color:retained?'#1a7a4f':'#c98a1a',weight:'700'}),
+          C(pick,{weight:'700'}),
+          C(retained?'—':'+'+this.c(delta),{align:'right',color:retained?'#c2ccd9':'#b3261e',weight:'700'}),
+          C(retained?'$0':this.d(delta*cell.demand),{align:'right',color:retained?'#c2ccd9':'#16243d',weight:'700'}),
+        ]};
+      });
+      return { title:'Incumbent retention', note:'What keeping Green Valley Farms on each cell would cost above the recommended pick.',
+        columns:[col('DC'),col('Lot'),col('Incumbent'),col('Inc $/case','right','Incumbent\u2019s bid price per case.'),col('Status','left','Whether the incumbent is retained or gated out by the 12% premium ceiling.'),col('Recommended'),col('\u0394 to retain','right','Extra cost per case to keep the incumbent over the recommended pick.'),col('Premium $','right','Total extra spend to retain the incumbent on this cell.')], rows,
+        footnote:'Relationship budget to retain the incumbent on both gated Roma cells: $13,520. Scenario C frames this as a full lens.' };
+    }
+    if (view === 'negotiation') {
+      const rows = sups.map(sup => {
+        const isInc = sup==='Green Valley Farms';
+        return { bg:'#fff', cells:[
+          C(sup,{weight:'700'}), C(isInc?'Incumbent':'Challenger',{color:isInc?'#2f8f5e':'#7a5ba8'}),
+          C('0',{align:'right',color:'#7a8699'}), C('$0.00',{align:'right',color:'#7a8699'}),
+          C('6.2%',{align:'right'}),
+          C(isInc?'Holding the installed base at parity':'Competing in line with the incumbent',{color:'#5b6b82'}),
+        ]};
+      });
+      return { title:'Negotiation dynamics', note:'Round-over-round movement and fairness read across suppliers.',
+        columns:[col('Supplier'),col('Role'),col('Cells moved','right','Number of cells where the supplier changed price between rounds.'),col('Avg move R1\u2192Final','right','Average price change from Round 1 to the final round.'),col('Avg premium vs low','right','Average premium this supplier\u2019s bids carry over the market low.'),col('Negotiation read')], rows,
+        footnote:'Round 1 only — concession tracking populates once Round 2 bids are loaded.' };
+    }
+    return { title:'Supplier comparison', note:'', columns:[], rows:[] };
+  }
+}
+</script>
+</body>
+</html>
