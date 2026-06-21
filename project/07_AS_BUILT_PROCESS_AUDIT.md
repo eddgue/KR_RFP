@@ -1,11 +1,11 @@
 ---
 doc: As-Built Specification (incorporating the Process Audit)
 id: PM-007
-version: 1.20
+version: 1.21
 status: Living — single source of truth; Phase 1 (pre–Live Run #1) per 08_RELEASE_GOVERNANCE
 governance: living model of reality — maintained per the As-Built rule (no sprint complete until updated); D39 + 08_RELEASE_GOVERNANCE
 created: 2026-06-21
-audited_commit: SOURCE code-verified at e28f57f (the sweep basis; E-38 capacity slices 1+2a+6c merged after PR #20); this SPEC document is committed later on the same branch (claude/wizardly-pasteur-n4acb8). Source/doc trees outside this doc (07) + DESIGN_BRIEF match e28f57f's parent.
+audited_commit: SOURCE code-verified at a5abc6c (the two A-adjacent fixes #4 actor-fidelity + #5 setup once-per-run guard; on the v1.20 base e28f57f). This SPEC document is committed later on the same branch (claude/wizardly-pasteur-n4acb8). Service.py line refs across §1/§2/§3/§8 refreshed for the a5abc6c insertions.
 depends_on: PM-004 (Program Backlog), PM-008 (Release Governance), 03_DECISION_LOG
 ---
 
@@ -67,7 +67,7 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 | # | Gap | Severity | Impact | Recommended action | Owner | Status |
 |---|---|---|---|---|---|---|
 | **G-A** | Flat-13 period fan-out wired into intake | 🟠 Material | bids stored flat at 13 periods; engine output byte-identical | D35/D38 | — | ✅ **Closed v1.6** (`service.py:1402,1412-1444`) |
-| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | — | ✅ **Closed v1.4** (emits `service.py:452/1313/1381`, `awd/service.py:156/245`; `tests/audit/test_decision_events.py`) |
+| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | — | ✅ **Closed v1.4** (emits `service.py:486/1349/1418`, `awd/service.py:156/245`; `tests/audit/test_decision_events.py`) |
 | **G-C** | RBAC defined but **not enforced** — no route calls `require_permission` (`rbac.py:131`, referenced only at `api/deps.py:10`); dev principal holds all roles (`main.py:34-47`) | 🟠 Material | author≠approver, freeze/import/adjust not gated | E-03 — add `Depends(require_permission(...))`; real principals | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
 | **G-D** | Sign-off decorative — unused permission + workbook tab; no transition/state/gate; `SIGNED_OFF` never emitted | 🟠 Material | no portfolio sign-off step | E-22 | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
 | **G-E** | HTTP API mostly wired; **`documents` router empty** (0 routes); draft→SENT absent | 🟠 Material | console runs/compares/freezes/views/adjusts/drafts; doc-gen/send surface missing | E-25 remainder + E-24 | Ed (sponsor — accepted, Phase 1) | 🟡 Partial |
@@ -93,21 +93,21 @@ flowchart TD
     classDef built fill:#e8f0fe,stroke:#1a73e8,color:#174ea6;
 
     A(["Start run / kickoff<br/>FS scaffold + isolated DB<br/>(service.py:175)"]):::built --> G0{"In-gate G12<br/>open on real data"}:::aspirational
-    G0 --> B["Setup ingest → cycle<br/>ref.* / cyc.* / perf.* / norm.*<br/>(service.py:205 → setup_ingest.py:425-693)"]:::built
-    B --> C["Generate bid template (round n)<br/>3 sheets incl. Capacity<br/>(service.py:277)"]:::built
+    G0 --> B["Setup ingest → cycle (once-per-run)<br/>ref.* / cyc.* / perf.* / norm.*<br/>(service.py:206 → setup_ingest.py:425-693)"]:::built
+    B --> C["Generate bid template (round n)<br/>3 sheets incl. Capacity<br/>(service.py:295)"]:::built
     C --> D["Bid intake"]:::built
-    D -->|"strict (our template)"| INGEST["ingest_bids (service.py:303)<br/>→ ingest_template + ingest_capacity"]:::built
-    D -->|"flexible (messy file)"| P{"Mapping proposal<br/>propose → confirm<br/>(service.py:362)"}:::enforced
+    D -->|"strict (our template)"| INGEST["ingest_bids (service.py:321)<br/>→ ingest_template + ingest_capacity"]:::built
+    D -->|"flexible (messy file)"| P{"Mapping proposal<br/>propose → confirm<br/>(service.py:389)"}:::enforced
     P -->|"confirm"| INGEST
     INGEST --> KEYVAL{"Key validation / quarantine<br/>bids + capacity<br/>(bid_ingester.py:371, :645)"}:::enforced
-    KEYVAL --> E["bid.bid_line (flat at 13 periods)<br/>+ bid.capacity_statement/constraint (E-38)<br/>(service.py:1240 _persist_bid_lines)"]:::built
-    E --> F["Engine run_round → SEAL eng.*<br/>5-factor scores + 7 lenses A-G<br/>(service.py:400 → runner.py:155)"]:::built
+    KEYVAL --> E["bid.bid_line (flat at 13 periods)<br/>+ bid.capacity_statement/constraint (E-38)<br/>(service.py:1272 _persist_bid_lines)"]:::built
+    E --> F["Engine run_round → SEAL eng.*<br/>5-factor scores + 7 lenses A-G<br/>(service.py:429 → runner.py:155)"]:::built
     F -->|"re-run alignment (new sealed version)"| F
     F --> SEALSEAL{"Run seal (immutability guard)"}:::enforced
     SEALSEAL --> GRC{"Round close gate<br/>is_final set, never enforced"}:::aspirational
     GRC -->|"more rounds → next round"| C
     GRC -->|"final round"| H["Human selects scenario<br/>(Scenario B = default)"]:::built
-    H --> I["Freeze award → awd.award FROZEN<br/>(service.py:544 → awd/service.py:125)"]:::built
+    H --> I["Freeze award → awd.award FROZEN<br/>(service.py:576 → awd/service.py:125)"]:::built
     I --> FRZ{"Freeze seal (immutability guard)"}:::enforced
     FRZ --> J{"Sign-off gate"}:::missing
     J --> K["Outputs: booking guide + per-supplier guides<br/>(service.py:578-600)"]:::built
@@ -127,13 +127,13 @@ Persists key: **V**=vault git commit · **S**=run-DB snapshot (MCP runtime only)
 | Stage | System: method (file:line) → tables written | Persists | Exposure | Human: actor → screen → action |
 |---|---|:--:|---|---|
 | Start run | `start_run` (service.py:175) → FS scaffold + isolated DB | V·S | HTTP `POST /runs` (runs.py:299) · MCP `run_start` (:171) | Analyst → **Dashboard ✅** → "New run" |
-| Setup ingest → cycle | `ingest_setup` (service.py:205) → `ingest_setup_workbook` (setup_ingest.py:425-693) → `ref.*`, `cyc.*`, `perf.*`, `norm.normalization_run` | V·S | HTTP `POST /runs/{slug}/setup` (runs.py:395) · MCP `setup_ingest` (:235) | Analyst → **Intake ✅** → download kickoff, upload filled |
-| Bid template | `generate_bid_template` (service.py:277) → FS `..bid_template.xlsx` (3 sheets incl. **Capacity**) | V | HTTP `POST /runs/{slug}/rounds/{round}/template` (runs.py:422) · MCP `bid_template` (:256) | Buyer → **Intake ✅** → generate + download |
-| Bid intake — strict | `ingest_bids` (service.py:303) → `ingest_template` + `ingest_capacity` → `_persist_bid_lines` (service.py:1240): `norm.source_artifact`, `bid.bid_submission`, `bid.bid_line` (fanned to 13 periods) **+ A: IMPORTED/SUPERSEDED** | V·S·A | HTTP `POST /bids/import` (bids.py:159) · MCP `ingest_bids` (:270) | Buyer → **Intake ✅** → upload bids |
-| Bid intake — flexible | `ingest_any` (service.py:362): `infer_bid_mapping` → proposal; on confirm `apply_mapping` → `ingest_bids` | V·S·A | HTTP `POST /bids/import?mode=flexible` (bids.py:159) · MCP `ingest_any` (:285) | Buyer → **Intake ✅** → propose → review mapping → "Confirm & import" |
-| **Capacity ingest (E-38)** | `ingest_capacity` (bid_ingester.py:645, key-validated vs `scope.capacity_key_set()`) → persisted in same pass by `_persist_bid_lines` (service.py:1446-1490): `bid.capacity_statement` (1/supplier) + `bid.capacity_constraint` (CELL: dc×lot×tf). Re-send supersedes prior (service.py:1338). Counts surfaced in NOTES. **No A event.** | V·S | **No own route/tool** — rides `POST /bids/import` + MCP `ingest_bids`/`ingest_any` | Buyer → **Intake ✅** (same upload) → capacity sheet ingests automatically. **No capacity screen ⬜** |
-| Engine run / scenarios | `run_round` (service.py:400) → `EngineRunner.run_analysis` (runner.py:155) → `eng.analysis_run` (sealed, hashed manifests), `eng.bid_score` (:377), `eng.analysis_scenario` (:411), `eng.analysis_scenario_award` (:436). **+ A: SEALED** (service.py:452). Writes versioned alignment workbook. | V·S·A | HTTP `POST …/rounds/{round}/analysis` (runs.py:455) + reads `GET …/analysis`, `…/scenarios`, `…/scenarios/{code}` (runs.py:500/521/544) · MCP `run_round` (:322) | Buyer → **Alignment ✅** → run analysis, compare 7 lenses (B pre-selected), inspect cell-by-cell. **Deep workbench is Excel-only (G-I).** |
-| Award freeze | `freeze_award` (service.py:544) → `awd_service.freeze_award` (awd/service.py:66; `Award` :125, `AwardLine` :140) FROZEN. **+ A: FROZEN** (awd/service.py:156). Writes booking + per-supplier guides + individual files (service.py:578-600). Idempotent on (cycle, run, scenario). | V·S·A | HTTP `POST …/awards/freeze` (runs.py:574) · MCP `select_award` (:343) | Buyer/Approver → **Alignment ✅** (FreezeAwardModal) → freeze a chosen lens (actor = authenticated user) |
+| Setup ingest → cycle | `ingest_setup` (service.py:206) → `ingest_setup_workbook` (setup_ingest.py:425-693) → `ref.*`, `cyc.*`, `perf.*`, `norm.normalization_run`. **Once-per-run** (service.py:220): a 2nd ingest is refused (409 conflict) — `cycle_id.txt` is never overwritten, so the prior cycle is never orphaned. | V·S | HTTP `POST /runs/{slug}/setup` (runs.py:395) · MCP `setup_ingest` (:235) | Analyst → **Intake ✅** → download kickoff, upload filled |
+| Bid template | `generate_bid_template` (service.py:295) → FS `..bid_template.xlsx` (3 sheets incl. **Capacity**) | V | HTTP `POST /runs/{slug}/rounds/{round}/template` (runs.py:424) · MCP `bid_template` (:256) | Buyer → **Intake ✅** → generate + download |
+| Bid intake — strict | `ingest_bids` (service.py:321, `actor`-threaded) → `ingest_template` + `ingest_capacity` → `_persist_bid_lines` (service.py:1272): `norm.source_artifact` (`created_by` = actor), `bid.bid_submission`, `bid.bid_line` (fanned to 13 periods) **+ A: IMPORTED/SUPERSEDED** (actor = importing user) | V·S·A | HTTP `POST /bids/import` (bids.py:164) · MCP `ingest_bids` (:270) | Buyer → **Intake ✅** → upload bids |
+| Bid intake — flexible | `ingest_any` (service.py:389): `infer_bid_mapping` → proposal; on confirm `apply_mapping` → `ingest_bids` (actor forwarded) | V·S·A | HTTP `POST /bids/import?mode=flexible` (bids.py:164) · MCP `ingest_any` (:285) | Buyer → **Intake ✅** → propose → review mapping → "Confirm & import" |
+| **Capacity ingest (E-38)** | `ingest_capacity` (bid_ingester.py:645, key-validated vs `scope.capacity_key_set()`) → persisted in same pass by `_persist_bid_lines` (service.py:1481-1525): `bid.capacity_statement` (1/supplier) + `bid.capacity_constraint` (CELL: dc×lot×tf). Re-send supersedes prior (service.py:1372). Counts surfaced in NOTES. **No A event.** | V·S | **No own route/tool** — rides `POST /bids/import` + MCP `ingest_bids`/`ingest_any` | Buyer → **Intake ✅** (same upload) → capacity sheet ingests automatically. **No capacity screen ⬜** |
+| Engine run / scenarios | `run_round` (service.py:429, `actor`-threaded → `run_by`) → `EngineRunner.run_analysis` (runner.py:155) → `eng.analysis_run` (sealed, hashed manifests), `eng.bid_score` (:377), `eng.analysis_scenario` (:411), `eng.analysis_scenario_award` (:436). **+ A: SEALED** (service.py:486, actor = running user). Writes versioned alignment workbook. | V·S·A | HTTP `POST …/rounds/{round}/analysis` (runs.py:457) + reads `GET …/analysis`, `…/scenarios`, `…/scenarios/{code}` (runs.py:500/521/544) · MCP `run_round` (:322) | Buyer → **Alignment ✅** → run analysis, compare 7 lenses (B pre-selected), inspect cell-by-cell. **Deep workbench is Excel-only (G-I).** |
+| Award freeze | `freeze_award` (service.py:576) → `awd_service.freeze_award` (awd/service.py:66; `Award` :125, `AwardLine` :140) FROZEN. **+ A: FROZEN** (awd/service.py:156). Writes booking + per-supplier guides + individual files (service.py:610-632). Idempotent on (cycle, run, scenario). | V·S·A | HTTP `POST …/awards/freeze` (runs.py:576) · MCP `select_award` (:343) | Buyer/Approver → **Alignment ✅** (FreezeAwardModal) → freeze a chosen lens (actor = authenticated user) |
 | Sign-off | — *(decorative: unused permission + workbook tab; no transition/state; `SIGNED_OFF` never emitted)* | — | — | Approver → **Sign-off screen ⬜** |
 | Outputs (incl. E-37 comms) | Guides within `freeze_award`; post-award doc within `record_adjustment`. **E-37 comms** = deterministic template-merge, rendered on GET, never persisted/sent: `award_email_drafts` (service.py:1630), `feedback_email_drafts` (:1674), `rejection_email_drafts` (:1700) | V | Files: `GET …/files`, `…/files/{name}`, `…/archive`. Comms: `GET …/awards/{id}/comms/award` (:754), `…/comms/rejection` (:788), `…/analysis/{id}/comms/feedback` (:823). **`documents.py` empty.** | Buyer → **Outputs/Downloads ◐** (file list + zip). **No comms-draft review UI ⬜** |
 | Post-award adjustments | `record_adjustment` (service.py:612) → `awd_service.add_adjustment` (awd/service.py:175; `AwardAdjustment` :206, `AwardAdjustmentLine` :223). **+ A: CREATED** (awd/service.py:245). Off-award + duplicate-cell validated at route. Append-only v1..N. | V·S·A | HTTP `POST …/awards/{id}/adjustments` (runs.py:668) · MCP `record_adjustment` (:373) | Buyer → **Awards ✅** (RecordAdjustmentModal) → pick cells → new $/case → type/date/reason → submit |
@@ -178,7 +178,7 @@ flowchart LR
 | Engine seal | `runner.py:155` (`AnalysisRun`), `:377` (`BidScore`), `:411` (`AnalysisScenario`), `:436` (`AnalysisScenarioAward`) | `eng.analysis_run`, `eng.bid_score`, `eng.analysis_scenario`, `eng.analysis_scenario_award` | `cycle_id`+`round_id`; children FK to run/scenario; `is_sealed=true`, hashed in/out manifests |
 | Award freeze | `awd/service.py:125` (`Award`), `:140` (`AwardLine`) | `awd.award`, `awd.award_line` | idempotent on `cycle_id`+`analysis_run_id`+`scenario_code` |
 | Post-award layer | `awd/service.py:206` (`AwardAdjustment`), `:223` (`AwardAdjustmentLine`) | `awd.award_adjustment`, `awd.award_adjustment_line` | `version_no` = max+1; append-only |
-| Audit (decision events, in-txn) | `service.py:1313` (SUPERSEDED), `:1381` (IMPORTED), `:452` (SEALED); `awd/service.py:156` (FROZEN), `:245` (CREATED); writer `core/audit/writer.py:134` | `audit.event_log` | per-tenant `client_id`+`seq` (`FOR UPDATE`); tenant resolved cycle/award→commodity→client (`recorder.py:20,40`); **raises if unresolvable** |
+| Audit (decision events, in-txn) | `service.py:1349` (SUPERSEDED), `:1418` (IMPORTED), `:486` (SEALED); `awd/service.py:156` (FROZEN), `:245` (CREATED); writer `core/audit/writer.py:134` | `audit.event_log` | per-tenant `client_id`+`seq` (`FOR UPDATE`); tenant resolved cycle/award→commodity→client (`recorder.py:20,40`); **raises if unresolvable** |
 | Auth user (out-of-band) | `auth/create_user.py:27` | `auth.app_user` | bootstrap/CLI helper; read at `auth/deps.py:54` |
 
 ## 4. System-of-Record hierarchy
@@ -217,7 +217,7 @@ Two structural facts shape every blast radius: **(a)** every governed write is `
 
 | Gate | Status | Where (file:line) |
 |---|---|---|
-| Award-select is **human, not engine** | ✅ enforced structurally | `freeze_award` requires explicit run+scenario+award_code (service.py:544; runs.py:574); engine never auto-freezes |
+| Award-select is **human, not engine** | ✅ enforced structurally | `freeze_award` requires explicit run+scenario+award_code (service.py:576; runs.py:576); engine never auto-freezes |
 | Engine **decision-support language** guard | ✅ enforced | `assert_decision_support` on every scenario label/desc (engine/guards.py:41; v3.py:185) |
 | **Frozen award** immutability | ✅ enforced (app-layer) | `block_update_if_frozen`/`block_delete_governed` (core/audit/guards.py:56/45), registered main.py:62 |
 | **Sealed analysis-run** immutability | ✅ enforced (app-layer) | core/audit/guards.py:34/45, registered main.py:62 |
@@ -240,7 +240,7 @@ Two structural facts shape every blast radius: **(a)** every governed write is `
 | Loop | Where (file:line) | Bound / exit |
 |---|---|---|
 | Round loop R1..Rn | external repeat per `round_no`; rounds at setup (setup_ingest.py:612-617) | round_count **2..6**; no auto-advance, no enforced final-round close |
-| Propose→confirm intake | `ingest_any` (service.py:362); `infer_bid_mapping`/`apply_mapping` (flex_ingest.py:153/268) | exits on buyer `confirm=True`; ambiguities surfaced, never guessed |
+| Propose→confirm intake | `ingest_any` (service.py:389); `infer_bid_mapping`/`apply_mapping` (flex_ingest.py:153/268) | exits on buyer `confirm=True`; ambiguities surfaced, never guessed |
 | Resubmit / supersede (bids) | `_submission_for` (service.py:1273); prior lines `is_scoreable=false` (:1294), submission → SUPERSEDED (:1326) + event (:1313) | one scoreable submission per (cycle, round, supplier) |
 | Resubmit / supersede (capacity, E-38) | prior `bid.capacity_statement` → SUPERSEDED (service.py:1336-1343) | latest statement only; append-only (status flip, rows retained) |
 | Alignment re-run | `run_round` repeatable; new sealed version (`_run_version_seq` service.py:1771) | unbounded; every run sealed + immutable |
@@ -255,17 +255,17 @@ Mechanics (`core/audit/writer.py`): `prev_event_hash → event_hash = sha256(can
 
 | Event | Fires at (file:line) | In-txn? | Notes |
 |---|---|---|---|
-| `IMPORTED` | service.py:1381 (in `_persist_bid_lines`) | ✅ | one per new `bid.bid_submission` |
-| `SUPERSEDED` | service.py:1313 | ✅ | one per prior submission, before the status flip |
-| `SEALED` | service.py:452 (in `run_round`) | ✅ | engine seal |
-| `FROZEN` | awd/service.py:156 | ✅ (after flush :152) | actor = `frozen_by` |
+| `IMPORTED` | service.py:1418 (in `_persist_bid_lines`) | ✅ | one per new `bid.bid_submission`; actor = importing user (HTTP `user.username`) / `pilot` (MCP) |
+| `SUPERSEDED` | service.py:1349 | ✅ | one per prior submission, before the status flip; actor as IMPORTED |
+| `SEALED` | service.py:486 (in `run_round`) | ✅ | engine seal; actor = running user (HTTP `user.username`) / `pilot-runner` (MCP) |
+| `FROZEN` | awd/service.py:156 | ✅ (after flush :152) | actor = `frozen_by` (authenticated user) |
 | `CREATED` | awd/service.py:245 (in `add_adjustment`) | ✅ (after flush :236) | post-award layer |
 | `CREATED` (commodity) | ref/service.py:53 | ✅ | tenant-root commodity create |
 | `SIGNED_OFF` | — | ⬜ unwired | feature absent (G-D) |
 | `SENT` | — | ⬜ unwired | feature absent (E-24) |
 | `GATE_APPROVED` | — | ⬜ unwired | G12 in-gate absent (E-17) |
 
-**Decision audit chain operational** (ingest/seal/freeze/supersede/adjustment) ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`); **the FULL write-point chain is NOT** — setup ingest (cycle creation) emits **no** event, and capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable rows + git + `run_data.json`.
+**Decision audit chain operational** (ingest/seal/freeze/supersede/adjustment) ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`). **Actor fidelity:** all five decision events now record the *authenticated* operator — the HTTP path threads `user.username` through `ingest_bids`/`run_round`/`freeze_award`/`record_adjustment`, the MCP harness (no web auth) keeps the `pilot`/`pilot-runner` defaults; the importing user is also stamped on `norm.source_artifact.created_by` (`test_actor_threads_to_audit_events`). **The FULL write-point chain is NOT** — setup ingest (cycle creation) emits **no** event, and capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable rows + git + `run_data.json`.
 
 ## 9. Built · partial · missing (gap analysis → backlog)
 
@@ -362,20 +362,20 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 | 11 | `GET /runs/{slug}/files` | runs.py:334 | CurrentUser | — | list inputs/+outputs/ |
 | 12 | `GET /runs/{slug}/files/{name}` | runs.py:345 | CurrentUser | path-traversal guard | stream one run file |
 | 13 | `GET /runs/{slug}/archive` | runs.py:367 | CurrentUser | — | zip the run folder |
-| 14 | `POST /runs/{slug}/setup` | runs.py:395 | CurrentUser | UploadFile | setup workbook → cycle (service.py:205); emits no event |
-| 15 | `POST /runs/{slug}/rounds/{round}/template` | runs.py:422 | CurrentUser | round≥1; `resolve_round_id` | generate bid template (service.py:277) |
-| 16 | `POST /runs/{slug}/rounds/{round}/analysis` | runs.py:455 | CurrentUser (**no RUN_ENGINE perm**) | round≥1 | seal `eng.*` + alignment workbook (service.py:400); SEALED in-txn |
+| 14 | `POST /runs/{slug}/setup` | runs.py:395 | CurrentUser | UploadFile; **once-per-run** (2nd → 409 conflict) | setup workbook → cycle (service.py:206); emits no event |
+| 15 | `POST /runs/{slug}/rounds/{round}/template` | runs.py:424 | CurrentUser | round≥1; `resolve_round_id` | generate bid template (service.py:295) |
+| 16 | `POST /runs/{slug}/rounds/{round}/analysis` | runs.py:457 | CurrentUser (**no RUN_ENGINE perm**) | round≥1 | seal `eng.*` + alignment workbook (service.py:429); SEALED in-txn (actor = `user.username`) |
 | 17 | `GET /runs/{slug}/analysis` | runs.py:500 | CurrentUser | — | list sealed analyses |
 | 18 | `GET /runs/{slug}/analysis/{id}/scenarios` | runs.py:521 | CurrentUser | `_ensure_analysis` | compare 7 lenses A–G |
 | 19 | `GET /runs/{slug}/analysis/{id}/scenarios/{code}` | runs.py:544 | CurrentUser | bad code → 400 | one lens cell-by-cell |
-| 20 | `POST /runs/{slug}/awards/freeze` | runs.py:574 | CurrentUser (**no AWARD_FREEZE perm**) | `FreezeAwardRequest` | freeze lens → FROZEN award (service.py:544); FROZEN in-txn; idempotent |
+| 20 | `POST /runs/{slug}/awards/freeze` | runs.py:576 | CurrentUser (**no AWARD_FREEZE perm**) | `FreezeAwardRequest` | freeze lens → FROZEN award (service.py:576); FROZEN in-txn; idempotent |
 | 21 | `GET /runs/{slug}/awards` | runs.py:614 | CurrentUser | — | list frozen awards |
 | 22 | `GET /runs/{slug}/awards/{id}` | runs.py:635 | CurrentUser | `_has_cycle` else 404 | award detail: baseline + effective + history |
 | 23 | `POST /runs/{slug}/awards/{id}/adjustments` | runs.py:668 | CurrentUser (**no perm**) | `RecordAdjustmentRequest`; off-award → 400; dup cell → 400; cross-run → 404 | append post-award layer (service.py:612); CREATED in-txn |
 | 24 | `GET /runs/{slug}/awards/{id}/comms/award` | runs.py:754 | CurrentUser | `_has_cycle` else 404 | E-37 award drafts; **draft-only, no send, no DB write** |
 | 25 | `GET /runs/{slug}/awards/{id}/comms/rejection` | runs.py:788 | CurrentUser | `_has_cycle` else 404 | E-37 non-selection drafts; draft-only |
 | 26 | `GET /runs/{slug}/analysis/{id}/comms/feedback` | runs.py:823 | CurrentUser | `_ensure_analysis` | E-37 round-feedback drafts; draft-only |
-| 27 | `POST /bids/import` | bids.py:159 | CurrentUser (**no FEED_IMPORT perm**) | mode∈{strict,flexible}, round≥1, confirm | strict (service.py:303) or flexible propose→confirm (:362); IMPORTED+SUPERSEDED in-txn; persists capacity (:1446-1489) |
+| 27 | `POST /bids/import` | bids.py:164 | CurrentUser (**no FEED_IMPORT perm**) | mode∈{strict,flexible}, round≥1, confirm | strict (service.py:321) or flexible propose→confirm (:389); IMPORTED+SUPERSEDED in-txn (actor = `user.username`); persists capacity (:1481-1524) |
 | 28 | `GET /bids` | bids.py:215 | CurrentUser | run, round≥1 | list a round's `bid.bid_line` at identity grain (ACTIVE only, DISTINCT ON) |
 
 > **Mount-point note:** the analysis/award/adjustment/comms endpoints (#16–#26) live under the **`runs`** router, not the empty `awards` stub.
@@ -525,6 +525,7 @@ The target is production-ready execution of live sourcing events, validated over
 
 ## Appendix — version history (track the delta)
 
+- **v1.21 (2026-06-21)** — *Two A-adjacent correctness fixes shipped (commit `a5abc6c`).* **#4 Actor fidelity:** the decision audit chain recorded a hardcoded `pilot` / `pilot-runner` for IMPORTED/SUPERSEDED/SEALED; an `actor` is now threaded through `ingest_bids`/`ingest_any`/`run_round` (and `_persist_bid_lines`), the web console passing the authenticated `user.username` (the MCP harness keeps the defaults — no web auth), and the importing user is stamped on `norm.source_artifact.created_by`. §8 event table + narrative updated. **#5 Setup once-per-run guard:** a 2nd `POST /runs/{slug}/setup` overwrote `cycle_id.txt` and silently orphaned the prior cycle; `ingest_setup` (service.py:220) now refuses it (409 CONFLICT) in both runtimes — §2/§3 + the flowchart note that. **Tests:** `test_actor_threads_to_audit_events`, `test_second_setup_ingest_is_refused`, `test_second_setup_post_is_conflict` (full suite 232 passed; ruff/format/mypy green). **Doc maintenance:** all `service.py` line refs in §1 (flowchart), §2 (stage table), §3 (API table + invariants), §8 (event table + G-B note) refreshed for the a5abc6c insertions (~+30 lines below the import block). No gap-register status change (G-B remains closed; the setup/capacity-emit-no-event note in §8 is unaffected — #4 changes *who*, not *whether*).
 - **v1.20 (2026-06-21)** — Auditor-driven reconciliation (manual full-suite audit at 78bed20): added an Owner column to the gap register (CONDITIONAL now satisfies its owner rule); narrowed the audit-chain language to decision-chain-vs-full-write-point; corrected '~18'→'17-tab'; clarified the source-audited (e28f57f) vs doc-committed commit distinction; added G-J (tenancy under-documented). Paired with 04/03/README/ADR-0002/ADR-0003 reconciliation and the capacity-NOTE honesty fix (service.py). No source/behavior change in this entry. Also reflects E-38b shipped (commit c362f6c): the capacity check is now surfaced as the alignment-workbook **Capacity Check** tab — **G-G closed (workbook surface)**; the workbook is now 18-tab; the residual in-app capacity surface is E-38c (deferred).
 - **v1.19 (2026-06-21)** — *Full code-verified refresh (three read-only sweeps over HEAD `e28f57f`; "everything in one place, stacked to show where it breaks").* **Added (E-38 capacity, this session):** capacity ingest+persist now ACTIVE — `bid.capacity_statement`/`bid.capacity_constraint` written by `_persist_bid_lines` (service.py:1459/1477) on strict+flexible intake, key-validated (bid_ingester.py:645), with per-supplier supersede (:1338); a pure, tested evaluator `output/capacity_check.py` (fail-loud on non-positive weeks). **Closed:** none new (G-A/G-B remain closed). **Introduced (new gaps):** **G-G** (capacity evaluator built but not surfaced — zero call sites), **G-H** (comms no-send / no review UI), **G-I** (web alignment screen ≠ the 17-tab alignment workbook). **Corrected vs v1.18:** (1) schema is **86 tables** (64 baseline + 22 migration) + 1 view, not ~64 — §16 rebuilt as a per-table active/dormant inventory with writer:reader file:line; (2) capacity tables moved **dormant → active**; (3) `eng.scenario_capacity_usage` confirmed dormant (keyed to the dormant solver spine; not used by E-38); (4) stale `service.py` line refs throughout §2/§3 corrected (E-38 inserts shifted the file); (5) mount-point fix — alignment/award/comms routes live under the `runs` router, not the empty `awards` stub; (6) draft→SENT reclassified amber→**missing**; (7) §14 now lists all 28 live endpoints with auth/validation; (8) noted setup/capacity ingest emit no audit event, and the `eng.scenario_award` ALTER-but-dormant drift. **Release-gate read:** 🟡 CONDITIONAL. *Method note:* assembled from three tightly-scoped parallel agents + assertion; this is the model going forward (08 review cadence).
 - **v1.18 (2026-06-21)** — *Corrections (PR #20 self-audit, 9 findings re-verified):* §16 count 63→64; `cycle_timeline_event` reclassified dormant; §11 → governance pointer; §13 web-console row refreshed; §8 G-C→G12 mislabel fixed; cadence de-Codex'd; `04` E-38 split + status Draft→Living; Decision Doctrine codified in `08`.
