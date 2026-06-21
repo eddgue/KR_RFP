@@ -7,8 +7,11 @@ Two audiences, two artifacts:
   * `write_booking_guide_internal_xlsx` — the buyers/pricing MASTER: one row per awarded
     DC × lot × item × TF — awarded supplier (NAME, D23), FOB/landed $/case, awarded volume,
     routing baseline + savings — what pricing uses to update the system (D9).
-  * `write_supplier_award_guides_xlsx`  — one SHEET per awarded supplier: "here is what you've
-    been awarded" (that supplier's lots/DCs/volumes/prices only; no other supplier's data appears).
+  * `write_supplier_award_guides_xlsx`  — one SHEET per awarded supplier in a single internal
+    workbook: "here is what you've been awarded" (that supplier's lots/DCs/volumes/prices only).
+  * `write_supplier_award_guide_files`  — the same, but as one separate FILE per supplier (the
+    sendable artifact for E-37: a supplier's award notification attaches its own file, never the
+    combined workbook — which would expose every other supplier's awards).
 
 MOVED out of `demo/run_cycle_demo.py` so any feature (the pilot, not just the demo) can produce the
 booking guides from a `CycleView` (the resolved cycle scope — demo seed OR `load_cycle`) plus a
@@ -24,7 +27,8 @@ shared `app.output.formatting` styling pass. SYNTHETIC-friendly; decision-suppor
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -263,6 +267,58 @@ def write_supplier_award_guides_xlsx(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
     return output_path
+
+
+@dataclass(frozen=True)
+class _SingleSupplierAward:
+    """A `BookingAwardView` carrying ONE supplier's cells — to render that supplier's own file."""
+
+    scenario_code: str
+    scenario_label: str
+    cells: Sequence[BookingCellView]
+
+
+def supplier_guide_label(
+    award_id: str, award_code: str, supplier_name: str, supplier_id: str
+) -> str:
+    """The `stage_filename` LABEL for one supplier's individual award guide.
+
+    `stage_filename` slugifies this. The **award_id** (the unique award PK) makes the filename
+    unique even if two awards in a run reuse the same `award_code` (codes aren't enforced unique),
+    so a later freeze never overwrites an earlier award's per-supplier file and a draft never
+    points at another award's guide; the award code + supplier name are kept for human readability,
+    and the short supplier-id suffix keeps two like-named suppliers distinct.
+    """
+
+    return f"award_guide_{award_code}_{supplier_name}_{supplier_id[:6]}_{award_id}"
+
+
+def write_supplier_award_guide_files(
+    cycle: CycleView,
+    award: BookingAwardView,
+    *,
+    paths_by_supplier: Mapping[str, Path],
+    synthetic: bool = False,
+) -> dict[str, Path]:
+    """One INDIVIDUAL award-guide FILE per awarded supplier — only that supplier's data.
+
+    The combined `write_supplier_award_guides_xlsx` packs every supplier on its own SHEET in one
+    workbook: fine internally, but NOT safe to attach to a single supplier's email — it would expose
+    every other supplier's awarded volumes/prices. This writes a separate one-sheet workbook per
+    supplier (reusing the same renderer over a single-supplier award view) so each can be the
+    attachment on that supplier's award notification (E-37). Returns the written path per supplier
+    id (suppliers in `paths_by_supplier` that actually have awarded cells).
+    """
+
+    written: dict[str, Path] = {}
+    for sup_id, path in paths_by_supplier.items():
+        sup_cells = [c for c in award.cells if c.supplier_id == sup_id]
+        if not sup_cells:
+            continue
+        one = _SingleSupplierAward(award.scenario_code, award.scenario_label, sup_cells)
+        write_supplier_award_guides_xlsx(cycle, one, output_path=path, synthetic=synthetic)
+        written[sup_id] = path
+    return written
 
 
 def _sheet_title(name: str) -> str:

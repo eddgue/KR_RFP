@@ -13,6 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.engine.formulas import construct_price, premium_vs_low
 from app.engine.interface import BidInput, EngineConfig
 
 # --- Reason codes (eligibility gate flags, V3_ENGINE_LOGIC §3). Strings, exact. ---
@@ -57,37 +58,7 @@ class ScoredBid:
     gate_flags: tuple[str, ...]
 
 
-# ---------------------------------------------------------------------------
-# §7 — Cost construction (All-In primary + fallback, double-subtract guard)
-# ---------------------------------------------------------------------------
-def construct_price(bid: BidInput) -> Decimal | None:
-    """Derive Price for a bid (§7). All-In primary; fallback sums components net of discounts.
-
-    The double-subtract guard: when All-In is present it is taken verbatim (already net of
-    discounts) — Lot/AllLot discounts are NOT re-subtracted. Discounts apply ONLY on the
-    fallback branch. Rows with Price NaN/<=0 return None (dropped downstream).
-    """
-
-    comp = bid.components
-    if comp is None:
-        price = bid.landed_cost_per_case
-    elif comp.all_in is not None:
-        # PRIMARY: take All-In verbatim. Do NOT subtract discounts again (the footgun).
-        price = comp.all_in
-    elif comp.fob is not None:
-        # FALLBACK: build from parts; discounts applied here and ONLY here.
-        price = (
-            comp.fob
-            + comp.delivery_surcharge
-            + comp.vegcool_surcharge
-            - comp.lot_discount
-            - comp.all_lot_discount
-        )
-    else:
-        return None
-    if price <= _ZERO:
-        return None
-    return price
+# §7 cost construction (`construct_price`) is a canonical formula — see `app.engine.formulas`.
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +228,7 @@ def score_bids(
             continue
 
         # --- ratios ---
-        prem_vs_low = (price - gst.min_price) / gst.min_price if gst.min_price > _ZERO else None
+        prem_vs_low = premium_vs_low(price, gst.min_price)
         z_score: Decimal | None = None
         if gst.std_price > _ZERO:
             z_score = (price - gst.avg_price) / gst.std_price

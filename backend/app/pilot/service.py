@@ -30,6 +30,12 @@ from typing import cast
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.comms.resolvers import (
+    SupplierEmailDraft,
+    award_drafts,
+    feedback_drafts,
+    rejection_drafts,
+)
 from app.core.audit.events import DomainEvent, EventType
 from app.core.audit.recorder import client_id_for_cycle
 from app.core.audit.writer import AuditWriter
@@ -70,7 +76,9 @@ from app.engine.interface import PRESET_WEIGHTS, EngineConfig, WeightPreset
 from app.fiscal.calendar import FiscalPeriod, all_periods, period_for_date
 from app.output.booking_guide import (
     BookingAwardView,
+    supplier_guide_label,
     write_booking_guide_internal_xlsx,
+    write_supplier_award_guide_files,
     write_supplier_award_guides_xlsx,
 )
 from app.output.post_award_doc import write_post_award_adjustments_xlsx
@@ -549,6 +557,23 @@ class PilotService:
         )
         write_supplier_award_guides_xlsx(
             cycle, booking, output_path=runpaths.outputs / supplier_name, synthetic=synthetic
+        )
+        # Individual per-supplier files (the sendable artifacts — only that supplier's data), so the
+        # award notification (E-37) can attach a supplier's OWN guide, never the combined workbook.
+        guide_stage = self._stage("booking_guide")
+        awarded_ids = {cell.supplier_id for cell in booking.cells}
+        write_supplier_award_guide_files(
+            cycle,
+            booking,
+            paths_by_supplier={
+                sup.id: runpaths.outputs
+                / stage_filename(
+                    guide_stage, supplier_guide_label(award_id, award_code, sup.name, sup.id)
+                )
+                for sup in cycle.suppliers
+                if sup.id in awarded_ids
+            },
+            synthetic=synthetic,
         )
 
         self._render_kanban(
@@ -1513,6 +1538,102 @@ class PilotService:
 
         cycle = self._load_cycle(session, runpaths)
         return read_award_detail(session, cycle, award_id)
+
+    def award_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        award_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One award-notification email DRAFT per awarded supplier (E-37; template-merge).
+
+        Loads the run's cycle (for names + the delivery window) and renders the award template per
+        awarded supplier. Raises ValueError on an unknown award (router -> 404).
+
+        Each draft attaches the supplier's OWN individual award guide (`write_supplier_award_guide_
+        files`, written at freeze, award-code-stamped so a later freeze can't shadow it) — never the
+        combined all-suppliers workbook. The filename per supplier is recomputed deterministically
+        and only named when the file is actually present (otherwise `[#AwardFileName]` is left for
+        the buyer to attach).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        award = next(
+            (a for a in self.list_awards(session, runpaths) if a.award_id == award_id), None
+        )
+        award_files: dict[str, str] = {}
+        if award is not None:
+            guide_stage = self._stage("booking_guide")
+            for sup in cycle.suppliers:
+                fname = stage_filename(
+                    guide_stage,
+                    supplier_guide_label(award.award_id, award.award_code, sup.name, sup.id),
+                )
+                if (runpaths.outputs / fname).is_file():
+                    award_files[sup.id] = fname
+        return award_drafts(
+            session,
+            cycle,
+            award_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
+            award_files=award_files,
+        )
+
+    def feedback_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        analysis_run_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One round-feedback email DRAFT per supplier with above-benchmark lots (E-37).
+
+        Loads the run's cycle (names + the eligibility overrides) and renders the round-feedback
+        template per supplier whose round bid sits above the market-low benchmark on any cell —
+        with hard asks (ineligible) and soft asks (eligible but above) split into separate tables.
+        Raises ValueError on an unknown analysis run (router -> 404).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        return feedback_drafts(
+            session,
+            cycle,
+            analysis_run_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
+        )
+
+    def rejection_email_drafts(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        award_id: str,
+        *,
+        buyer_name: str = "",
+        buyer_title: str = "",
+    ) -> list[SupplierEmailDraft]:
+        """One non-selection ("RFP Results") email DRAFT per supplier with a lost lot (E-37).
+
+        Keyed on the frozen award: loads the run's cycle (for names) and renders the non-selection
+        template per supplier who bid the award's round but was not awarded every cell — each lost
+        lot itemized with their price, the market-low benchmark, the % gap, and a data-centered
+        reason. Raises ValueError on an unknown award (router -> 404).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        return rejection_drafts(
+            session,
+            cycle,
+            award_id,
+            buyer_name=buyer_name,
+            buyer_title=buyer_title,
+        )
 
     def scenario_comparison(
         self, session: Session, runpaths: RunPaths, analysis_run_id: str

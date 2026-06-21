@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
+from app.comms.resolvers import SupplierEmailDraft
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.domain.awd.read import AwardDetail, AwardSummary
 from app.domain.eng.read import (
@@ -743,6 +744,98 @@ def record_award_adjustment(
     return RecordAdjustmentResponse(
         award_id=award_id, version_no=updated.latest_version, filename=out_path.name
     )
+
+
+@router.get(
+    "/{slug}/awards/{award_id}/comms/award",
+    response_model=list[SupplierEmailDraft],
+    summary="Award-notification email drafts (one per awarded supplier)",
+)
+def get_award_comms_drafts(
+    slug: str,
+    award_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierEmailDraft]:
+    """One template-merge award-notification DRAFT per awarded supplier (E-37) — draft-only.
+
+    Fills the authored award template from governed data; the authenticated user is the draft's
+    `[#BuyerName]`. 404 if the run / award is unknown (scoped to the run's cycle).
+    """
+
+    paths = resolve_paths(slug)
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        )
+    try:
+        return service().award_email_drafts(db, paths, award_id, buyer_name=user.username)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        ) from exc
+
+
+@router.get(
+    "/{slug}/awards/{award_id}/comms/rejection",
+    response_model=list[SupplierEmailDraft],
+    summary="Non-selection email drafts (one per supplier with a lost lot)",
+)
+def get_rejection_comms_drafts(
+    slug: str,
+    award_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierEmailDraft]:
+    """One template-merge non-selection ("RFP Results") DRAFT per supplier with a lost lot (E-37).
+
+    Keyed on the frozen award; each lost lot is itemized with the supplier's price, the market-low
+    benchmark, the % gap, and a data-centered reason. The authenticated user is the draft's
+    `[#BuyerName]`. 404 if the run / award is unknown (scoped to the run's cycle).
+    """
+
+    paths = resolve_paths(slug)
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        )
+    try:
+        return service().rejection_email_drafts(db, paths, award_id, buyer_name=user.username)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        ) from exc
+
+
+@router.get(
+    "/{slug}/analysis/{analysis_run_id}/comms/feedback",
+    response_model=list[SupplierEmailDraft],
+    summary="Round-feedback email drafts (one per above-benchmark supplier)",
+)
+def get_feedback_comms_drafts(
+    slug: str,
+    analysis_run_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierEmailDraft]:
+    """One template-merge round-feedback DRAFT per supplier above the market-low benchmark (E-37).
+
+    Splits hard asks (ineligible — fix to keep participating) from soft asks (eligible but above the
+    benchmark) over the sealed analysis's scored round; the authenticated user is the draft's
+    `[#BuyerName]`. 400 (`gate_required`) before any cycle; 404 for an unknown run / analysis run.
+    """
+
+    paths = resolve_paths(slug)
+    _ensure_analysis(db, paths, slug, analysis_run_id)
+    return service().feedback_email_drafts(db, paths, analysis_run_id, buyer_name=user.username)
 
 
 def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: str) -> None:

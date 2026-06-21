@@ -1,0 +1,19 @@
+Dear [#SupplierName],
+
+Attached is the Produce Buying Agreement associated with the [#CycleName] sourcing event.
+
+Agreement Details
+
+* Effective Date: [#EffectiveDate]
+* Expiration Date: [#ExpirationDate]
+* Agreement File: [#PBAFileName]
+
+Please review the attached agreement and return all required documentation according to the instructions provided.
+
+If there are questions regarding the agreement, please contact the sourcing team.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.
