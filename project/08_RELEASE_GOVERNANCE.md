@@ -1,0 +1,73 @@
+# Release Governance & Change Management — RFP Engine
+
+> **Status:** ratified 2026-06-21. This document governs **what may be built and when**. It is paired
+> with the **As-Built Specification** (`07_AS_BUILT_PROCESS_AUDIT.md` — the single source of truth for
+> *what exists*) and the **Program Backlog** (`04_PROGRAM_BACKLOG.md` — the item register).
+
+## Core principle
+
+**Default to backlog, not build.** The objective is a production-ready engine that runs live sourcing
+events with accurate, repeatable, auditable results — **not** continuous feature development. Every
+requested change is **classified before any work begins**.
+
+## Success is…
+
+Accurate calculations · reliable execution · repeatable outcomes · complete auditability · reduced
+manual effort · stable operation across multiple live cycles · clear documentation · sustainable
+maintenance. **Not**: maximum feature count, continuous expansion, architectural complexity, constant
+redesign.
+
+## Change classification (assign before building)
+
+| Cat | Meaning | Examples | Priority |
+|---|---|---|---|
+| **A — Critical fix** | Wrong results / blocked execution / integrity, audit, security, data-loss | calc error, incorrect output, crash, workflow blocker, auditability failure, corrupted/lost export | **Immediate** |
+| **B — Operational enhancement** | Improves analysis/reporting/validation/workflow/efficiency **inside the existing architecture** | new scoring/scenario calc, better reports, enhanced validation, UX/automation within existing modules, template improvements, decision-support outputs | **Eligible during Live Run #1/#2 cycles** (not speculative Phase-1 work) |
+| **C — Major feature** | New module / agent / workflow family / database / dashboard / app section / integration / domain / **architectural redesign** | — | **Backlog only** until the Phase-4 post-validation review |
+
+**B constraints:** operate within existing modules; no architectural redesign; no new system domains;
+no new core workflows. **Anything that fails these is C.**
+
+## Decision rules (in order)
+
+1. Produces incorrect results? → **A**, fix now.
+2. Blocks execution? → **A**, fix now.
+3. Improves analysis/reporting/validation/workflow/efficiency **within existing architecture**? → **B**.
+4. Introduces a new module / workflow family / agent / integration / domain / architectural component? → **C**, backlog.
+5. Has Production Lock occurred? If yes, all enhancements → backlog → future-release planning.
+
+**Default action when unsure: backlog.**
+
+## Phases
+
+1. **Initial Build (current)** — build agreed V1; avoid speculative features / future-proofing beyond reasonable need.
+2. **Live Run #1** — operational validation; fix A immediately; approved B via short cycles; log C. No architectural redesign.
+3. **Live Run #2** — repeat validation; A + B only; C deferred.
+4. **Feature Consolidation Review** — evaluate every C item → Approve / Defer / Reject.
+5. **Final Audit** — production-readiness review (calcs, data integrity, auditability, reporting, agents, workflows, docs); resolve all critical findings.
+6. **Production Lock** — V1 complete; freeze core architecture / data model / modules / workflows / agents / analysis framework / storage / export.
+7. **Maintenance** — bug/security/regulatory/template/report-format/minor-UX only; everything else → backlog. Future major work only via a formal **Version 2** planning cycle.
+
+## Current phase & standing rulings (2026-06-21)
+
+- **Phase: 1 — Initial Build, pre–Live Run #1.**
+- **As-Built rule:** *no sprint is complete until the As-Built Specification is updated* (single source of truth; current-state and roadmap never mixed).
+
+### Classification of the live backlog (see `04_PROGRAM_BACKLOG.md`)
+
+| Item | What | Class | Disposition (Phase 1) |
+|---|---|---|---|
+| **E-37** comms email drafts (award/feedback/non-selection) | shipped (PR #18) | B (within existing output/render) | ✅ delivered |
+| **E-39** canonical formula registry | shipped/in-review (PR #19) | A-adjacent (systemic fix for a calc-divergence defect; behavior-preserving) | ✅ delivered |
+| **E-38** supplier capacity | ingest + persist + engine/custom cap flag + workbook control tab | **B** | **BUILD now** (accuracy: never recommend an award beyond stated capacity) |
+| **E-38** supplier capacity | the in-app allocation-vs-capacity **dashboard** | **C** (new app section) | **Backlog** → Phase-4 review |
+| **G-C** RBAC enforcement | call `require_permission` on routes | B (within existing auth) | Backlog/Live-Run (not speculative now) |
+| **G-D / E-24** sign-off + draft→SENT lifecycle | new transition/state/gate + `SIGNED_OFF`/`SENT` events | **C** (new workflow family) | Backlog |
+| **E-33 / G-F** PBA / contract builder | new post-award builder | **C** (new module/domain) | Backlog |
+| **E-34 / E-08/09** supplier importer / external feeds | new ingestion + integrations | **C** | Backlog |
+| **E-35** discovery / price-movement view | new app view | **C** (new app section) | Backlog |
+| **E-36** progressive timeframe commitment / continuation RFP | new workflow family | **C** | Backlog |
+| **E-28** contracted-vs-effective analytics | new analytics domain over external feeds | **C** | Backlog |
+
+This table is the operative gate: only **A** and the **E-38 B-core** are buildable in Phase 1; everything
+marked **C** is recorded and deferred until the post–Live-Run consolidation review.
