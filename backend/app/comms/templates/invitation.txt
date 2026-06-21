@@ -1,0 +1,22 @@
+Dear [#SupplierName],
+
+Kroger is inviting your organization to participate in the [#CycleName] sourcing event.
+
+Event Details
+
+* RFP Name: [#CycleName]
+* Event Start Date: [#ProcessStartDate]
+* Bid Submission Deadline: [#BidDueDate]
+* Estimated Number of Rounds: [#RoundCount]
+* Estimated Award Date: [#EstimatedAwardDate]
+* Delivery Window: [#DeliveryStartDate] through [#DeliveryEndDate]
+
+Additional instructions, timelines, and required documentation will be provided throughout the event.
+
+We appreciate your participation and look forward to receiving your submission.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.

@@ -1,0 +1,19 @@
+Dear [#SupplierName],
+
+Thank you for your participation in the [#CycleName] sourcing event.
+
+Following completion of the evaluation process, your submission was not selected for award in the items listed below.
+
+Evaluation Summary
+
+[#RejectionReasonTable]
+
+This information is provided to explain the evaluation outcome based on submitted bid data and event criteria.
+
+We appreciate your participation and look forward to future opportunities to work together.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.

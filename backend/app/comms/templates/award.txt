@@ -1,0 +1,24 @@
+Dear [#SupplierName],
+
+Thank you for your participation in the [#CycleName] sourcing event.
+
+We are pleased to inform you that your organization has been selected for award.
+
+Attached is your award file containing the awarded locations, lots, pricing, and allocation details.
+
+Award Summary
+
+* Awarded Locations: [#AwardedDCCount]
+* Awarded Lots: [#AwardedLotCount]
+* Delivery Window: [#DeliveryStartDate] through [#DeliveryEndDate]
+* Award File: [#AwardFileName]
+
+Please review the attached documentation and contact the sourcing team with any questions regarding implementation.
+
+Thank you for your partnership.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.

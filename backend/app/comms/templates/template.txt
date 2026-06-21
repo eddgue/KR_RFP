@@ -1,0 +1,19 @@
+Dear [#SupplierName],
+
+Attached is the bid template for Round [#RoundNumber] of the [#CycleName] sourcing event.
+
+Submission Details
+
+* Round: [#RoundNumber]
+* Bid Due Date: [#BidDueDate]
+* Template File: [#TemplateFileName]
+
+Please complete all applicable fields and return the template prior to the submission deadline.
+
+If you encounter any issues with the file or have process-related questions, please contact the sourcing team before the deadline.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.

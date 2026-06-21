@@ -1,0 +1,25 @@
+Dear [#SupplierName],
+
+Thank you for your participation in Round [#RoundNumber] of the [#CycleName] sourcing event.
+
+The following feedback is being provided based on the current evaluation results.
+
+DC Summary
+
+[#DCSummaryTable]
+
+Items Requiring Action
+
+[#HardAskTable]
+
+Additional Improvement Opportunities
+
+[#SoftAskTable]
+
+This feedback is intended to assist suppliers in preparing subsequent submissions and reflects current evaluation data for this round.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.

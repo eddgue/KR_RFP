@@ -1,0 +1,19 @@
+Dear [#SupplierName],
+
+Thank you for your submission for the [#CycleName] sourcing event.
+
+During intake validation, one or more bid lines were identified as incomplete and could not be fully evaluated.
+
+The following items require attention:
+
+[#IncompleteBidTable]
+
+Please review the identified items and submit corrected information by [#CorrectionDueDate].
+
+Only complete bid lines can be included in the evaluation process.
+
+Best Regards,
+
+[#BuyerName]
+[#BuyerTitle]
+The Kroger Co.
