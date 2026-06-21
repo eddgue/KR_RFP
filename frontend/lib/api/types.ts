@@ -25,6 +25,9 @@ export interface RunSummary {
   label: string;
   rehearsal: boolean;
   stage: string;
+  // True once setup has been ingested (a cycle exists) — the durable signal the intake UI uses to
+  // unlock the post-setup steps, independent of any generated file.
+  has_cycle: boolean;
 }
 
 // The four fixed kanban buckets, in display order.

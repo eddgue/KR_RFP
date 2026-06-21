@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.pilot_common import resolve_paths, service
+from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.pilot.status import read_status
@@ -55,6 +55,10 @@ class RunSummary(BaseModel):
     label: str
     rehearsal: bool
     stage: str = Field(description="A short human label for where the run is (from the kanban).")
+    has_cycle: bool = Field(
+        description="True once setup has been ingested (a cycle exists) — the durable signal the "
+        "console uses to unlock the post-setup steps, independent of any generated file."
+    )
 
 
 class RunDetail(RunSummary):
@@ -126,6 +130,19 @@ def _stage_label(board: dict[str, list[str]]) -> str:
     return "Setup"
 
 
+def _has_cycle(paths: RunPaths) -> bool:
+    """True once setup has been ingested — the run's cycle_id.txt exists and is non-empty.
+
+    A durable, file-generation-independent signal: a returning user who ingested setup but hasn't
+    generated a template yet should still have the post-setup steps unlocked (re-uploading setup
+    would re-create the cycle).
+    """
+
+    return paths.cycle_id_file.exists() and bool(
+        paths.cycle_id_file.read_text(encoding="utf-8").strip()
+    )
+
+
 def _summary(paths: RunPaths, board: dict[str, list[str]]) -> RunSummary:
     header = read_status(paths)
     return RunSummary(
@@ -134,6 +151,7 @@ def _summary(paths: RunPaths, board: dict[str, list[str]]) -> RunSummary:
         label=_label_from_notes(paths),
         rehearsal=is_rehearsal(paths),
         stage=_stage_label(board),
+        has_cycle=_has_cycle(paths),
     )
 
 
@@ -341,26 +359,16 @@ def generate_bid_template(
 ) -> GenerateTemplateResponse:
     """Generate the round's owned bid template into inputs/ (downloadable via the file endpoint).
 
-    Wraps `PilotService.generate_bid_template`; the run must already have a cycle (setup ingested
-    first) — if it doesn't, a clean 400 (`gate_required`) is surfaced rather than a 500. Returns the
-    generated filename + the refreshed kanban. 404 if the run doesn't exist.
+    Wraps `PilotService.generate_bid_template`. The round is pre-validated (shared with the bids
+    endpoints) so the two failure modes are DISTINCT clean 400s: `gate_required` when there's no
+    cycle yet (setup not ingested), `validation_error` when the round is out of range — never a 500,
+    and an out-of-range round is never mislabeled "no cycle yet". Returns the generated filename +
+    the refreshed kanban. 404 if the run doesn't exist.
     """
 
     svc = service()
     paths = resolve_paths(slug)
-    try:
-        generated = svc.generate_bid_template(db, paths, round)
-    except ValueError as exc:
-        raise _no_cycle_yet(slug, exc) from exc
+    resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
+    generated = svc.generate_bid_template(db, paths, round)
     board = svc.status(db, paths)
     return GenerateTemplateResponse(filename=generated.name, kanban=board)
-
-
-def _no_cycle_yet(slug: str, exc: Exception) -> AppError:
-    """A clean 400 for the 'no cycle yet' gate (service raises ValueError before setup ingest)."""
-
-    return AppError(
-        code=ErrorCode.GATE_REQUIRED,
-        message=f"Run {slug!r} has no cycle yet — ingest the setup workbook first.",
-        status_code=400,
-    )

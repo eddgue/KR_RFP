@@ -20,10 +20,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.pilot_common import resolve_paths, service
+from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
-from app.cycle.loader import load_cycle
 from app.domain.bid.models import BidLine
 from app.pilot.flex_ingest import ColumnMapping, MappingProposal
 from app.pilot.vault import SUBDIR_INPUTS, RunPaths, stage_filename, write_to_run
@@ -125,36 +124,6 @@ def _confidence(value: str) -> Literal["high", "medium", "low"]:
     return "low"
 
 
-def _round_id_for(db: Session, paths: RunPaths, round_no: int) -> str:
-    """The cycle round_id for a 1-based round number on the run's cycle (clean 400s, never a 500).
-
-    The run must have ingested its setup (so a cycle exists) and the round number must be in range;
-    both failures surface as a `gate_required` / `validation_error` 400 the console can branch on.
-    """
-
-    cycle_id_value = (
-        paths.cycle_id_file.read_text(encoding="utf-8").strip()
-        if paths.cycle_id_file.exists()
-        else ""
-    )
-    if not cycle_id_value:
-        raise AppError(
-            code=ErrorCode.GATE_REQUIRED,
-            message=f"Run {paths.slug!r} has no cycle yet — ingest the setup workbook first.",
-            status_code=400,
-        )
-    cycle = load_cycle(db, cycle_id_value)
-    if round_no > len(cycle.rounds):
-        raise AppError(
-            code=ErrorCode.VALIDATION_ERROR,
-            message=(
-                f"Round {round_no} is out of range — the cycle has {len(cycle.rounds)} round(s)."
-            ),
-            status_code=400,
-        )
-    return cycle.rounds[round_no - 1].id
-
-
 def _bid_line_view(row: BidLine) -> BidLineView:
     return BidLineView(
         bid_line_id=row.bid_line_id,
@@ -219,7 +188,7 @@ def import_bids(
     paths = resolve_paths(run)
     # Validate the round against the cycle up front so a bad round is a clean 400, not a 500 deep
     # in the service (so even flexible-propose, which writes nothing, rejects an impossible round).
-    _round_id_for(db, paths, round)
+    resolve_round_id(db, paths, round)
     data = file.file.read()
 
     if mode == "strict":
@@ -258,7 +227,7 @@ def list_bids(
     """
 
     paths = resolve_paths(run)
-    round_id = _round_id_for(db, paths, round)
+    round_id = resolve_round_id(db, paths, round)
     cycle_id = paths.cycle_id_file.read_text(encoding="utf-8").strip()
     rows = (
         db.execute(
