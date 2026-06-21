@@ -7,12 +7,53 @@ one template-merge draft per awarded supplier, draft-only.
 
 from __future__ import annotations
 
-import pytest
+from decimal import Decimal
+from io import BytesIO
 
-from tests.api.test_alignment import _create_run, _login, _seed_sealed_run
+import pytest
+from openpyxl import load_workbook
+
+from app.domain.bid.template_schema import BODY_START_ROW, HEADER_ROW, SHEET_BIDS, BidColumn
+from tests.api.test_alignment import _XLSX, _create_run, _login, _seed_sealed_run
 from tests.api.test_post_award import _freeze_b
 
 RUNS = "/api/v1/runs"
+
+
+def _fill_bid_template_bumped(template_bytes: bytes, bump: Decimal) -> bytes:
+    """Fill the round template like the e2e seed but add `bump` to every All-In/FOB price.
+
+    Used to RESUBMIT a round with materially different prices so the supersede path fires (the prior
+    scored rows flip to non-scoreable), exercising the sealed-run sourcing fix.
+    """
+
+    wb = load_workbook(BytesIO(template_bytes))
+    ws = wb[SHEET_BIDS]
+    hdr = {ws.cell(HEADER_ROW, c).value: c for c in range(1, ws.max_column + 1)}
+    all_in_col = hdr[BidColumn.ALL_IN.value]
+    fob_col = hdr[BidColumn.FOB.value]
+    weekly_col = hdr[BidColumn.WEEKLY_VOL_OFFERED.value]
+    total_col = hdr[BidColumn.TOTAL_VOL_OFFERED.value]
+    sup_col = hdr[BidColumn.SUPPLIER.value]
+    lot_col = hdr[BidColumn.LOT.value]
+    for r in range(BODY_START_ROW, ws.max_row + 1):
+        sup = str(ws.cell(r, sup_col).value or "").strip()
+        lot = str(ws.cell(r, lot_col).value or "").strip()
+        if not sup or not lot:
+            continue
+        base = Decimal("12.00")
+        if "Grape" in lot:
+            price = base - (Decimal("1.50") if "Green Valley" in sup else Decimal("0.20"))
+        else:
+            price = base - (Decimal("1.50") if "Sunbelt" in sup else Decimal("0.20"))
+        price += bump
+        ws.cell(r, all_in_col, value=float(price))
+        ws.cell(r, fob_col, value=float(price - Decimal("1.00")))
+        ws.cell(r, weekly_col, value=600)
+        ws.cell(r, total_col, value=600 * 13)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 @pytest.mark.integration
@@ -145,6 +186,39 @@ def test_feedback_comms_unknown_run_404(client, seed_user, vault_root) -> None: 
     _seed_sealed_run(client, slug)
     resp = client.get(f"{RUNS}/{slug}/analysis/no-such-run/comms/feedback")
     assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_feedback_comms_sealed_after_resubmit(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """A resubmission after sealing must NOT move the sealed run's feedback prices/market-lows.
+
+    The draft sources from the sealed run's own `bid_score` → `bid_line` rows, so superseding the
+    scored rows with a new (higher-priced) submission leaves THAT run's draft byte-for-byte
+    unchanged. Without the sealed-run sourcing fix, the draft would re-read the now-current bumped
+    rows and the benchmark/premium values would shift.
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+
+    before = client.get(f"{RUNS}/{slug}/analysis/{analysis_run_id}/comms/feedback").json()
+    assert len(before) >= 1
+
+    # Resubmit round 1 at materially higher prices — supersedes the scored rows (now non-scoreable).
+    tmpl = client.post(f"{RUNS}/{slug}/rounds/1/template")
+    template_name = tmpl.json()["filename"]
+    template_bytes = client.get(f"{RUNS}/{slug}/files/{template_name}").content
+    bumped = _fill_bid_template_bumped(template_bytes, Decimal("5.00"))
+    imported = client.post(
+        "/api/v1/bids/import",
+        data={"run": slug, "round": 1, "mode": "strict"},
+        files={"file": (template_name, bumped, _XLSX)},
+    )
+    assert imported.status_code == 200, imported.text
+
+    after = client.get(f"{RUNS}/{slug}/analysis/{analysis_run_id}/comms/feedback").json()
+    assert after == before  # the sealed run's draft is unchanged by a later resubmission
 
 
 @pytest.mark.integration

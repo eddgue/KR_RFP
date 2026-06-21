@@ -191,26 +191,26 @@ def _constructed_price(
     )
 
 
-def _round_prices(
-    session: Session, cycle_id: str, round_id: str
-) -> dict[_Cell, dict[str, Decimal]]:
-    """The round's ACTIVE constructed price per cell -> {supplier_id: price}.
+def _round_prices(session: Session, analysis_run_id: str) -> dict[_Cell, dict[str, Decimal]]:
+    """The prices ACTUALLY scored in this sealed run -> {supplier_id: price} per cell.
 
-    Builds each supplier's representative active price with the engine's §7 `construct_price`
-    (All-In primary, else FOB + surcharges − discounts) — the SAME formula the scorer used — so a
-    component-basis bid (FOB only, no All-In) still counts in the benchmark + supplier rows instead
-    of being dropped for lacking an All-In value.
+    Joins the run's `eng.bid_score` rows to the exact `bid.bid_line` they scored (by `bid_line_id`)
+    and builds each price with the engine's §7 `construct_price`. Sourcing from the sealed run's OWN
+    rows — not "current scoreable by round" — keeps the draft consistent with the analysis being
+    rendered even after a later resubmission supersedes those rows (and uses the constructed price,
+    so a component-basis bid with no All-In still counts in the benchmark + supplier rows).
     """
 
     rows = session.execute(
         text(
-            "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
-            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, fob_case, "
-            "delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case "
-            "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd AND is_scoreable = true "
-            "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
+            "SELECT bs.supplier_id, bs.dc_id, bs.lot_id, bs.tf_id, "
+            "bl.submitted_all_in_case, bl.fob_case, bl.delivery_surcharge_case, "
+            "bl.vegcool_surcharge_case, bl.lot_discount_case "
+            "FROM eng.bid_score bs "
+            "JOIN bid.bid_line bl ON bl.bid_line_id = bs.bid_line_id "
+            "WHERE bs.analysis_run_id = :run"
         ),
-        {"cyc": cycle_id, "rnd": round_id},
+        {"run": analysis_run_id},
     ).all()
     by_cell: dict[_Cell, dict[str, Decimal]] = defaultdict(dict)
     for supplier_id, dc_id, lot_id, tf_id, all_in, fob, delivery, vegcool, disc in rows:
@@ -297,12 +297,22 @@ def feedback_drafts(
     """
 
     cycle_id = cycle_view.cycle_id
-    round_id, round_number = _round_id_and_number(session, analysis_run_id)
-    prices = _round_prices(session, cycle_id, round_id)
+    _, round_number = _round_id_and_number(session, analysis_run_id)
+    prices = _round_prices(session, analysis_run_id)
     eligibility = _eligibility(session, analysis_run_id)
     weekly = _weekly_volume(session, cycle_id)
-    ceiling = cycle_view.premium_ceiling or _DEFAULT_PREMIUM_CEILING
-    floor = cycle_view.coverage_floor or _DEFAULT_COVERAGE_FLOOR
+    # `is not None` (not truthiness): a cycle may explicitly set a 0 ceiling/floor, which the engine
+    # honors — so the supplier guidance must quote that threshold, not the default.
+    ceiling = (
+        cycle_view.premium_ceiling
+        if cycle_view.premium_ceiling is not None
+        else _DEFAULT_PREMIUM_CEILING
+    )
+    floor = (
+        cycle_view.coverage_floor
+        if cycle_view.coverage_floor is not None
+        else _DEFAULT_COVERAGE_FLOOR
+    )
 
     dc_name = {d.id: d.name for d in cycle_view.dcs}
     lot_name = {lot.id: lot.name for lot in cycle_view.lots}
@@ -475,8 +485,7 @@ def rejection_drafts(
     if award is None:
         raise ValueError(f"award {award_id!r} not found")
 
-    round_id, _ = _round_id_and_number(session, award.analysis_run_id)
-    prices = _round_prices(session, cycle_view.cycle_id, round_id)
+    prices = _round_prices(session, award.analysis_run_id)
     eligibility = _eligibility(session, award.analysis_run_id)
     awarded: set[tuple[str, str, str, str]] = {
         (dc, lot, tf, sup)
