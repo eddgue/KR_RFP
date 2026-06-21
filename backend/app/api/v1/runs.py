@@ -28,6 +28,11 @@ from app.api.deps import get_db
 from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
+from app.domain.eng.read import (
+    AnalysisSummary,
+    ScenarioComparisonRow,
+    ScenarioDetail,
+)
 from app.pilot.status import read_status
 from app.pilot.vault import (
     SUBDIR_INPUTS,
@@ -94,6 +99,37 @@ class GenerateTemplateResponse(BaseModel):
 
     filename: str
     kanban: dict[str, list[str]]
+
+
+class RunAnalysisResponse(BaseModel):
+    """The result of running a round's alignment analysis: the sealed run summary + scenario count.
+
+    `version` is the 1-based ordinal of this sealed run among the cycle's runs; `analysis_run_id` is
+    the handle the web threads through the scenario reads + the freeze; `scenario_count` is the
+    number of lenses sealed (A-G, normally 7).
+    """
+
+    version: int
+    analysis_run_id: str
+    round_number: int
+    sealed_at: datetime
+    scenario_count: int
+    filename: str = Field(description="The versioned alignment workbook written into outputs/.")
+
+
+class FreezeAwardRequest(BaseModel):
+    """Promote a human-selected lens to a FROZEN award (the governed decision)."""
+
+    analysis_run_id: str
+    scenario_code: str = Field(default="B", description="The lens to freeze (default B).")
+    award_code: str = Field(description="The buyer's award identifier (e.g. AWD-2026-TOMATO-1).")
+
+
+class FreezeAwardResponse(BaseModel):
+    """The frozen award's id + the scenario it was frozen from."""
+
+    award_id: str
+    scenario_code: str
 
 
 # --------------------------------------------------------------------------- #
@@ -372,3 +408,186 @@ def generate_bid_template(
     generated = svc.generate_bid_template(db, paths, round)
     board = svc.status(db, paths)
     return GenerateTemplateResponse(filename=generated.name, kanban=board)
+
+
+# --------------------------------------------------------------------------- #
+# web alignment / scenario slice — run a round's analysis, list it, compare the
+# seven lenses, inspect one lens cell-by-cell, and freeze a chosen lens. Every
+# route reuses PilotService (isolate_db=False) — no engine logic is reimplemented.
+# --------------------------------------------------------------------------- #
+@router.post(
+    "/{slug}/rounds/{round}/analysis",
+    response_model=RunAnalysisResponse,
+    summary="Run a round's alignment analysis (seals eng.* + writes the workbook)",
+)
+def run_analysis(
+    slug: str,
+    round: Annotated[int, PathParam(ge=1)],
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> RunAnalysisResponse:
+    """Run the engine on a round → a sealed `eng.analysis_run` (+ the versioned alignment workbook).
+
+    Wraps `PilotService.run_round`. The round is pre-validated (`resolve_round_id`) so the two
+    failure modes are DISTINCT clean 400s: `gate_required` when there's no cycle yet (setup not
+    ingested), `validation_error` when the round is out of range. Returns the sealed run summary
+    (version ordinal, analysis_run_id, sealed time, lens count) the web threads into the scenario
+    reads + the freeze. 404 if the run doesn't exist.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
+    out_path = svc.run_round(db, paths, round)
+
+    # The just-sealed run is the cycle's latest; surface its typed summary + the lens count.
+    analyses = svc.list_analyses(db, paths)
+    if not analyses:  # pragma: no cover — run_round always seals one
+        raise AppError(
+            code=ErrorCode.INTERNAL,
+            message="Analysis ran but no sealed run was found.",
+            status_code=500,
+        )
+    latest = analyses[-1]
+    scenario_count = len(svc.scenario_comparison(db, paths, latest.analysis_run_id))
+    return RunAnalysisResponse(
+        version=latest.version,
+        analysis_run_id=latest.analysis_run_id,
+        round_number=latest.round_number,
+        sealed_at=latest.sealed_at,
+        scenario_count=scenario_count,
+        filename=out_path.name,
+    )
+
+
+@router.get(
+    "/{slug}/analysis",
+    response_model=list[AnalysisSummary],
+    summary="List a run's sealed analyses",
+)
+def list_run_analyses(
+    slug: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[AnalysisSummary]:
+    """The run's SEALED analysis runs (oldest first, each with its version ordinal + round).
+
+    Empty list when the run has no cycle / no sealed run yet (a list endpoint, never a gate). 404 if
+    the run doesn't exist.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    return svc.list_analyses(db, paths)
+
+
+@router.get(
+    "/{slug}/analysis/{analysis_run_id}/scenarios",
+    response_model=list[ScenarioComparisonRow],
+    summary="Compare the seven lenses for a sealed analysis",
+)
+def get_scenario_comparison(
+    slug: str,
+    analysis_run_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ScenarioComparisonRow]:
+    """The seven lenses A-G side by side — spend, Δ vs A, savings, counts, breaches (which lens).
+
+    Numbers are identical to the alignment workbook's Scenario Comparison tab (shared computation).
+    400 (`gate_required`) before any cycle; 404 for an unknown run / analysis run.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    _ensure_analysis(db, paths, slug, analysis_run_id)
+    return svc.scenario_comparison(db, paths, analysis_run_id)
+
+
+@router.get(
+    "/{slug}/analysis/{analysis_run_id}/scenarios/{scenario_code}",
+    response_model=ScenarioDetail,
+    summary="Inspect one lens cell-by-cell",
+)
+def get_scenario_detail(
+    slug: str,
+    analysis_run_id: str,
+    scenario_code: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> ScenarioDetail:
+    """One lens's per-cell competitive grid (every supplier's $/case, min, incumbent, awarded share)
+    plus the savings headline. 400 (`gate_required`) before any cycle; 404 unknown run / analysis;
+    `validation_error` (400) for an unknown scenario code on the run.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    _ensure_analysis(db, paths, slug, analysis_run_id)
+    try:
+        return svc.scenario_detail(db, paths, analysis_run_id, scenario_code)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"Scenario {scenario_code!r} is not a lens on analysis {analysis_run_id!r}.",
+            status_code=400,
+        ) from exc
+
+
+@router.post(
+    "/{slug}/awards/freeze",
+    response_model=FreezeAwardResponse,
+    summary="Freeze a chosen lens into an award (governed decision)",
+)
+def freeze_award(
+    slug: str,
+    body: FreezeAwardRequest,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> FreezeAwardResponse:
+    """Promote the human-selected lens to a FROZEN award (`PilotService.freeze_award`).
+
+    A governed decision (ADR-0006: the human asserts the award) — the FROZEN audit event fires
+    inside the award domain on this path. 400 (`gate_required`) before any cycle; 404 unknown run;
+    `validation_error` (400) for an unknown analysis run / scenario. Idempotent: re-freezing the
+    same (run, scenario) returns the existing award_id. Returns `{award_id, scenario_code}`.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    _ensure_analysis(db, paths, slug, body.analysis_run_id)
+    try:
+        award_id = svc.freeze_award(
+            db,
+            paths,
+            analysis_run_id=body.analysis_run_id,
+            scenario_code=body.scenario_code,
+            award_code=body.award_code,
+        )
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=f"Could not freeze award: {exc}",
+            status_code=400,
+        ) from exc
+    return FreezeAwardResponse(award_id=award_id, scenario_code=body.scenario_code)
+
+
+def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: str) -> None:
+    """Guard the scenario/award reads: a cycle must exist (400) and the run must be one of its
+    SEALED analyses (404) — so an unknown / other-run analysis id is never silently served.
+    """
+
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.GATE_REQUIRED,
+            message=f"Run {slug!r} has no sealed analysis yet — run a round's analysis first.",
+            status_code=400,
+        )
+    known = {a.analysis_run_id for a in service().list_analyses(db, paths)}
+    if analysis_run_id not in known:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No sealed analysis {analysis_run_id!r} on run {slug!r}.",
+            status_code=404,
+        )
