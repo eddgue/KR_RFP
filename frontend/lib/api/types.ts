@@ -138,6 +138,109 @@ export function isBidImportProposal(
   return "proposal" in res;
 }
 
+// ---------------------------------------------------------------------------
+// Alignment / scenario contract: sealed analyses, the seven lenses (A-G), the
+// per-cell competitive grid, and the governed award freeze. Field names mirror
+// the backend `app.domain.eng.read` + `app.api.v1.runs` views exactly.
+// ---------------------------------------------------------------------------
+
+// One sealed eng.analysis_run. GET /runs/{slug}/analysis -> AnalysisSummary[].
+export interface AnalysisSummary {
+  // 1-based ordinal among the cycle's sealed runs (oldest = 1).
+  version: number;
+  analysis_run_id: string;
+  round_number: number;
+  engine_version: string;
+  sealed_at: string; // ISO timestamp
+}
+
+// POST /runs/{slug}/rounds/{round}/analysis — seals eng.* + writes the workbook.
+export interface RunAnalysisResponse {
+  version: number;
+  analysis_run_id: string;
+  round_number: number;
+  sealed_at: string;
+  scenario_count: number;
+  filename: string;
+}
+
+// One lens rolled up. GET /runs/{slug}/analysis/{id}/scenarios -> [].
+export interface ScenarioComparisonRow {
+  code: string; // lens code A-G
+  label: string;
+  description: string;
+  total_spend: number;
+  delta_vs_a: number; // spend Δ vs lens A (the lowest-cost benchmark)
+  savings_vs_incumbent_pct: number; // fraction (0.05 = 5%)
+  savings_vs_stly_pct: number; // fraction vs the synthetic prior-year proxy
+  supplier_count: number;
+  cell_count: number;
+  cap_breach_count: number;
+  is_recommended: boolean; // true for lens B (the default recommendation)
+}
+
+// One supplier's competitive line within a cell.
+export interface SupplierCell {
+  name: string;
+  price_per_case: number | null;
+  is_min: boolean; // lowest priced bid in the cell
+  is_incumbent: boolean;
+  is_recommended: boolean; // this lens awarded this supplier the cell
+  rec_score: number | null; // RecScore 0-100
+  volume_share: number; // this lens's awarded share (fraction; 0 if not awarded)
+}
+
+// The supplier a lens awarded a cell (+ B-only rec_type reason).
+export interface SupplierCellRef {
+  supplier: string;
+  rec_type: string; // B reason label ("Lowest cost" / …); "" for other lenses
+  price: number | null;
+}
+
+// One (DC × lot × item × TF) cell resolved to names + the competitive picture.
+export interface ScenarioDetailCell {
+  dc: string;
+  lot: string;
+  item: string;
+  tf: string;
+  volume: number;
+  baseline_price: number; // incumbent-routing baseline $/case
+  min_price: number | null;
+  incumbent_supplier: string;
+  suppliers: SupplierCell[];
+  recommended: SupplierCellRef | null;
+}
+
+export interface ScenarioSavingsSummary {
+  total_spend: number;
+  savings_vs_incumbent: number; // dollars
+  savings_vs_incumbent_pct: number; // fraction
+  savings_vs_stly: number;
+  savings_vs_stly_pct: number;
+}
+
+// One lens cell-by-cell. GET /runs/{slug}/analysis/{id}/scenarios/{code}.
+export interface ScenarioDetail {
+  code: string;
+  label: string;
+  description: string;
+  is_recommended: boolean;
+  savings: ScenarioSavingsSummary;
+  cells: ScenarioDetailCell[];
+}
+
+// POST /runs/{slug}/awards/freeze.
+export interface FreezeAwardRequest {
+  analysis_run_id: string;
+  scenario_code: string;
+  award_code: string;
+}
+
+export interface FreezeAwardResponse {
+  award_id: string;
+  scenario_code: string;
+}
+
 // A scored/aligned bid line. GET /bids?run=&round= -> BidLineView[].
 export interface BidLineView {
   bid_line_id: string;

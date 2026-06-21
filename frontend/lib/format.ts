@@ -41,3 +41,28 @@ export function formatCount(value: number | null): string {
   if (value == null) return "—";
   return value.toLocaleString();
 }
+
+// A USD dollar amount, e.g. 1234567.5 -> "$1,234,568". Whole dollars by default
+// (spend/savings totals are large); pass { cents: true } for 2-decimal precision.
+export function formatMoney(
+  value: number | null,
+  opts?: { cents?: boolean },
+): string {
+  if (value == null) return "—";
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: opts?.cents ? 2 : 0,
+    maximumFractionDigits: opts?.cents ? 2 : 0,
+  });
+}
+
+// A fraction rendered as a percentage, e.g. 0.0524 -> "5.2%".
+export function formatPercent(frac: number | null): string {
+  if (frac == null) return "—";
+  return frac.toLocaleString(undefined, {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
