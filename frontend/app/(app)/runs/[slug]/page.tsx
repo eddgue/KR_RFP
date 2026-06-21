@@ -115,7 +115,12 @@ export default function RunDetailPage({
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
               <DownloadArchiveButton slug={run.slug} size="sm" />
               <Link href={`/runs/${run.slug}/intake`}>
-                <Button size="sm">Bid intake</Button>
+                <Button variant="secondary" size="sm">
+                  Bid intake
+                </Button>
+              </Link>
+              <Link href={`/runs/${run.slug}/alignment`}>
+                <Button size="sm">Alignment</Button>
               </Link>
             </div>
           </Panel>

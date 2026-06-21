@@ -14,3 +14,10 @@ export {
   listBids,
 } from "./intake";
 export type { ImportBidsArgs } from "./intake";
+export {
+  runAnalysis,
+  listAnalyses,
+  getScenarioComparison,
+  getScenarioDetail,
+  freezeAward,
+} from "./alignment";
