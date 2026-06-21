@@ -55,6 +55,29 @@ def test_commit_pushes_to_remote_when_autopush_enabled(
     assert after != before  # the remote advanced — the commit was pushed (it survives the wipe)
 
 
+def test_commit_pushes_to_empty_vault_with_no_upstream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A freshly-created vault repo: an EMPTY bare remote with no commits and no branch yet, so the
+    # clone has no upstream. The first governed write must still reach it (push -u origin HEAD).
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True
+    )
+    vault = tmp_path / "vault"
+    subprocess.run(["git", "clone", str(remote), str(vault)], check=True, capture_output=True)
+    _git(vault, "config", "user.email", "t@kr-rfp.local")
+    _git(vault, "config", "user.name", "T")
+
+    monkeypatch.setenv("RFP_VAULT_AUTOPUSH", "1")
+    (vault / "runs").mkdir()
+    (vault / "runs" / "note.txt").write_text("first governed change", encoding="utf-8")
+    git_commit_run(vault, "demo-run", "first write")
+
+    # The remote received the branch + commit despite having had no upstream to begin with.
+    assert _git(remote, "rev-parse", "HEAD") == _git(vault, "rev-parse", "HEAD")
+
+
 def test_commit_does_not_push_when_autopush_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
