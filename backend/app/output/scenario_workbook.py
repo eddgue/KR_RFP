@@ -2338,9 +2338,7 @@ def _gather_capacity_check(
         for r in rows
     ]
     # Over-capacity first, then by cell — the risk rows lead.
-    out.sort(
-        key=lambda x: (not x.over_capacity, x.dc_name, x.lot_name, x.tf_name, x.supplier_name)
-    )
+    out.sort(key=lambda x: (not x.over_capacity, x.dc_name, x.lot_name, x.tf_name, x.supplier_name))
     return out
 
 

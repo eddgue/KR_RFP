@@ -53,8 +53,7 @@ def test_generated_capacity_sheet_has_keys_and_entry_columns() -> None:
     _wb, ws, headers = _capacity_sheet(generate_template_bytes(scope))
 
     emitted = [
-        str(ws.cell(row=HEADER_ROW, column=c).value)
-        for c in range(1, len(CAPACITY_HEADERS) + 1)
+        str(ws.cell(row=HEADER_ROW, column=c).value) for c in range(1, len(CAPACITY_HEADERS) + 1)
     ]
     assert emitted == list(CAPACITY_HEADERS)
     # Every key-ID column is present (the validated join identity, D21).
