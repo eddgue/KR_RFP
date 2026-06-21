@@ -130,15 +130,17 @@ export default function AlignmentPage({
           const rec = rows.find((r) => r.is_recommended) ?? rows[0];
           return rec ? rec.code : null;
         });
+        setComparisonLoading(false);
       })
       .catch((err) => {
+        // Aborted = a superseded analysis selection; the live request owns `loading`.
         if (err instanceof DOMException && err.name === "AbortError") return;
         setComparison([]);
         setComparisonError(
           err instanceof ApiError ? err.detail : "Could not load the scenarios.",
         );
-      })
-      .finally(() => setComparisonLoading(false));
+        setComparisonLoading(false);
+      });
     return () => ctrl.abort();
   }, [slug, selectedAnalysisId]);
 
@@ -149,18 +151,26 @@ export default function AlignmentPage({
       return;
     }
     const ctrl = new AbortController();
+    // Clear the previous lens SYNCHRONOUSLY so a stale detail can never render against the
+    // newly-selected code (which would let the freeze modal show lens A while posting lens B).
+    setDetail(null);
     setDetailLoading(true);
     setDetailError(null);
     getScenarioDetail(slug, selectedAnalysisId, selectedCode, ctrl.signal)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        setDetailLoading(false);
+      })
       .catch((err) => {
+        // An aborted request belongs to a superseded selection — leave `loading` for the live one
+        // (don't flip it false here, or the stale-but-cleared state would look "loaded").
         if (err instanceof DOMException && err.name === "AbortError") return;
         setDetail(null);
         setDetailError(
           err instanceof ApiError ? err.detail : "Could not load this scenario.",
         );
-      })
-      .finally(() => setDetailLoading(false));
+        setDetailLoading(false);
+      });
     return () => ctrl.abort();
   }, [slug, selectedAnalysisId, selectedCode]);
 
@@ -337,7 +347,9 @@ export default function AlignmentPage({
                 </Panel>
               )}
               {!detailLoading && detailError && <Alert tone="error">{detailError}</Alert>}
-              {!detailLoading && !detailError && detail && (
+              {/* Render ONLY when the loaded lens matches the current selection — belt-and-suspenders
+                  against a stale detail rendering (and being frozen) for the wrong lens. */}
+              {!detailLoading && !detailError && detail && detail.code === selectedCode && (
                 <ScenarioDetailPanel
                   detail={detail}
                   frozenAwardId={frozenAwardId}
@@ -356,8 +368,8 @@ export default function AlignmentPage({
             onConfirm={handleFreezeConfirm}
             submitting={freezing}
             error={freezeError}
-            scenarioCode={detail?.code ?? selectedCode ?? ""}
-            scenarioLabel={detail?.label ?? ""}
+            scenarioCode={selectedCode ?? ""}
+            scenarioLabel={detail?.code === selectedCode ? (detail?.label ?? "") : ""}
             suggestedCode={suggestedAwardCode}
           />
         </>
