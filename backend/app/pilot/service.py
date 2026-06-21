@@ -183,7 +183,14 @@ class BidIngestResult:
 class PilotService:
     """Orchestrates the per-RFP run vault + the governed cycle store for the pilot loop."""
 
-    def __init__(self, vault_root: Path, *, isolate_db: bool = True, db_runs: bool = False) -> None:
+    def __init__(
+        self,
+        vault_root: Path,
+        *,
+        isolate_db: bool = True,
+        db_runs: bool = False,
+        persist_outputs: bool = True,
+    ) -> None:
         self.vault_root = Path(vault_root)
         # D30: each run gets its OWN blank database. On by default (the compliant runtime); unit
         # tests that share a rolled-back session pass isolate_db=False.
@@ -193,6 +200,12 @@ class PilotService:
         # runs from the DB. OFF for the MCP harness (it keeps its file vault) and for tests that
         # don't opt in. Dual-write rides the session passed to start_run/ingest_setup.
         self.db_runs = db_runs
+        # ADR-0018 Slice 5: when OFF (the WEB CONSOLE), run_round/freeze_award/record_adjustment do
+        # only the GOVERNED DB writes (engine seal, audit events, awd_service.*) and skip every
+        # vault side-effect (the workbook/guide/post-award files, the kanban/run_data/feedback
+        # files, the git commit) — those deliverables render on request from the DB instead. ON for
+        # the MCP harness (it keeps its file vault) and for tests/CLI that drive the file path.
+        self.persist_outputs = persist_outputs
 
     # ------------------------------------------------------------------ #
     # step 0 — start run + setup
@@ -682,29 +695,33 @@ class PilotService:
             version=version_seq,
         )
         out_path = runpaths.outputs / filename
-        write_scenario_workbook_xlsx(
-            session,
-            cycle,
-            effective_config,
-            run_result.analysis_run_id,
-            round_id,
-            award,
-            output_path=out_path,
-            synthetic=synthetic,
-        )
-
-        self._render_kanban(
-            session,
-            runpaths,
-            extra_done=[f"Round {round_no} alignment analysis v{version_seq} ready"],
-        )
-        self.export_run_data(session, runpaths)
-        self.feedback_file(session, runpaths)
-        git_commit_run(
-            self.vault_root,
-            runpaths.slug,
-            f"round {round_no} alignment analysis v{version_seq} sealed",
-        )
+        # The GOVERNED writes (the engine seal + the SEALED audit event) ran above on the session —
+        # those always happen. The vault SIDE-EFFECTS (the workbook on disk, the kanban/run_data/
+        # feedback files, the git commit) are gated by `persist_outputs`: the web console renders
+        # the alignment workbook on request from the sealed records (ADR-0018 Slice 5), no writes.
+        if self.persist_outputs:
+            write_scenario_workbook_xlsx(
+                session,
+                cycle,
+                effective_config,
+                run_result.analysis_run_id,
+                round_id,
+                award,
+                output_path=out_path,
+                synthetic=synthetic,
+            )
+            self._render_kanban(
+                session,
+                runpaths,
+                extra_done=[f"Round {round_no} alignment analysis v{version_seq} ready"],
+            )
+            self.export_run_data(session, runpaths)
+            self.feedback_file(session, runpaths)
+            git_commit_run(
+                self.vault_root,
+                runpaths.slug,
+                f"round {round_no} alignment analysis v{version_seq} sealed",
+            )
         return out_path
 
     @staticmethod
@@ -779,42 +796,46 @@ class PilotService:
             frozen_by=actor,
         )
 
-        booking = self._frozen_award_view(session, cycle, award_id, scenario_code)
-        internal_name = stage_filename(self._stage("booking_guide"), "award_booking_guide")
-        supplier_name = stage_filename(self._stage("booking_guide"), "award_supplier_guides")
-        synthetic = is_rehearsal(runpaths)
-        write_booking_guide_internal_xlsx(
-            cycle, booking, output_path=runpaths.outputs / internal_name, synthetic=synthetic
-        )
-        write_supplier_award_guides_xlsx(
-            cycle, booking, output_path=runpaths.outputs / supplier_name, synthetic=synthetic
-        )
-        # Individual per-supplier files (the sendable artifacts — only that supplier's data), so the
-        # award notification (E-37) can attach a supplier's OWN guide, never the combined workbook.
-        guide_stage = self._stage("booking_guide")
-        awarded_ids = {cell.supplier_id for cell in booking.cells}
-        write_supplier_award_guide_files(
-            cycle,
-            booking,
-            paths_by_supplier={
-                sup.id: runpaths.outputs
-                / stage_filename(
-                    guide_stage, supplier_guide_label(award_id, award_code, sup.name, sup.id)
-                )
-                for sup in cycle.suppliers
-                if sup.id in awarded_ids
-            },
-            synthetic=synthetic,
-        )
+        # The GOVERNED freeze (awd.* + the FROZEN audit event) ran above. The booking guides on
+        # disk + the kanban/run_data/feedback files + the git commit are gated by `persist_outputs`:
+        # the console renders the guides on request from the frozen award (ADR-0018 Slice 5).
+        if self.persist_outputs:
+            booking = self._frozen_award_view(session, cycle, award_id, scenario_code)
+            internal_name = stage_filename(self._stage("booking_guide"), "award_booking_guide")
+            supplier_name = stage_filename(self._stage("booking_guide"), "award_supplier_guides")
+            synthetic = is_rehearsal(runpaths)
+            write_booking_guide_internal_xlsx(
+                cycle, booking, output_path=runpaths.outputs / internal_name, synthetic=synthetic
+            )
+            write_supplier_award_guides_xlsx(
+                cycle, booking, output_path=runpaths.outputs / supplier_name, synthetic=synthetic
+            )
+            # Individual per-supplier files (the sendable artifacts — only that supplier's data), so
+            # the award notification (E-37) attaches a supplier's OWN guide, not the combined book.
+            guide_stage = self._stage("booking_guide")
+            awarded_ids = {cell.supplier_id for cell in booking.cells}
+            write_supplier_award_guide_files(
+                cycle,
+                booking,
+                paths_by_supplier={
+                    sup.id: runpaths.outputs
+                    / stage_filename(
+                        guide_stage, supplier_guide_label(award_id, award_code, sup.name, sup.id)
+                    )
+                    for sup in cycle.suppliers
+                    if sup.id in awarded_ids
+                },
+                synthetic=synthetic,
+            )
 
-        self._render_kanban(
-            session, runpaths, extra_done=[f"Award {award_code} frozen — booking guides ready"]
-        )
-        self.export_run_data(session, runpaths)
-        self.feedback_file(session, runpaths)
-        git_commit_run(
-            self.vault_root, runpaths.slug, f"award {award_code} frozen → booking guides"
-        )
+            self._render_kanban(
+                session, runpaths, extra_done=[f"Award {award_code} frozen — booking guides ready"]
+            )
+            self.export_run_data(session, runpaths)
+            self.feedback_file(session, runpaths)
+            git_commit_run(
+                self.vault_root, runpaths.slug, f"award {award_code} frozen → booking guides"
+            )
         return award_id
 
     def record_adjustment(
@@ -851,18 +872,21 @@ class PilotService:
 
         filename = stage_filename(self._stage("post_award"), "post_award", version=version_no)
         out_path = runpaths.outputs / filename
-        write_post_award_adjustments_xlsx(
-            session, award_id=award_id, as_of_version=version_no, output_path=out_path
-        )
-
-        self._render_kanban(
-            session, runpaths, extra_done=[f"Post-award adjustment v{version_no} recorded"]
-        )
-        self.export_run_data(session, runpaths)
-        self.feedback_file(session, runpaths)
-        git_commit_run(
-            self.vault_root, runpaths.slug, f"post-award adjustment v{version_no} recorded"
-        )
+        # The GOVERNED layer (awd.add_adjustment + the CREATED audit event) ran above. The
+        # post-award doc on disk + the kanban/run_data/feedback files + the git commit are gated by
+        # `persist_outputs`: the web console renders the doc on request (ADR-0018 Slice 5).
+        if self.persist_outputs:
+            write_post_award_adjustments_xlsx(
+                session, award_id=award_id, as_of_version=version_no, output_path=out_path
+            )
+            self._render_kanban(
+                session, runpaths, extra_done=[f"Post-award adjustment v{version_no} recorded"]
+            )
+            self.export_run_data(session, runpaths)
+            self.feedback_file(session, runpaths)
+            git_commit_run(
+                self.vault_root, runpaths.slug, f"post-award adjustment v{version_no} recorded"
+            )
         return out_path
 
     def history(self, session: Session, runpaths: RunPaths) -> dict[str, object]:
@@ -1852,11 +1876,12 @@ class PilotService:
         Loads the run's cycle (for names + the delivery window) and renders the award template per
         awarded supplier. Raises ValueError on an unknown award (router -> 404).
 
-        Each draft attaches the supplier's OWN individual award guide (`write_supplier_award_guide_
-        files`, written at freeze, award-code-stamped so a later freeze can't shadow it) — never the
-        combined all-suppliers workbook. The filename per supplier is recomputed deterministically
-        and only named when the file is actually present (otherwise `[#AwardFileName]` is left for
-        the buyer to attach).
+        Each draft attaches the supplier's OWN individual award guide (award-id-stamped so a later
+        freeze can't shadow it) — never the combined all-suppliers workbook. The filename per
+        supplier is recomputed deterministically. On the HARNESS path it is named only when the file
+        is present on disk; on the CONSOLE path (`persist_outputs` off) the guide renders on request
+        for any AWARDED supplier (ADR-0018 Slice 5), so it is named whenever that supplier has
+        awarded cells. Otherwise `[#AwardFileName]` is left for the buyer to attach.
         """
 
         cycle = self._load_cycle(session, runpaths)
@@ -1866,12 +1891,26 @@ class PilotService:
         award_files: dict[str, str] = {}
         if award is not None:
             guide_stage = self._stage("booking_guide")
+            # Console (render-on-request): an awarded supplier's guide is always producible, so name
+            # it from the award lines. Harness: name it only when the file is on disk.
+            awarded_supplier_ids = {
+                sup_id
+                for (sup_id,) in session.execute(
+                    text("SELECT DISTINCT supplier_id FROM awd.award_line WHERE award_id = :aid"),
+                    {"aid": award.award_id},
+                ).all()
+            }
             for sup in cycle.suppliers:
                 fname = stage_filename(
                     guide_stage,
                     supplier_guide_label(award.award_id, award.award_code, sup.name, sup.id),
                 )
-                if (runpaths.outputs / fname).is_file():
+                available = (
+                    sup.id in awarded_supplier_ids
+                    if not self.persist_outputs
+                    else (runpaths.outputs / fname).is_file()
+                )
+                if available:
                     award_files[sup.id] = fname
         return award_drafts(
             session,

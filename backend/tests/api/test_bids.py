@@ -269,7 +269,12 @@ def test_flexible_propose_failure_cleans_scratch(client, seed_user, vault_root) 
 # --------------------------------------------------------------------------- #
 @pytest.mark.integration
 def test_download_run_archive_zip(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
-    """GET /runs/{slug}/archive streams a zip carrying the folder skeleton + the run's files."""
+    """GET /runs/{slug}/archive streams a zip of the run's DB-rendered deliverables (Slice 5).
+
+    The archive is a projection of `enumerate_deliverables` (rendered on request), NOT a scan of the
+    vault folder: each entry is `<slug>/<deliverable_name>` and the bytes are real xlsx payloads. A
+    fresh run (no cycle yet) carries exactly the Setup/Kickoff workbook.
+    """
 
     import zipfile
 
@@ -281,14 +286,11 @@ def test_download_run_archive_zip(client, seed_user, vault_root) -> None:  # typ
     assert resp.headers["content-type"] == "application/zip"
     assert f"{slug}.zip" in resp.headers["content-disposition"]
 
-    names = zipfile.ZipFile(io.BytesIO(resp.content)).namelist()
-    # The empty-folder skeleton is present (a drop target each) ...
-    assert f"{slug}/inputs/" in names
-    assert f"{slug}/outputs/" in names
-    assert f"{slug}/memory/" in names
-    # ... alongside the created run's setup workbook + RUN.md manifest.
-    assert any(n.endswith("setup_kickoff.xlsx") for n in names)
-    assert any(n.endswith("RUN.md") for n in names)
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    names = zf.namelist()
+    # The DB-rendered deliverable(s), each under the run slug — a fresh run has just the setup book.
+    assert names == [f"{slug}/01_setup_kickoff.xlsx"]
+    assert zf.read(names[0])[:2] == b"PK"  # a real xlsx (zip) payload, rendered from the DB
 
 
 # --------------------------------------------------------------------------- #

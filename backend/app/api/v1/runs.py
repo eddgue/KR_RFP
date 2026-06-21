@@ -13,14 +13,14 @@ with the bids router via `app.api.v1.pilot_common`.
 
 from __future__ import annotations
 
+import zipfile
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
+from io import BytesIO
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from fastapi import Path as PathParam
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -35,13 +35,11 @@ from app.domain.eng.read import (
     ScenarioComparisonRow,
     ScenarioDetail,
 )
+from app.pilot.deliverables import Deliverable, enumerate_deliverables
 from app.pilot.models import Run
 from app.pilot.run_repo import list_run_records
 from app.pilot.status import kanban
-from app.pilot.vault import (
-    RunPaths,
-    build_run_zip,
-)
+from app.pilot.vault import RunPaths
 
 router = APIRouter()
 
@@ -210,53 +208,64 @@ def _summary(run: Run, board: dict[str, list[str]]) -> RunSummary:
     )
 
 
-def _run_files(paths: RunPaths) -> list[RunFile]:
-    """Every file in the run's inputs/ + outputs/ dirs (skipping the .gitkeep scaffold markers)."""
+def _run_files(db: Session, run: Run) -> list[RunFile]:
+    """Every deliverable the run can produce, projected from the DB (ADR-0018 Slice 5).
 
+    The console's file list is `enumerate_deliverables` rendered on request — NOT a scan of the
+    vault `inputs/`/`outputs/` dirs. Each item's `size_bytes` is the rendered byte length (the
+    workbooks are deterministic DB-renders, E-39); `modified` is the request time (a render has no
+    on-disk mtime). Names match exactly what the harness writes today.
+    """
+
+    now = datetime.now(UTC).isoformat()
     files: list[RunFile] = []
-    for directory, kind in ((paths.inputs, "input"), (paths.outputs, "output")):
-        if not directory.is_dir():
-            continue
-        for entry in sorted(directory.iterdir()):
-            if not entry.is_file() or entry.name == ".gitkeep":
-                continue
-            stat = entry.stat()
-            files.append(
-                RunFile(
-                    name=entry.name,
-                    kind="input" if kind == "input" else "output",
-                    size_bytes=stat.st_size,
-                    modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
-                )
+    for d in enumerate_deliverables(
+        db, cycle_id=run.cycle_id, slug=run.slug, rehearsal=run.rehearsal
+    ):
+        files.append(
+            RunFile(
+                name=d.name,
+                kind=d.kind,
+                size_bytes=len(d.render(db)),
+                modified=now,
             )
+        )
     return files
 
 
-def _resolve_run_file(paths: RunPaths, name: str) -> Path:
-    """Resolve a plain filename to a real file inside the run's inputs/ or outputs/, or 404.
+def _resolve_deliverable(db: Session, run: Run, name: str) -> Deliverable:
+    """Resolve a plain filename to the matching DB deliverable, or 404 (ADR-0018 Slice 5).
 
-    Path-traversal guard: only a bare filename is accepted, and the resolved path must stay inside
-    the run's inputs/ or outputs/ dir — anything that escapes (`..`, an absolute path, a nested
-    segment) or that doesn't exist is a clean 404, never a read outside the run folder.
+    The console serves a render, never a file off disk, so there is no path-traversal surface: only
+    an exact match against an enumerated deliverable name is served (anything else is a clean 404).
     """
 
-    not_found = AppError(
+    for d in enumerate_deliverables(
+        db, cycle_id=run.cycle_id, slug=run.slug, rehearsal=run.rehearsal
+    ):
+        if d.name == name:
+            return d
+    raise AppError(
         code=ErrorCode.NOT_FOUND,
-        message=f"No file named {name!r} in run {paths.slug!r}.",
+        message=f"No file named {name!r} in run {run.slug!r}.",
         status_code=404,
     )
-    # A bare filename only — reject any path separators / parent refs before touching the fs.
-    if name != Path(name).name or name in ("", ".", ".."):
-        raise not_found
-    for directory in (paths.inputs, paths.outputs):
-        candidate = (directory / name).resolve()
-        try:
-            candidate.relative_to(directory.resolve())
-        except ValueError:
-            continue
-        if candidate.is_file():
-            return candidate
-    raise not_found
+
+
+def _run_archive_zip(db: Session, run: Run) -> bytes:
+    """An in-memory zip of every DB-rendered deliverable, under the run slug (ADR-0018 Slice 5).
+
+    Replaces the on-disk `build_run_zip` dir-scan: each deliverable is rendered from the DB and
+    written into the zip at `<slug>/<name>` so the buyer unzips a complete, self-describing folder.
+    """
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for d in enumerate_deliverables(
+            db, cycle_id=run.cycle_id, slug=run.slug, rehearsal=run.rehearsal
+        ):
+            zf.writestr(f"{run.slug}/{d.name}", d.render(db))
+    return buffer.getvalue()
 
 
 # --------------------------------------------------------------------------- #
@@ -333,10 +342,14 @@ def list_run_files(
     user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> list[RunFile]:
-    """The files in the run's inputs/ + outputs/ dirs, or 404 if the slug isn't a real run."""
+    """The run's deliverables, projected from the DB (Slice 5), or 404 if the run doesn't exist.
 
-    paths = resolve_paths(db, slug)
-    return _run_files(paths)
+    Not a vault dir-scan: each item is what the run CAN produce (setup template, bid templates,
+    sealed-analysis alignment workbooks, frozen-award guides, post-award docs), rendered on request.
+    """
+
+    run = resolve_run(db, slug)
+    return _run_files(db, run)
 
 
 @router.get("/{slug}/files/{name}", summary="Download a run file")
@@ -345,39 +358,37 @@ def download_run_file(
     name: str,
     user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
-) -> FileResponse:
-    """Stream a run file as an attachment, or 404 if the run/file is missing.
+) -> Response:
+    """Render the named deliverable from the DB and stream it as an attachment (Slice 5).
 
-    Path-traversal safe: only a plain filename that resolves inside the run's inputs/ or outputs/
-    is served (see `_resolve_run_file`); the response is an xlsx attachment the browser downloads.
+    The bytes are generated on request from the governed records (never read off disk); only an
+    exact match against an enumerated deliverable name is served, so an unknown name is a clean 404.
     """
 
-    paths = resolve_paths(db, slug)
-    target = _resolve_run_file(paths, name)
-    return FileResponse(
-        path=target,
+    run = resolve_run(db, slug)
+    deliverable = _resolve_deliverable(db, run, name)
+    return Response(
+        content=deliverable.render(db),
         media_type=_XLSX_MEDIA_TYPE,
-        filename=target.name,
-        content_disposition_type="attachment",
+        headers={"Content-Disposition": f'attachment; filename="{deliverable.name}"'},
     )
 
 
-@router.get("/{slug}/archive", summary="Download the whole run folder as a zip")
+@router.get("/{slug}/archive", summary="Download all the run's deliverables as a zip")
 def download_run_archive(
     slug: str,
     user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
-    """Stream the run's full folder set (skeleton + files) as one zip, or 404 if the run is missing.
+    """Stream every deliverable as one in-memory zip (Slice 5), or 404 if the run doesn't exist.
 
-    The zip carries the inputs/outputs/memory folder skeleton plus the run's files + manifests, so
-    the console user can unzip it locally and drop each downloaded output into the folder it belongs
-    to (see `build_run_zip`).
+    Each deliverable is rendered from the DB and written into the zip at `<slug>/<name>` — a
+    complete, self-describing folder the buyer unzips locally. Nothing is read off disk.
     """
 
-    paths = resolve_paths(db, slug)
+    run = resolve_run(db, slug)
     return Response(
-        content=build_run_zip(paths),
+        content=_run_archive_zip(db, run),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{slug}.zip"'},
     )
