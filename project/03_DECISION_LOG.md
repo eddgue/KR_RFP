@@ -225,6 +225,15 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D36 — The web app runs on ONE shared governed DB with strict per-run scoping; reference master data is shared, transactional data is per-run · **NOTE 2026-06-21**
+**Why.** The web console must run **multiple RFPs in parallel** without their data cross-contaminating, and that must be **how the long-term app works** (sponsor: no point building it differently now). The harness's per-run *isolated database* (D30) suits the ephemeral online harness, but the persistent web app keeps the simpler single-database model — so isolation is enforced by **scoping**, not by a database boundary.
+**Decision.** The console wraps `PilotService` with **`isolate_db=False`** (shares the request's governed session; no per-run DB). Every run-scoped read/write is **scoped to that run's own `cycle_id` (+ `round_id`)**, layered on the existing tenant isolation — never an unscoped "all rows" query. Each run is also its own navigable surface (`/runs/{slug}`), so two RFPs run side by side in separate tabs.
+**Reference vs transactional data.** For two runs to coexist in one DB, setup ingest distinguishes **shared master data** from **per-RFP data**: **DCs are the canonical fixed set** ("always the same ones in every sample") and **suppliers are a shared, growing list** — both are **reused by natural key** (DC by `dc_name`, supplier by `canonical_name`) instead of re-inserted, so a second run does not collide on `ref.dc`/`ref.supplier`'s global unique codes. **Items are per-RFP** (tied to the run's freshly-minted commodity) and stay separate rows, but get a **globally-unique `item_code`** (positional `ITEM-NN` would collide). Lots/cycle/scope/bid rows are already per-cycle. The reuse is a **no-op for single-ingest flows** (empty ref tables) and only engages on a second run in the shared DB.
+**Correctness.** Proven by `tests/api/test_bids.py::test_two_runs_do_not_cross_contaminate`: two runs ingest the same synthetic bids; each lists **only its own 8** lines (never 16) with **disjoint** ids — a scoping or reference-keying regression fails it. The full pilot suite is unchanged (reuse never triggers on a first ingest).
+**Linked:** D30 (the harness's stronger per-run-DB isolation — deliberately *not* the web model), D8 (tenancy), E-34 (the supplier master importer + per-RFP category selection this enables), `app/api/v1/{runs,bids,pilot_common}.py`, `app/pilot/setup_ingest.py` (`_next_code` + reuse-by-natural-key).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
