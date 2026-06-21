@@ -9,8 +9,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# <repo-root>/var/vault — this file is backend/app/core/config/settings.py, so the repo root is
+# four parents up from `app/` (config -> core -> app -> backend -> <repo-root>).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_DEFAULT_VAULT_ROOT = _REPO_ROOT / "var" / "vault"
 
 
 class Environment(StrEnum):
@@ -52,6 +58,21 @@ class Settings(BaseSettings):
 
     # API surface.
     api_v1_prefix: str = "/api/v1"
+
+    # Web-console auth (app/auth) — username/password + TOTP-2FA session.
+    # PROD MUST OVERRIDE `auth_secret_key`: this dev default signs the session JWT and is
+    # intentionally well-known. Set AUTH_SECRET_KEY to a long random secret in every non-local
+    # environment, or sessions are forgeable. The TTL bounds how long a session cookie is valid.
+    auth_secret_key: str = "dev-insecure-change-me-in-production"  # noqa: S105 — dev default only
+    auth_token_ttl_minutes: int = 720  # 12h dev session; tune per environment.
+    # The session cookie is `Secure` by default (HTTPS only). Set AUTH_COOKIE_SECURE=false ONLY for
+    # local http://localhost testing — a browser silently drops a Secure cookie over plain http, so
+    # login appears to "succeed" but no session sticks. Keep it true in every deployed environment.
+    auth_cookie_secure: bool = True
+
+    # Pilot run vault root (app/api/v1/runs wraps PilotService against this). Defaults under the
+    # repo's `var/vault`; created on first use. Override VAULT_ROOT to point at the sponsor vault.
+    vault_root: Path = _DEFAULT_VAULT_ROOT
 
     @property
     def is_production(self) -> bool:
