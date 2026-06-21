@@ -75,3 +75,34 @@ def premium_vs_low(price: Decimal, market_low: Decimal) -> Decimal | None:
     """
 
     return (price - market_low) / market_low if market_low > _ZERO else None
+
+
+def z_score(price: Decimal, avg_price: Decimal, std_price: Decimal) -> Decimal | None:
+    """Standardized price within its (dc, lot, tf) group: (price − avg) / std (V3 §2.3).
+
+    None when the group's std is non-positive (a single bidder / no spread → no z).
+    """
+
+    return (price - avg_price) / std_price if std_price > _ZERO else None
+
+
+def coverage_ratio(offered: Decimal | None, required: Decimal | None) -> Decimal | None:
+    """Volume coverage: offered / required (V3 §2.2). None if either is missing or required ≤ 0.
+
+    (The As-Needed exception is a bid-level concern the scorer applies before calling this.)
+    """
+
+    if offered is None or required is None or required <= _ZERO:
+        return None
+    return offered / required
+
+
+def delta_vs_historical(price: Decimal, routing_baseline: Decimal | None) -> Decimal | None:
+    """Price vs the incumbent routing baseline: (price − base) / base (V3 §2.5).
+
+    None when there is no baseline or it is non-positive.
+    """
+
+    if routing_baseline is None or routing_baseline <= _ZERO:
+        return None
+    return (price - routing_baseline) / routing_baseline

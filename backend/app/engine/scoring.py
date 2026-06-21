@@ -13,7 +13,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.engine.formulas import construct_price, premium_vs_low
+from app.engine.formulas import (
+    construct_price,
+    coverage_ratio,
+    delta_vs_historical,
+    premium_vs_low,
+)
+from app.engine.formulas import z_score as compute_z_score
 from app.engine.interface import BidInput, EngineConfig
 
 # --- Reason codes (eligibility gate flags, V3_ENGINE_LOGIC §3). Strings, exact. ---
@@ -227,15 +233,12 @@ def score_bids(
             scored.append(_dropped_row(bid))
             continue
 
-        # --- ratios ---
+        # --- ratios (canonical formulas, app.engine.formulas) ---
         prem_vs_low = premium_vs_low(price, gst.min_price)
-        z_score: Decimal | None = None
-        if gst.std_price > _ZERO:
-            z_score = (price - gst.avg_price) / gst.std_price
-
+        z_score = compute_z_score(price, gst.avg_price, gst.std_price)
         cov_ratio = _coverage_ratio(bid, volumes_by_cell.get(cell))
         routing = incumbent_routing.get((bid.dc_no, bid.lot_id))
-        delta_vs_hist = (price - routing) / routing if routing and routing > _ZERO else None
+        delta_vs_hist = delta_vs_historical(price, routing)
 
         # --- factor scores ---
         ps = price_score(prem_vs_low, config)
@@ -285,15 +288,14 @@ def score_bids(
 
 
 def _coverage_ratio(bid: BidInput, total_required: Decimal | None) -> Decimal | None:
-    """TotVolOffered / TotVolReq. None when As-Needed, or req/offered missing/0 (§2.2)."""
+    """TotVolOffered / TotVolReq. None when As-Needed, or req/offered missing/0 (§2.2).
+
+    The As-Needed exception is bid-level; the ratio itself is the canonical `coverage_ratio`.
+    """
 
     if bid.is_as_needed:
         return None
-    if total_required is None or total_required <= _ZERO:
-        return None
-    if bid.total_vol_offered is None:
-        return None
-    return bid.total_vol_offered / total_required
+    return coverage_ratio(bid.total_vol_offered, total_required)
 
 
 def _gates(

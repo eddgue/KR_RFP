@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.engine.formulas import construct_price_from_parts
+from app.engine.formulas import (
+    construct_price_from_parts,
+    coverage_ratio,
+    delta_vs_historical,
+    z_score,
+)
 
 D = Decimal
 
@@ -39,3 +44,21 @@ def test_raw_result_is_not_clamped() -> None:
     """The raw formula does NOT filter non-positive prices — that is a caller policy."""
 
     assert construct_price_from_parts(None, D("1.00"), lot_discount=D("3.00")) == D("-2.00")
+
+
+def test_z_score() -> None:
+    assert z_score(D("12.00"), D("10.00"), D("2.00")) == D("1")
+    assert z_score(D("12.00"), D("10.00"), D("0")) is None  # no spread -> no z
+
+
+def test_coverage_ratio() -> None:
+    assert coverage_ratio(D("80"), D("100")) == D("0.8")
+    assert coverage_ratio(None, D("100")) is None
+    assert coverage_ratio(D("80"), None) is None
+    assert coverage_ratio(D("80"), D("0")) is None
+
+
+def test_delta_vs_historical() -> None:
+    assert delta_vs_historical(D("11.00"), D("10.00")) == D("0.1")
+    assert delta_vs_historical(D("11.00"), None) is None  # no baseline
+    assert delta_vs_historical(D("11.00"), D("0")) is None
