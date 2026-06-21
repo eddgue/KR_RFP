@@ -1,6 +1,6 @@
 # ADR-0018 — Storage model: DB is the system of record; deliverables render on request, uploads not persisted (web console, with Cloud Run) — and NO storage change before the live RFPs
 
-- **Status:** Accepted (2026-06-21)
+- **Status:** Accepted (2026-06-21); **IMPLEMENTING (2026-06-21)** — sponsor LIFTED the timeline deferral ("forget the timeline, get it working fully") and made no-server-side-file-storage a HARD requirement to land **before** the live RFPs. Confirmed scope: the **web console** is the live-run runtime, backed by a **durable managed Postgres**, so it is safe to make the DB the sole store. The §3 "do not change before the live RFPs" clause is **superseded** by this sponsor directive. Implementation plan: `project/NO_FILE_STORAGE_PLAN.md`. **Slice 0 landed (commit 15d957e):** generators render to bytes. The MCP harness retains its file vault (separate dev runtime).
 - **Deciders:** Sponsor (Ed), PM, Solution Architect
 - **Relates:** ADR-0017 (GCP / Cloud Run — stateless compute); ADR-0003 (two runtimes — web console + MCP harness); D30 (per-run vault + isolated DB); E-39 (canonical formula registry — deterministic renders); E-31 (gate-closure backup export); `norm.source_artifact`; As-Built §16 (persistence); the Awards design ("Postgres is authoritative — generated guides are renders of it")
 
