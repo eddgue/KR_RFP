@@ -43,6 +43,7 @@ from app.engine.formulas import (
     savings_fraction,
 )
 from app.engine.interface import EngineConfig
+from app.output.capacity_check import evaluate_capacity, load_active_capacity
 from app.output.formatting import (
     _BENCH_FILL,
     _BORDER,
@@ -2256,6 +2257,140 @@ def _write_coverage_tab(wb: Workbook, rows: list[CoverageRow], config: EngineCon
         )
 
 
+@dataclass(frozen=True)
+class CapacityCheckDisplayRow:
+    """One awarded cell vs the supplier's stated capacity, resolved to names (E-38b)."""
+
+    dc_name: str
+    lot_name: str
+    tf_name: str
+    supplier_name: str
+    allocated_cases: Decimal
+    allocated_weekly_cases: Decimal
+    max_period_cases: Decimal | None
+    max_weekly_cases: Decimal | None
+    status: str
+    over_capacity: bool
+    has_statement: bool
+
+
+def _gather_capacity_check(
+    session: Session, seeded: CycleView, award: AwardView
+) -> list[CapacityCheckDisplayRow]:
+    """Allocation-vs-stated-capacity for the recommended award, resolved to names (E-38b / G-G).
+
+    Reads the cycle's ACTIVE stated ceilings (`load_active_capacity`) and compares each awarded cell
+    (supplier × dc × lot × tf, allocation = period_cases × volume_share) against them via the pure
+    `evaluate_capacity`. Decision-support only — surfaces over-capacity; never changes the award.
+    Over-capacity rows sort to the top so the buyer sees the risk first.
+    """
+
+    dc_name = {dc.id: dc.name for dc in seeded.dcs}
+    lot_name = {lot.id: lot.name for lot in seeded.lots}
+    tf_name = {tf.id: tf.name for tf in seeded.tfs}
+    sup_name = {sup.id: sup.name for sup in seeded.suppliers}
+
+    capacity = load_active_capacity(session, seeded.cycle_id)
+    rows = evaluate_capacity(award.cells, capacity, weeks_per_tf=WEEKS_PER_TF)
+
+    out = [
+        CapacityCheckDisplayRow(
+            dc_name=dc_name.get(r.dc_id, r.dc_id[:6]),
+            lot_name=lot_name.get(r.lot_id, r.lot_id[:6]),
+            tf_name=tf_name.get(r.tf_id, r.tf_id[:6]),
+            supplier_name=sup_name.get(r.supplier_id, r.supplier_id[:6]),
+            allocated_cases=r.allocated_cases,
+            allocated_weekly_cases=r.allocated_weekly_cases,
+            max_period_cases=r.max_period_cases,
+            max_weekly_cases=r.max_weekly_cases,
+            status=r.status,
+            over_capacity=r.over_capacity,
+            has_statement=r.has_statement,
+        )
+        for r in rows
+    ]
+    # Over-capacity first, then by cell — the risk rows lead.
+    out.sort(
+        key=lambda x: (not x.over_capacity, x.dc_name, x.lot_name, x.tf_name, x.supplier_name)
+    )
+    return out
+
+
+def _write_capacity_check_tab(wb: Workbook, rows: list[CapacityCheckDisplayRow]) -> None:
+    """Capacity Check — recommended allocation vs each supplier's STATED capacity (E-38b / G-G).
+
+    The operator-facing safety surface: "are we recommending beyond what a supplier said they can
+    supply?" Over-capacity cells are flagged red. Decision-support only (ADR-0006) — it never
+    changes the award; the buyer decides.
+    """
+
+    ws = wb.create_sheet("Capacity Check")
+    columns = [
+        Col("DC", 16),
+        Col("Lot", 20),
+        Col("Timeframe", 16),
+        Col("Supplier", 22),
+        Col("Allocated (cases)", 14, NUMFMT_INT),
+        Col("Allocated / wk", 13, NUMFMT_INT),
+        Col("Stated Max (period)", 16, NUMFMT_INT),
+        Col("Stated Max (weekly)", 16, NUMFMT_INT),
+        Col("Status", 18),
+    ]
+    header_row = 6
+    row = header_row + 1
+    for r in rows:
+        ws.cell(row=row, column=1, value=r.dc_name)
+        ws.cell(row=row, column=2, value=r.lot_name)
+        ws.cell(row=row, column=3, value=r.tf_name)
+        ws.cell(row=row, column=4, value=r.supplier_name)
+        ws.cell(row=row, column=5, value=float(r.allocated_cases))
+        ws.cell(row=row, column=6, value=float(r.allocated_weekly_cases))
+        ws.cell(
+            row=row,
+            column=7,
+            value=float(r.max_period_cases) if r.max_period_cases is not None else "—",
+        )
+        ws.cell(
+            row=row,
+            column=8,
+            value=float(r.max_weekly_cases) if r.max_weekly_cases is not None else "—",
+        )
+        ws.cell(row=row, column=9, value=r.status)
+        row += 1
+
+    over = sum(1 for r in rows if r.over_capacity)
+    no_stmt = sum(1 for r in rows if not r.has_statement)
+    within = len(rows) - over - no_stmt
+    fmt = format_table(
+        ws,
+        title="CAPACITY CHECK — recommended allocation vs each supplier's STATED capacity",
+        subtitle_lines=[
+            f"{over} cell(s) OVER stated capacity · {within} within · {no_stmt} with no stated "
+            f"ceiling. Weekly = allocated ÷ {WEEKS_PER_TF} wks/TF; a cell flags if EITHER the "
+            "period or weekly ceiling is exceeded.",
+            "Decision-support: flags where the recommendation books a supplier beyond what they "
+            "stated they can supply — it never changes the award (E-38b / G-G).",
+            f"SYNTHETIC · {DECISION_SUPPORT_STRAP}",
+        ],
+        columns=columns,
+        n_body_rows=len(rows),
+        header_row=header_row,
+        add_total=False,
+    )
+    body_start, body_end = fmt["body_start"], fmt["body_end"]
+    if rows:
+        # OVER CAPACITY → red (the supply risk the buyer must see before booking).
+        ws.conditional_formatting.add(
+            f"I{body_start}:I{body_end}",
+            CellIsRule(
+                operator="equal",
+                formula=['"OVER CAPACITY"'],
+                fill=_BREACH_FILL,
+                font=_BREACH_FONT,
+            ),
+        )
+
+
 def _write_tf_comparison_tab(wb: Workbook, cells: list[CellInfo]) -> None:
     """TF Comparison — TF1 vs TF2 rec supplier/price per DC×lot, with a split flag (from v3).
 
@@ -3984,6 +4119,7 @@ def write_scenario_workbook_xlsx(
         ("Negotiation Dynamics", "Treated fairly? Concession vs the field, real risk vs theater."),
         ("§ DILIGENCE", ""),
         ("Coverage", "Can they supply it? Offered vs required volume + cover band."),
+        ("Capacity Check", "Beyond stated capacity? Allocation vs each supplier's ceiling."),
         ("Detailed Scoring", "Why these scores? The 5 factors + the market stats behind them."),
     ]
 
@@ -4013,6 +4149,7 @@ def write_scenario_workbook_xlsx(
     _write_negotiation_dynamics_tab(wb, plays, inc_move, chal_move)
     # --- DILIGENCE (the receipts behind the recommendation). ---
     _write_coverage_tab(wb, coverage_rows, config)
+    _write_capacity_check_tab(wb, _gather_capacity_check(session, seeded, award))
     _write_detailed_scoring_tab(wb, score_detail)
     # TF Comparison only when the cycle has >1 timeframe (else the view is degenerate).
     if len(seeded.tfs) > 1:

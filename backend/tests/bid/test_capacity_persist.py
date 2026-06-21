@@ -214,3 +214,21 @@ def test_capacity_resubmit_supersedes_prior_statement(tmp_path: Path, db_session
         {"c": cycle_id, "sup": keys0[1]},
     ).scalar_one()
     assert float(active_weekly) == 900.0
+
+
+@pytest.mark.integration
+def test_load_active_capacity_reads_persisted_ceilings(tmp_path: Path, db_session) -> None:  # type: ignore[no-untyped-def]
+    """The reader the E-38b capacity tab depends on returns the persisted CELL ceiling by cell."""
+
+    from app.output.capacity_check import load_active_capacity
+
+    service, paths, cycle_id, template_path = _prepare_cycle(tmp_path, db_session)
+    (off_a, keys_a) = _distinct_cell_offsets(template_path.read_bytes(), 1)[0]
+    template_path.write_bytes(_fill(template_path.read_bytes(), {off_a: (500.0, 6500.0)}))
+    service.ingest_bids(db_session, paths, 1, template_path)
+
+    cap = load_active_capacity(db_session, cycle_id)
+    cell = (keys_a[1], keys_a[2], keys_a[3], keys_a[5])  # supplier, dc, lot, tf
+    assert cell in cap
+    assert float(cap[cell].max_period_cases) == 6500.0
+    assert float(cap[cell].max_weekly_cases) == 500.0
