@@ -335,7 +335,7 @@ def test_period_grain_storage_leaves_engine_output_unchanged(tmp_path: Path, db_
     # row per LOGICAL cell — NOT one per fanned period row. A dedupe miss in those gathers (the
     # Detailed Scoring market stats, the Coverage rows) would surface here as `× n_periods` rows.
     #   * Detailed Scoring lists EVERY scored cell -> exactly n_lines rows.
-    #   * Coverage lists cells with a non-NULL All-In price -> ≤ n_lines, and never fanned.
+    #   * Coverage lists cells with a CONSTRUCTIBLE price (All-In OR component-basis FOB) -> n_lines.
     # The `# Bidders` stat on Detailed Scoring is the per-group count that would inflate by periods
     # if the stats gather double-counted the period rows; assert it stays the true bidder count (2).
     wb = load_workbook(alignment_path)
@@ -357,8 +357,13 @@ def test_period_grain_storage_leaves_engine_output_unchanged(tmp_path: Path, db_
         f"Detailed Scoring has {len(detail_rows)} rows, expected {n_lines} (per cell, not fanned)"
     )
     coverage_rows = _body_rows("Coverage")
-    assert 0 < len(coverage_rows) <= n_lines, (
-        f"Coverage has {len(coverage_rows)} rows, must be ≤ {n_lines} (deduped, not fanned)"
+    # #2 regression: Coverage now lists EVERY priced cell — including component-basis (FOB-only)
+    # bids, which were previously DROPPED because the gather read raw `submitted_all_in_case`.
+    # With the canonical constructed price (E-39), the ~half of cells filled component-basis now
+    # appear, so the count is the full logical-cell count (never the fanned period rows).
+    assert len(coverage_rows) == n_lines, (
+        f"Coverage has {len(coverage_rows)} rows, expected {n_lines} (every priced cell, incl. "
+        "component-basis FOB-only bids; not fanned)"
     )
     # # Bidders (col 10) is the per-group count of distinct All-In prices — never inflated by the
     # fan-out. There are 2 suppliers per cell, so the true count is ≤ 2; a stats-dedupe miss would

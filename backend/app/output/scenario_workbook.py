@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.domain.eng.models import AnalysisRun, AnalysisScenario
 from app.engine.formulas import (
     awarded_cases,
+    construct_price_from_parts,
     delta_vs_historical,
     line_spend,
     savings_dollars,
@@ -214,6 +215,27 @@ def _transit_by_lane(session: Session, cycle_id: str) -> dict[tuple[str, str], i
     return {(s, d): int(t) for s, d, t in rows if t is not None}
 
 
+def _line_price(
+    all_in: object, fob: object, delivery: object, vegcool: object, lot_discount: object
+) -> Decimal | None:
+    """The canonical §7 price for a persisted bid_line's component columns (E-39 formula).
+
+    Mirrors what the engine actually scored: All-In if present, else FOB + delivery + vegcool −
+    lot_discount. Reading raw `submitted_all_in_case` alone (as the workbook used to) DROPPED
+    component-basis bids (All-In NULL, FOB+surcharges set) the engine scored — so they vanished
+    from the price grids / market stats / coverage / FOB tabs while awards used the constructed
+    price. Routing every price read through this keeps the workbook consistent with the engine.
+    """
+
+    return construct_price_from_parts(
+        Decimal(str(all_in)) if all_in is not None else None,
+        Decimal(str(fob)) if fob is not None else None,
+        Decimal(str(delivery)) if delivery is not None else Decimal("0"),
+        Decimal(str(vegcool)) if vegcool is not None else Decimal("0"),
+        Decimal(str(lot_discount)) if lot_discount is not None else Decimal("0"),
+    )
+
+
 def _gather_cells(
     session: Session,
     seeded: CycleView,
@@ -249,7 +271,8 @@ def _gather_cells(
     price_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
-            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, "
+            "fob_case, delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
             "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
@@ -257,9 +280,10 @@ def _gather_cells(
         {"cyc": seeded.cycle_id, "rnd": final_round_id},
     ).all()
     price_by: dict[tuple[str, str, str, str], Decimal] = {}
-    for sup_id, dc_id, lot_id, tf_id, price in price_rows:
+    for sup_id, dc_id, lot_id, tf_id, all_in, fob, deliv, veg, disc in price_rows:
+        price = _line_price(all_in, fob, deliv, veg, disc)
         if price is not None:
-            price_by[(sup_id, dc_id, lot_id, tf_id)] = Decimal(str(price))
+            price_by[(sup_id, dc_id, lot_id, tf_id)] = price
 
     # Eligibility + RecScore per (supplier, dc, lot, tf) from the sealed scores.
     score_rows = session.execute(
@@ -1842,7 +1866,8 @@ def _gather_score_detail(
     price_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
-            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, "
+            "fob_case, delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
             "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
@@ -1851,9 +1876,9 @@ def _gather_score_detail(
     ).all()
     prices_by_group: dict[tuple[str, str, str], list[Decimal]] = defaultdict(list)
     price_by: dict[tuple[str, str, str, str], Decimal] = {}
-    for sup_id, dc_id, lot_id, tf_id, price in price_rows:
-        if price is not None:
-            p = Decimal(str(price))
+    for sup_id, dc_id, lot_id, tf_id, all_in, fob, deliv, veg, disc in price_rows:
+        p = _line_price(all_in, fob, deliv, veg, disc)
+        if p is not None:
             prices_by_group[(dc_id, lot_id, tf_id)].append(p)
             price_by[(sup_id, dc_id, lot_id, tf_id)] = p
 
@@ -2150,7 +2175,9 @@ def _gather_coverage(
     bid_rows = session.execute(
         text(
             "SELECT DISTINCT ON (supplier_id, dc_id, lot_id, tf_id) "
-            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, volume_minimum_cases "
+            "supplier_id, dc_id, lot_id, tf_id, submitted_all_in_case, "
+            "fob_case, delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case, "
+            "volume_minimum_cases "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND round_id = :rnd "
             "AND is_scoreable = true "
             "ORDER BY supplier_id, dc_id, lot_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
@@ -2159,7 +2186,8 @@ def _gather_coverage(
     ).all()
 
     rows: list[CoverageRow] = []
-    for sup_id, dc_id, lot_id, tf_id, price, offered in bid_rows:
+    for sup_id, dc_id, lot_id, tf_id, all_in, fob, deliv, veg, disc, offered in bid_rows:
+        price = _line_price(all_in, fob, deliv, veg, disc)
         if price is None:
             continue
         req = req_by.get((dc_id, lot_id, tf_id), Decimal("0"))
@@ -2487,16 +2515,18 @@ def _gather_round_evolution(
     # per (cell, round), so the dict assignment is idempotent.
     rows = session.execute(
         text(
-            "SELECT supplier_id, dc_id, lot_id, tf_id, round_id, submitted_all_in_case "
+            "SELECT supplier_id, dc_id, lot_id, tf_id, round_id, submitted_all_in_case, "
+            "fob_case, delivery_surcharge_case, vegcool_surcharge_case, lot_discount_case "
             "FROM bid.bid_line WHERE cycle_id = :cyc AND is_scoreable = true"
         ),
         {"cyc": seeded.cycle_id},
     ).all()
     # (sup,dc,lot,tf) -> {round_id: price}
     by_cell: dict[tuple[str, str, str, str], dict[str, Decimal]] = defaultdict(dict)
-    for sup_id, dc_id, lot_id, tf_id, rnd_id, price in rows:
+    for sup_id, dc_id, lot_id, tf_id, rnd_id, all_in, fob, deliv, veg, disc in rows:
+        price = _line_price(all_in, fob, deliv, veg, disc)
         if price is not None:
-            by_cell[(sup_id, dc_id, lot_id, tf_id)][rnd_id] = Decimal(str(price))
+            by_cell[(sup_id, dc_id, lot_id, tf_id)][rnd_id] = price
 
     out: list[RoundEvoRow] = []
     for (sup_id, dc_id, lot_id, tf_id), prices in by_cell.items():
@@ -3002,8 +3032,9 @@ def _gather_fob(session: Session, seeded: CycleView, final_round_id: str) -> lis
     rows = session.execute(
         text(
             "SELECT dc_id, lot_id, supplier_id, fob_case, delivery_surcharge_case, "
-            "vegcool_surcharge_case, submitted_all_in_case FROM bid.bid_line "
-            "WHERE cycle_id = :cyc AND round_id = :rnd AND submitted_all_in_case IS NOT NULL "
+            "vegcool_surcharge_case, lot_discount_case, submitted_all_in_case FROM bid.bid_line "
+            "WHERE cycle_id = :cyc AND round_id = :rnd "
+            "AND (submitted_all_in_case IS NOT NULL OR fob_case IS NOT NULL) "
             "AND is_scoreable = true "
             "ORDER BY dc_id, lot_id, supplier_id, tf_id, fiscal_period_id NULLS LAST, bid_line_id"
         ),
@@ -3012,9 +3043,14 @@ def _gather_fob(session: Session, seeded: CycleView, final_round_id: str) -> lis
 
     seen: set[tuple[str, str, str]] = set()
     out: list[FobRow] = []
-    for dc_id, lot_id, sup_id, fob, deliv, veg, allin in rows:
+    for dc_id, lot_id, sup_id, fob, deliv, veg, disc, allin in rows:
         key = (dc_id, lot_id, sup_id)
         if key in seen:
+            continue
+        # Constructed landed = All-In if present, else FOB + surcharges − discount (E-39); a
+        # component-basis bid (All-In NULL) now appears instead of being filtered out.
+        constructed = _line_price(allin, fob, deliv, veg, disc)
+        if constructed is None:
             continue
         seen.add(key)
         out.append(
@@ -3026,7 +3062,7 @@ def _gather_fob(session: Session, seeded: CycleView, final_round_id: str) -> lis
                 fob=Decimal(str(fob)) if fob is not None else Decimal("0"),
                 delivery=Decimal(str(deliv)) if deliv is not None else Decimal("0"),
                 vegcool=Decimal(str(veg)) if veg is not None else Decimal("0"),
-                all_in=Decimal(str(allin)),
+                all_in=constructed,
                 transit_days=transit_lane.get((sup_id, dc_id)),
             )
         )
