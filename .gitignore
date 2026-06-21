@@ -57,3 +57,7 @@ backend/demo/output/
 # Option (b) vault clone target (web session-start); never commit the vault into this repo
 .rfp_pilot_vault/
 
+
+# generated/demo artifacts from local screenshot + seed runs (synthetic; never commit)
+var/
+screenshots/
