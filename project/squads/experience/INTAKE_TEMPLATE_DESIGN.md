@@ -132,12 +132,27 @@ The template a supplier receives must behave like a true form, not an editable s
   copied per period, rejects double-covered periods). Tested: `tests/bid/test_period_fanout.py` (5).
   NOT yet wired into the live ingest/engine path — intentionally inert so it cannot affect a live
   cutover.
+- **§1 period model — PERIOD-GRAIN UNIQUENESS + by-period import PROVEN (increment 2b-iii,
+  2026-06-21), backward-compatible.** Migration `0016` flips `bid.bid_line` uniqueness to the
+  flat-13 grain via TWO *filtered* unique indexes: `WHERE fiscal_period_id IS NULL` keeps the legacy
+  one-row-per-(cell, tf) guarantee (pilot/resubmission unchanged), `WHERE fiscal_period_id IS NOT
+  NULL` enforces one-row-per-(cell, fiscal period) for fanned rows. The old single
+  `uq_bid_line_cell_per_submission` is dropped (its FK-target sibling `uq_bid_line_identity_full` is
+  untouched). Proven end to end on real Postgres with the **potato sample**: timeframe-structured
+  bids (full column set, both price bases) ingested, then fanned out — each timeframe row →
+  one row per fiscal period in its span (derived from the cycle TF's dates), every column preserved
+  verbatim, each by-period row joined to a real `ref.fiscal_period` (test:
+  `tests/bid/test_period_import.py`). Resubmission/supersession e2e still green (backward-compat).
 - **§1 period model — ACTIVATION (wire fan-out into ingest + engine read-path + compact/expand view)
   — DEFERRED until after the first live run, per §1a.** Remaining: call the fan-out in the intake
   unit of work; add the ~5-line `runner._assemble_bids` fallback that prefers the period grain when
-  present (engine logic unchanged); flip the bid uniqueness to a *filtered* unique index on the
-  period grain (so NULL pilot rows never conflict); and the compact/expand VIEW. Deferred on purpose
-  — it touches the engine read-path, the wrong risk to take right before going live.
+  present (engine logic unchanged); and the compact/expand VIEW. Deferred on purpose — it touches
+  the engine read-path, the wrong risk to take right before going live.
+  - **TYPE NOTE (reconcile at activation):** `bid.bid_line.fiscal_period_id` is `varchar(36)` (the
+    bid_line id convention) while `ref.fiscal_period.id` is `uuid`, so joins need an explicit cast
+    (`fp.id::text`) and an enforced FK isn't possible as-is. At activation, reconcile: either store
+    the period's surrogate as `uuid`, switch `ref.fiscal_period` to a `varchar(36)` PK to match the
+    operational tables, or carry the natural key (`fiscal_year`,`period`) on the bid line instead.
 - **§1 renamed-column mapping, custom-preset persistence, the walk-through wizard — LATER.**
 
 ## Implementation anchors (already in place to build on)
