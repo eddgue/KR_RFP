@@ -41,6 +41,20 @@ from app.domain.bid.bid_ingester import Completeness, ParsedBidLine, ingest_temp
 from app.domain.bid.models import BidLine
 from app.domain.bid.template_generator import generate_template_bytes
 from app.domain.eng.models import AnalysisRun
+from app.domain.eng.read import (
+    AnalysisSummary,
+    ScenarioComparisonRow,
+    ScenarioDetail,
+)
+from app.domain.eng.read import (
+    list_analyses as read_list_analyses,
+)
+from app.domain.eng.read import (
+    scenario_comparison as read_scenario_comparison,
+)
+from app.domain.eng.read import (
+    scenario_detail as read_scenario_detail,
+)
 from app.domain.eng.runner import EngineRunner, IncumbentRow
 from app.engine.interface import PRESET_WEIGHTS, EngineConfig, WeightPreset
 from app.output.booking_guide import (
@@ -1361,6 +1375,65 @@ class PilotService:
                 )
             )
         return tuple(cells)
+
+    # ------------------------------------------------------------------ #
+    # web alignment read surface — the scenario/award reads the console renders
+    # ------------------------------------------------------------------ #
+    def list_analyses(self, session: Session, runpaths: RunPaths) -> list[AnalysisSummary]:
+        """The run's cycle's SEALED analysis runs (typed views), or [] if no cycle yet.
+
+        Thin wrapper over `read_views.list_analyses` scoped to THIS run's cycle, so the web lists
+        exactly this run's sealed analyses (never another run's).
+        """
+
+        cycle_id = self._cycle_id(runpaths)
+        if cycle_id is None:
+            return []
+        return read_list_analyses(session, cycle_id)
+
+    def scenario_comparison(
+        self, session: Session, runpaths: RunPaths, analysis_run_id: str
+    ) -> list[ScenarioComparisonRow]:
+        """The seven lenses side by side for a sealed run (numbers match the alignment workbook)."""
+
+        cycle = self._load_cycle(session, runpaths)
+        return read_scenario_comparison(session, cycle, analysis_run_id)
+
+    def scenario_detail(
+        self, session: Session, runpaths: RunPaths, analysis_run_id: str, scenario_code: str
+    ) -> ScenarioDetail:
+        """One lens cell-by-cell for a sealed run: the competitive grid + the savings headline.
+
+        Builds the chosen lens's in-flight `AwardView` from `eng.analysis_scenario_award`
+        (`_scenario_award_view`) and resolves the run's round, then hands both to the read layer so
+        the per-cell awarded supplier + share reflect THIS lens. Raises ValueError on unknown
+        scenario (mapped to a clean 400 by the router).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        final_round_id = self._analysis_round_id(session, analysis_run_id)
+        award = self._scenario_award_view(
+            session, cycle, analysis_run_id, scenario_code=scenario_code
+        )
+        return read_scenario_detail(
+            session,
+            cycle,
+            analysis_run_id,
+            scenario_code,
+            final_round_id=final_round_id,
+            award_view=award,
+        )
+
+    @staticmethod
+    def _analysis_round_id(session: Session, analysis_run_id: str) -> str:
+        """The `round_id` a sealed analysis run scored (its final round), or raise if unknown."""
+
+        round_id = session.execute(
+            select(AnalysisRun.round_id).where(AnalysisRun.analysis_run_id == analysis_run_id)
+        ).scalar_one_or_none()
+        if round_id is None:
+            raise ValueError(f"no sealed analysis run {analysis_run_id!r}")
+        return round_id
 
     @staticmethod
     def _run_version_seq(session: Session, cycle_id: str, analysis_run_id: str) -> int:
