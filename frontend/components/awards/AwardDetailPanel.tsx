@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Button,
   Panel,
   PanelHeader,
   StatusChip,
@@ -17,8 +18,15 @@ import type { AwardDetail } from "@/lib/api";
 
 // One frozen award: the awarded lines (frozen baseline → current effective price,
 // per cell) and the full version history (v0 FROZEN → vN append-only layers). A
-// positive Δ means the effective price rose above the frozen baseline.
-export function AwardDetailPanel({ detail }: { detail: AwardDetail }) {
+// positive Δ means the effective price rose above the frozen baseline. `onAdjust`,
+// when provided, surfaces the "Record adjustment" action in the header.
+export function AwardDetailPanel({
+  detail,
+  onAdjust,
+}: {
+  detail: AwardDetail;
+  onAdjust?: () => void;
+}) {
   return (
     <>
       <Panel>
@@ -33,6 +41,13 @@ export function AwardDetailPanel({ detail }: { detail: AwardDetail }) {
             </span>
           }
           description={`Frozen ${formatTimestamp(detail.frozen_at)} by ${detail.frozen_by} · ${detail.lines.length} cells`}
+          actions={
+            onAdjust && (
+              <Button variant="secondary" size="sm" onClick={onAdjust}>
+                Record adjustment
+              </Button>
+            )
+          }
         />
         <Table>
           <THead>

@@ -258,7 +258,12 @@ export interface AwardSummary {
 }
 
 // One awarded cell — names (D23) + frozen baseline, effective price, and delta.
+// The cell-key ids identify the cell exactly (used when recording an adjustment).
 export interface AwardLineView {
+  dc_id: string;
+  lot_id: string;
+  tf_id: string;
+  supplier_id: string;
   dc: string;
   lot: string;
   tf: string;
@@ -267,6 +272,30 @@ export interface AwardLineView {
   frozen_price: number;
   effective_price: number; // baseline overlaid by every layer
   delta: number; // effective_price − frozen_price
+}
+
+// One cell repriced by a post-award adjustment. POST .../adjustments body item.
+export interface AdjustmentLineChange {
+  dc_id: string;
+  lot_id: string;
+  tf_id: string;
+  supplier_id: string;
+  new_price: number; // must be > 0
+}
+
+// POST /runs/{slug}/awards/{award_id}/adjustments — append a versioned layer.
+export interface RecordAdjustmentBody {
+  adjustment_type: string;
+  effective_date: string; // ISO date (YYYY-MM-DD)
+  reason: string;
+  changes: AdjustmentLineChange[]; // at least one
+}
+
+// The recorded layer's new version + the regenerated post-award document filename.
+export interface RecordAdjustmentResponse {
+  award_id: string;
+  version_no: number;
+  filename: string;
 }
 
 // One row of the version history (v0 FROZEN → vN layers).

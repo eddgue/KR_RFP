@@ -21,4 +21,4 @@ export {
   getScenarioDetail,
   freezeAward,
 } from "./alignment";
-export { listAwards, getAward } from "./awards";
+export { listAwards, getAward, recordAdjustment } from "./awards";
