@@ -120,7 +120,12 @@ export default function RunDetailPage({
                 </Button>
               </Link>
               <Link href={`/runs/${run.slug}/alignment`}>
-                <Button size="sm">Alignment</Button>
+                <Button variant="secondary" size="sm">
+                  Alignment
+                </Button>
+              </Link>
+              <Link href={`/runs/${run.slug}/awards`}>
+                <Button size="sm">Awards</Button>
               </Link>
             </div>
           </Panel>

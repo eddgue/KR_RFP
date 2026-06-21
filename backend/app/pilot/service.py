@@ -37,6 +37,16 @@ from app.cycle.loader import load_cycle
 from app.cycle.scope import build_scope_from_cycle
 from app.domain.awd import service as awd_service
 from app.domain.awd.models import Award, AwardLine
+from app.domain.awd.read import (
+    AwardDetail,
+    AwardSummary,
+)
+from app.domain.awd.read import (
+    award_detail as read_award_detail,
+)
+from app.domain.awd.read import (
+    list_awards as read_list_awards,
+)
 from app.domain.bid.bid_ingester import Completeness, ParsedBidLine, ingest_template
 from app.domain.bid.models import BidLine
 from app.domain.bid.template_generator import generate_template_bytes
@@ -1476,6 +1486,27 @@ class PilotService:
         if cycle_id is None:
             return []
         return read_list_analyses(session, cycle_id)
+
+    def list_awards(self, session: Session, runpaths: RunPaths) -> list[AwardSummary]:
+        """The run's cycle's FROZEN awards (typed views), or [] if no cycle yet.
+
+        Thin wrapper over `awd.read.list_awards` scoped to THIS run's cycle.
+        """
+
+        cycle_id = self._cycle_id(runpaths)
+        if cycle_id is None:
+            return []
+        return read_list_awards(session, cycle_id)
+
+    def award_detail(self, session: Session, runpaths: RunPaths, award_id: str) -> AwardDetail:
+        """One frozen award: baseline + effective lines + the version history (v0 → vN).
+
+        Resolves THIS run's cycle (for names, D23) and hands off to `awd.read.award_detail`. Raises
+        ValueError on an unknown award id (mapped to a clean 404 by the router).
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        return read_award_detail(session, cycle, award_id)
 
     def scenario_comparison(
         self, session: Session, runpaths: RunPaths, analysis_run_id: str

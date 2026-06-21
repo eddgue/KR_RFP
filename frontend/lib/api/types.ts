@@ -241,6 +241,57 @@ export interface FreezeAwardResponse {
   scenario_code: string;
 }
 
+// ---------------------------------------------------------------------------
+// Post-award contract: frozen awards + their versioned adjustment layers.
+// GET /runs/{slug}/awards and /runs/{slug}/awards/{id} (app.domain.awd.read).
+// ---------------------------------------------------------------------------
+
+// One frozen award. GET /runs/{slug}/awards -> AwardSummary[].
+export interface AwardSummary {
+  award_id: string;
+  award_code: string;
+  scenario_code: string;
+  frozen_at: string; // ISO timestamp
+  frozen_by: string;
+  line_count: number;
+  latest_version: number; // highest adjustment version (0 = baseline only)
+}
+
+// One awarded cell — names (D23) + frozen baseline, effective price, and delta.
+export interface AwardLineView {
+  dc: string;
+  lot: string;
+  tf: string;
+  supplier: string;
+  volume_share: number; // fraction (0–1)
+  frozen_price: number;
+  effective_price: number; // baseline overlaid by every layer
+  delta: number; // effective_price − frozen_price
+}
+
+// One row of the version history (v0 FROZEN → vN layers).
+export interface AwardVersionView {
+  version_no: number;
+  adjustment_type: string;
+  effective_date: string; // ISO date (YYYY-MM-DD)
+  reason: string;
+  created_at: string; // ISO timestamp
+  created_by: string;
+  n_lines: number;
+}
+
+// One frozen award inspected. GET /runs/{slug}/awards/{award_id}.
+export interface AwardDetail {
+  award_id: string;
+  award_code: string;
+  scenario_code: string;
+  frozen_at: string;
+  frozen_by: string;
+  latest_version: number;
+  lines: AwardLineView[];
+  versions: AwardVersionView[];
+}
+
 // A scored/aligned bid line. GET /bids?run=&round= -> BidLineView[].
 export interface BidLineView {
   bid_line_id: string;
