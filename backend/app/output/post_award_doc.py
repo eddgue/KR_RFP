@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -103,14 +104,13 @@ def _resolve_names(session: Session, award: Award) -> _Names:
     return _Names(dc=dc_names, supplier=sup_names, lot=lot_names, tf=tf_names)
 
 
-def write_post_award_adjustments_xlsx(
+def build_post_award_adjustments_bytes(
     session: Session,
     *,
     award_id: str,
     as_of_version: int | None = None,
-    output_path: Path,
-) -> Path:
-    """Write the versioned post-award adjustments workbook for an award; return the path.
+) -> bytes:
+    """Build the versioned post-award adjustments workbook for an award; return the bytes.
 
     Three tabs: `Versions` (full history v0->vN), `Current Effective Prices` (per cell: frozen
     baseline, effective price at this version, cumulative delta), `This Version's Changes` (the
@@ -138,8 +138,25 @@ def write_post_award_adjustments_xlsx(
     _write_effective_tab(wb, banner, subtitle, session, award_id, version_n, names)
     _write_changes_tab(wb, banner, subtitle, session, award_id, version_n, names)
 
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def write_post_award_adjustments_xlsx(
+    session: Session,
+    *,
+    award_id: str,
+    as_of_version: int | None = None,
+    output_path: Path,
+) -> Path:
+    """Disk wrapper around `build_post_award_adjustments_bytes` (the MCP-harness vault path)."""
+
+    data = build_post_award_adjustments_bytes(
+        session, award_id=award_id, as_of_version=as_of_version
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_path)
+    output_path.write_bytes(data)
     return output_path
 
 

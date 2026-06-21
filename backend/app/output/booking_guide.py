@@ -31,6 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from typing import Protocol
 
@@ -96,13 +97,12 @@ def _provenance_line(synthetic: bool) -> str:
     )
 
 
-def write_booking_guide_internal_xlsx(
+def build_booking_guide_internal_bytes(
     cycle: CycleView,
     award: BookingAwardView,
     *,
-    output_path: Path,
     synthetic: bool = False,
-) -> Path:
+) -> bytes:
     """The buyers/pricing master booking guide (D22 internal version) — FROM THE AWARD.
 
     One row per awarded DC × lot × item × TF: awarded supplier (NAME, D23), FOB/landed $/case,
@@ -180,18 +180,32 @@ def write_booking_guide_internal_xlsx(
         n_body_rows=n_rows,
         header_row=header_row,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_path)
-    return output_path
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
-def write_supplier_award_guides_xlsx(
+def write_booking_guide_internal_xlsx(
     cycle: CycleView,
     award: BookingAwardView,
     *,
     output_path: Path,
     synthetic: bool = False,
 ) -> Path:
+    """Disk wrapper around `build_booking_guide_internal_bytes` (the MCP-harness vault path)."""
+
+    data = build_booking_guide_internal_bytes(cycle, award, synthetic=synthetic)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(data)
+    return output_path
+
+
+def build_supplier_award_guides_bytes(
+    cycle: CycleView,
+    award: BookingAwardView,
+    *,
+    synthetic: bool = False,
+) -> bytes:
     """The per-supplier award guides (D22 per-supplier version) — one SHEET per awarded supplier.
 
     Each sheet shows ONLY that supplier's awarded lots/DCs/volumes/prices — "here is what you've
@@ -261,8 +275,23 @@ def write_supplier_award_guides_xlsx(
     if default_ws is not None and len(wb.sheetnames) > 1:
         wb.remove(default_ws)
 
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def write_supplier_award_guides_xlsx(
+    cycle: CycleView,
+    award: BookingAwardView,
+    *,
+    output_path: Path,
+    synthetic: bool = False,
+) -> Path:
+    """Disk wrapper around `build_supplier_award_guides_bytes` (the MCP-harness vault path)."""
+
+    data = build_supplier_award_guides_bytes(cycle, award, synthetic=synthetic)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(output_path)
+    output_path.write_bytes(data)
     return output_path
 
 
@@ -316,6 +345,26 @@ def write_supplier_award_guide_files(
         write_supplier_award_guides_xlsx(cycle, one, output_path=path, synthetic=synthetic)
         written[sup_id] = path
     return written
+
+
+def build_supplier_award_guide_bytes(
+    cycle: CycleView,
+    award: BookingAwardView,
+    supplier_id: str,
+    *,
+    synthetic: bool = False,
+) -> bytes | None:
+    """One supplier's OWN award guide as bytes (only that supplier's cells), or None if unawarded.
+
+    The single-supplier slice behind `write_supplier_award_guide_files` — used by the web console's
+    render-on-request path so a supplier's award notification can attach only their own data.
+    """
+
+    sup_cells = [c for c in award.cells if c.supplier_id == supplier_id]
+    if not sup_cells:
+        return None
+    one = _SingleSupplierAward(award.scenario_code, award.scenario_label, sup_cells)
+    return build_supplier_award_guides_bytes(cycle, one, synthetic=synthetic)
 
 
 def _sheet_title(name: str) -> str:

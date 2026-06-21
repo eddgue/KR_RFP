@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 from typing import Protocol
 
@@ -4040,7 +4041,7 @@ def _stamp_real_provenance(wb: Workbook) -> None:
                     cell.value = v
 
 
-def write_scenario_workbook_xlsx(
+def build_scenario_workbook_bytes(
     session: Session,
     cycle: CycleView,
     config: EngineConfig,
@@ -4048,9 +4049,8 @@ def write_scenario_workbook_xlsx(
     final_round_id: str,
     award: AwardView,
     *,
-    output_path: Path | None = None,
     synthetic: bool = False,
-) -> Path:
+) -> bytes:
     """Generate the ALIGNMENT / COMPARISON Scenario Workbook (D26/D27) from the sealed records.
 
     Redesigned per SCENARIO_TOOL_DESIGN_STUDY.md §4 — single-purpose tabs named for the
@@ -4075,9 +4075,6 @@ def write_scenario_workbook_xlsx(
     #     number + sealed timestamp come straight off the governed records (history is sealed per
     #     run — we are SURFACING the version, not minting it). ---
     version = _run_version(session, cycle.cycle_id, analysis_run_id, final_round_id)
-
-    out_path = output_path if output_path is not None else (OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     scenarios = (
         session.query(AnalysisScenario)
@@ -4245,5 +4242,39 @@ def write_scenario_workbook_xlsx(
     if not synthetic:
         _stamp_real_provenance(wb)
 
-    wb.save(out_path)
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def write_scenario_workbook_xlsx(
+    session: Session,
+    cycle: CycleView,
+    config: EngineConfig,
+    analysis_run_id: str,
+    final_round_id: str,
+    award: AwardView,
+    *,
+    output_path: Path | None = None,
+    synthetic: bool = False,
+) -> Path:
+    """Disk wrapper around `build_scenario_workbook_bytes` (the MCP-harness vault path).
+
+    Renders the workbook to bytes from the sealed DB records, then writes them to `output_path`
+    (default `OUTPUT_DIR/SCENARIO_WORKBOOK.xlsx`). The web console calls the bytes builder directly
+    and streams the result — it never touches disk.
+    """
+
+    data = build_scenario_workbook_bytes(
+        session,
+        cycle,
+        config,
+        analysis_run_id,
+        final_round_id,
+        award,
+        synthetic=synthetic,
+    )
+    out_path = output_path if output_path is not None else (OUTPUT_DIR / "SCENARIO_WORKBOOK.xlsx")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(data)
     return out_path
