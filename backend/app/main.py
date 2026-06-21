@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.audit.guards import register_immutability_guards
@@ -78,6 +79,22 @@ def create_app() -> FastAPI:
         # else: no principal -> security dependencies deny protected routes until DEP-4 lands.
 
         return await call_next(request)
+
+    # The browser console is a separate origin and sends the session cookie cross-origin, so the
+    # API must answer CORS preflights and echo the allowed origin with credentials enabled. Added
+    # last so it is the OUTERMOST layer: preflight OPTIONS are short-circuited before the tenant
+    # middleware, and the CORS headers ride on every response (including error responses). A
+    # credentialed response cannot use a "*" origin, so allow_origins is the explicit list from
+    # settings — never a wildcard.
+    cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app
