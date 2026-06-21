@@ -594,6 +594,7 @@ def freeze_award(
             analysis_run_id=body.analysis_run_id,
             scenario_code=body.scenario_code,
             award_code=body.award_code,
+            actor=user.username,
         )
     except ValueError as exc:
         raise AppError(
@@ -700,13 +701,20 @@ def record_award_adjustment(
         ) from exc
 
     valid_cells = {(line.dc_id, line.lot_id, line.tf_id, line.supplier_id) for line in detail.lines}
-    unknown = [
-        c for c in body.changes if (c.dc_id, c.lot_id, c.tf_id, c.supplier_id) not in valid_cells
-    ]
+    keys = [(c.dc_id, c.lot_id, c.tf_id, c.supplier_id) for c in body.changes]
+    unknown = [key for key in keys if key not in valid_cells]
     if unknown:
         raise AppError(
             code=ErrorCode.VALIDATION_ERROR,
             message=f"{len(unknown)} change(s) reference a cell not on award {award_id!r}.",
+            status_code=400,
+        )
+    # One price per cell per layer: the DB has a unique (adjustment, cell) index, so a repeated cell
+    # would 500 on insert — reject it as a clean 400 up front (which new_price would even win?).
+    if len(set(keys)) != len(keys):
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="A cell is repeated in changes; adjust each cell at most once per layer.",
             status_code=400,
         )
 
@@ -722,6 +730,7 @@ def record_award_adjustment(
             effective_date=body.effective_date,
             reason=body.reason,
             line_changes=line_changes,
+            actor=user.username,
         )
     except ValueError as exc:
         raise AppError(

@@ -82,6 +82,9 @@ def test_award_read_and_adjustment_e2e(client, seed_user, vault_root, db_session
         assert line[key]
     assert all(line_["delta"] == 0 for line_ in detail["lines"])
     assert [v["version_no"] for v in detail["versions"]] == [0]
+    # The award records the AUTHENTICATED actor who froze it (not the "pilot" default).
+    assert detail["frozen_by"] == seed_user["username"]
+    assert detail["versions"][0]["created_by"] == seed_user["username"]
 
     # Record a +$5 adjustment on the first cell.
     new_price = round(line["frozen_price"] + 5.0, 2)
@@ -114,6 +117,8 @@ def test_award_read_and_adjustment_e2e(client, seed_user, vault_root, db_session
     assert adjusted[0]["effective_price"] == pytest.approx(new_price)
     assert [v["version_no"] for v in detail2["versions"]] == [0, 1]
     assert detail2["latest_version"] == 1
+    # The layer records the authenticated actor (not "pilot").
+    assert detail2["versions"][1]["created_by"] == seed_user["username"]
 
     # A CREATED audit event landed for the layer (governed decision, in-txn).
     events = db_session.execute(
@@ -143,6 +148,44 @@ def test_adjustment_unknown_cell_is_validation_error(  # type: ignore[no-untyped
             "effective_date": "2026-04-01",
             "reason": "off-award cell",
             "changes": [_VALID_CHANGE],  # ids that aren't on the award
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "validation_error"
+
+    n = db_session.execute(
+        text("SELECT count(*) FROM awd.award_adjustment WHERE award_id = :aid"),
+        {"aid": award_id},
+    ).scalar_one()
+    assert n == 0
+
+
+@pytest.mark.integration
+def test_adjustment_duplicate_cell_is_validation_error(  # type: ignore[no-untyped-def]
+    client, seed_user, vault_root, db_session
+) -> None:
+    """Repeating a cell in one layer is a clean 400 (one DB line per cell) — and writes NO layer."""
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+    award_id = _freeze_b(client, slug, analysis_run_id, code="AWD-PA-4")
+
+    line = client.get(f"{RUNS}/{slug}/awards/{award_id}").json()["lines"][0]
+    change = {
+        "dc_id": line["dc_id"],
+        "lot_id": line["lot_id"],
+        "tf_id": line["tf_id"],
+        "supplier_id": line["supplier_id"],
+        "new_price": round(line["frozen_price"] + 1.0, 2),
+    }
+    resp = client.post(
+        f"{RUNS}/{slug}/awards/{award_id}/adjustments",
+        json={
+            "adjustment_type": "MARKET_HIKE",
+            "effective_date": "2026-04-01",
+            "reason": "duplicate cell",
+            "changes": [change, change],  # same cell twice
         },
     )
     assert resp.status_code == 400
