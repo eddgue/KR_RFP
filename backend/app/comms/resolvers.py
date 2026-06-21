@@ -72,13 +72,15 @@ def award_drafts(
     *,
     buyer_name: str = "",
     buyer_title: str = "",
-    award_file_name: str = "",
+    award_files: dict[str, str] | None = None,
 ) -> list[SupplierEmailDraft]:
     """One AWARD-notification draft per awarded supplier (those with cells on the frozen award).
 
     Reuses the cycle-scoped `award_detail` (raises ValueError if the award isn't this run's), groups
     its lines by supplier to count distinct DCs + lots won, and renders the award template. A
-    not-awarded supplier never appears here — that is the non-selection touchpoint.
+    not-awarded supplier never appears here — that is the non-selection touchpoint. `award_files`
+    maps a supplier id to THAT supplier's individual award-guide filename to attach (per supplier,
+    so one never sees another's); a supplier with no file is left an `[#AwardFileName]` hole.
     """
 
     detail = award_detail(session, cycle_view, award_id)
@@ -105,10 +107,14 @@ def award_drafts(
             "AwardedLotCount": str(len(won_lots[supplier_id])),
             "DeliveryStartDate": start,
             "DeliveryEndDate": end,
-            "AwardFileName": award_file_name,
             "BuyerName": buyer_name,
             "BuyerTitle": buyer_title,
         }
+        # Attach this supplier's OWN guide; if none was found, leave [#AwardFileName] a visible hole
+        # (reported in `missing`) so the buyer attaches it — never name another award's/supplier's.
+        award_file_name = (award_files or {}).get(supplier_id, "")
+        if award_file_name:
+            context["AwardFileName"] = award_file_name
         rendered = render(template, context)
         drafts.append(
             SupplierEmailDraft(
@@ -226,13 +232,15 @@ def feedback_drafts(
     buyer_name: str = "",
     buyer_title: str = "",
 ) -> list[SupplierEmailDraft]:
-    """One ROUND-FEEDBACK draft per supplier with lots ABOVE the market-low benchmark (E-37).
+    """One ROUND-FEEDBACK draft per supplier with an above-benchmark OR an ineligible lot (E-37).
 
-    Per supplier, per cell they bid where their price is above the cell's market low: classify the
-    lot HARD (ineligible — premium over the ceiling or coverage under the floor: "fix to keep
-    participating") vs SOFT (eligible but above the benchmark: "improve your position"), and roll up
-    the per-DC summary ($ / % premium + estimated weekly impact). Only suppliers with at least one
-    above-benchmark lot get a draft. Draft-only; the supplier's OWN data only (no competitor names).
+    Per supplier, per cell they bid: a HARD ask when the lot is INELIGIBLE (premium over the ceiling
+    or coverage under the floor: "fix to keep participating") — fired regardless of price position,
+    since a coverage gate can hit even the market-low bidder — and a SOFT ask when the lot is
+    eligible but priced above the cell's market low ("improve your position"). The per-DC summary
+    ($ / % premium + estimated weekly impact) rolls up the above-benchmark lots only. Any supplier
+    with at least one ask gets a draft. Draft-only; the supplier's OWN data only (no competitor
+    names).
     """
 
     cycle_id = cycle_view.cycle_id
@@ -259,30 +267,19 @@ def feedback_drafts(
         if market_low <= 0:
             continue
         weekly_cases = weekly.get((dc_id, lot_id, tf_id), Decimal("0"))
+        dc_label = dc_name.get(dc_id, dc_id[:6])
+        lot_label = lot_name.get(lot_id, lot_id[:6])
         for supplier_id, price in sup_prices.items():
-            if price <= market_low:  # at or below benchmark -> no ask (only include lots above)
+            is_elig, flags = eligibility.get((supplier_id, dc_id, lot_id, tf_id), (True, ""))
+            above = price > market_low
+            if is_elig and not above:  # eligible AND at/below benchmark -> nothing to ask
                 continue
             prem_dollar = price - market_low
             prem_pct = prem_dollar / market_low
-            impact = prem_dollar * weekly_cases
-            agg = dc_agg[supplier_id].setdefault(
-                dc_id,
-                {
-                    "count": Decimal("0"),
-                    "dollar": Decimal("0"),
-                    "pct": Decimal("0"),
-                    "impact": Decimal("0"),
-                },
-            )
-            agg["count"] += Decimal("1")
-            agg["dollar"] += prem_dollar
-            agg["pct"] += prem_pct
-            agg["impact"] += impact
-
-            is_elig, flags = eligibility.get((supplier_id, dc_id, lot_id, tf_id), (True, ""))
-            dc_label = dc_name.get(dc_id, dc_id[:6])
-            lot_label = lot_name.get(lot_id, lot_id[:6])
             if not is_elig:
+                # A hard ask fires on INELIGIBILITY regardless of price position — a coverage gate
+                # can hit even the cell's market-low bidder, who still needs "fix to keep
+                # participating" feedback.
                 issue, current, target = _hard_ask_reason(flags, prem_pct, ceiling, floor)
                 hard[supplier_id].append(
                     {
@@ -303,11 +300,29 @@ def feedback_drafts(
                         "SuggestedTarget": f"match {_money(market_low)} to compete",
                     }
                 )
+            # The per-DC summary measures the PRICE gap, so it counts above-benchmark lots only (a
+            # market-low ineligible lot has no premium to summarize).
+            if above:
+                impact = prem_dollar * weekly_cases
+                agg = dc_agg[supplier_id].setdefault(
+                    dc_id,
+                    {
+                        "count": Decimal("0"),
+                        "dollar": Decimal("0"),
+                        "pct": Decimal("0"),
+                        "impact": Decimal("0"),
+                    },
+                )
+                agg["count"] += Decimal("1")
+                agg["dollar"] += prem_dollar
+                agg["pct"] += prem_pct
+                agg["impact"] += impact
 
     template = get_template(EmailType.ROUND_FEEDBACK)
     drafts: list[SupplierEmailDraft] = []
-    for supplier_id, agg_by_dc in dc_agg.items():
+    for supplier_id in set(hard) | set(soft):  # any supplier with a hard OR soft ask gets a draft
         supplier_name = sup_name.get(supplier_id, supplier_id[:8])
+        agg_by_dc = dc_agg.get(supplier_id, {})
         dc_rows = [
             {
                 "DC": dc_name.get(dc_id, dc_id[:6]),
@@ -332,8 +347,12 @@ def feedback_drafts(
             context,
             tables={
                 "DCSummaryTable": dc_rows,
-                "HardAskTable": sorted(hard[supplier_id], key=lambda r: (r["DC"], r["Lot"])),
-                "SoftAskTable": sorted(soft[supplier_id], key=lambda r: (r["DC"], r["Lot"])),
+                "HardAskTable": sorted(
+                    hard.get(supplier_id, []), key=lambda r: (r["DC"], r["Lot"])
+                ),
+                "SoftAskTable": sorted(
+                    soft.get(supplier_id, []), key=lambda r: (r["DC"], r["Lot"])
+                ),
             },
         )
         drafts.append(

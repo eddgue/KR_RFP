@@ -76,7 +76,9 @@ from app.engine.interface import PRESET_WEIGHTS, EngineConfig, WeightPreset
 from app.fiscal.calendar import FiscalPeriod, all_periods, period_for_date
 from app.output.booking_guide import (
     BookingAwardView,
+    supplier_guide_label,
     write_booking_guide_internal_xlsx,
+    write_supplier_award_guide_files,
     write_supplier_award_guides_xlsx,
 )
 from app.output.post_award_doc import write_post_award_adjustments_xlsx
@@ -555,6 +557,21 @@ class PilotService:
         )
         write_supplier_award_guides_xlsx(
             cycle, booking, output_path=runpaths.outputs / supplier_name, synthetic=synthetic
+        )
+        # Individual per-supplier files (the sendable artifacts — only that supplier's data), so the
+        # award notification (E-37) can attach a supplier's OWN guide, never the combined workbook.
+        guide_stage = self._stage("booking_guide")
+        awarded_ids = {cell.supplier_id for cell in booking.cells}
+        write_supplier_award_guide_files(
+            cycle,
+            booking,
+            paths_by_supplier={
+                sup.id: runpaths.outputs
+                / stage_filename(guide_stage, supplier_guide_label(award_code, sup.name, sup.id))
+                for sup in cycle.suppliers
+                if sup.id in awarded_ids
+            },
+            synthetic=synthetic,
         )
 
         self._render_kanban(
@@ -1531,22 +1548,36 @@ class PilotService:
     ) -> list[SupplierEmailDraft]:
         """One award-notification email DRAFT per awarded supplier (E-37; template-merge).
 
-        Loads the run's cycle (for names + the delivery window), finds the generated per-supplier
-        award guide in outputs/ for the `[#AwardFileName]` placeholder, and renders the award
-        template per awarded supplier. Raises ValueError on an unknown award (router -> 404).
+        Loads the run's cycle (for names + the delivery window) and renders the award template per
+        awarded supplier. Raises ValueError on an unknown award (router -> 404).
+
+        Each draft attaches the supplier's OWN individual award guide (`write_supplier_award_guide_
+        files`, written at freeze, award-code-stamped so a later freeze can't shadow it) — never the
+        combined all-suppliers workbook. The filename per supplier is recomputed deterministically
+        and only named when the file is actually present (otherwise `[#AwardFileName]` is left for
+        the buyer to attach).
         """
 
         cycle = self._load_cycle(session, runpaths)
-        award_file = next(
-            (p.name for p in runpaths.outputs.glob("*supplier_guides*.xlsx") if p.is_file()), ""
+        award = next(
+            (a for a in self.list_awards(session, runpaths) if a.award_id == award_id), None
         )
+        award_files: dict[str, str] = {}
+        if award is not None:
+            guide_stage = self._stage("booking_guide")
+            for sup in cycle.suppliers:
+                fname = stage_filename(
+                    guide_stage, supplier_guide_label(award.award_code, sup.name, sup.id)
+                )
+                if (runpaths.outputs / fname).is_file():
+                    award_files[sup.id] = fname
         return award_drafts(
             session,
             cycle,
             award_id,
             buyer_name=buyer_name,
             buyer_title=buyer_title,
-            award_file_name=award_file,
+            award_files=award_files,
         )
 
     def feedback_email_drafts(

@@ -47,9 +47,42 @@ def test_award_comms_drafts_one_per_awarded_supplier(client, seed_user, vault_ro
         # Counts are filled (not visible holes).
         assert "[#AwardedDCCount]" not in draft["body"]
         assert "[#AwardedLotCount]" not in draft["body"]
+        # Each draft attaches the supplier's OWN individual guide (generated at freeze) — never the
+        # combined all-suppliers workbook (which would leak every supplier's awards).
+        assert "[#AwardFileName]" not in draft["body"]
+        assert "AwardFileName" not in draft["missing"]
+        assert "award_guide" in draft["body"]
+        assert "supplier_guides" not in draft["body"]
         # The authenticated user is the draft's buyer; the title is left for the buyer to complete.
         assert seed_user["username"] in draft["body"]
         assert "BuyerTitle" in draft["missing"]
+
+
+@pytest.mark.integration
+def test_award_comms_guide_is_not_stale_across_awards(client, seed_user, vault_root) -> None:  # type: ignore[no-untyped-def]
+    """Two awards on one run → an earlier award's drafts attach ITS guide, never the later one's.
+
+    The per-supplier guide is award-code-stamped, so freezing a second scenario can't shadow the
+    first award's files (the regression Codex flagged: a fixed-name guide overwritten per freeze).
+    """
+
+    _login(client, seed_user)
+    slug = _create_run(client)
+    analysis_run_id = _seed_sealed_run(client, slug)
+    award_b = _freeze_b(client, slug, analysis_run_id, code="AWD-B")
+    resp_a = client.post(
+        f"{RUNS}/{slug}/awards/freeze",
+        json={"analysis_run_id": analysis_run_id, "scenario_code": "A", "award_code": "AWD-A"},
+    )
+    assert resp_a.status_code == 200, resp_a.text
+
+    drafts = client.get(f"{RUNS}/{slug}/awards/{award_b}/comms/award").json()
+    assert len(drafts) >= 1
+    for draft in drafts:
+        body = draft["body"].lower()
+        assert "award file: " in body  # a guide is attached
+        assert "awd_b" in body  # the EARLIER award's stamped guide
+        assert "awd_a" not in body  # never the later award's guide
 
 
 @pytest.mark.integration
