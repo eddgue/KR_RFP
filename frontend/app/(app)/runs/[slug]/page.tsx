@@ -6,6 +6,7 @@ import { ApiError, getRun } from "@/lib/api";
 import type { RunDetail } from "@/lib/api";
 import { Button, Panel, StatusChip, stageTone } from "@/components/ui";
 import { KanbanBoard } from "@/components/runs/KanbanBoard";
+import { DownloadArchiveButton } from "@/components/intake/DownloadArchiveButton";
 
 export default function RunDetailPage({
   params,
@@ -110,6 +111,12 @@ export default function RunDetailPage({
                   {run.slug}
                 </code>
               </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+              <DownloadArchiveButton slug={run.slug} size="sm" />
+              <Link href={`/runs/${run.slug}/intake`}>
+                <Button size="sm">Bid intake</Button>
+              </Link>
             </div>
           </Panel>
 

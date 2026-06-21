@@ -49,6 +49,21 @@ def test_preflight_does_not_allow_unknown_origin() -> None:
     assert "access-control-allow-origin" not in resp.headers
 
 
+def test_actual_response_exposes_content_disposition() -> None:
+    """An actual cross-origin response exposes Content-Disposition so the console reads filenames.
+
+    Run-file + zip downloads send the saved name on Content-Disposition; a browser only surfaces it
+    cross-origin when it is in Access-Control-Expose-Headers. An unauthenticated GET still flows
+    through CORSMiddleware, so its 401 carries the expose-headers for the allowed origin.
+    """
+
+    client = TestClient(create_app())
+    resp = client.get("/api/v1/auth/me", headers={"Origin": _ALLOWED_ORIGIN})
+
+    assert resp.headers["access-control-allow-origin"] == _ALLOWED_ORIGIN
+    assert "content-disposition" in resp.headers.get("access-control-expose-headers", "").lower()
+
+
 def test_unexpected_500_carries_cors_for_allowed_origin() -> None:
     """An unhandled 500 still gets CORS headers so the console reads the error, not a CORS failure.
 

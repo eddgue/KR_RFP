@@ -11,3 +11,5 @@ export type { StatusChipProps } from "./StatusChip";
 export { Table, THead, TBody, TR, TH, TD } from "./Table";
 export { Modal } from "./Modal";
 export type { ModalProps } from "./Modal";
+export { FileInput } from "./FileInput";
+export type { FileInputProps } from "./FileInput";
