@@ -35,6 +35,7 @@ from app.domain.awd.models import (
     AwardLine,
 )
 from app.domain.eng.models import AnalysisScenario, AnalysisScenarioAward
+from app.engine.formulas import price_delta
 
 # The keyed cell grain a price applies to: (dc_id, lot_id, tf_id, supplier_id).
 CellKey = tuple[str, str, str, str]
@@ -229,7 +230,7 @@ def add_adjustment(
                 supplier_id=supplier_id,
                 prior_price=prior,
                 new_price=new_price,
-                delta=new_price - prior,
+                delta=price_delta(new_price, prior),
             )
         )
     session.flush()

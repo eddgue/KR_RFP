@@ -137,3 +137,21 @@ def savings_fraction(baseline_spend: Decimal, actual_spend: Decimal) -> Decimal:
     """
 
     return (baseline_spend - actual_spend) / baseline_spend if baseline_spend > _ZERO else _ZERO
+
+
+def premium_dollars(price: Decimal, market_low: Decimal) -> Decimal:
+    """Premium over the cell market low in absolute $/case: price − low (the $ analog of the %)."""
+
+    return price - market_low
+
+
+def weekly_impact(premium_per_case: Decimal, weekly_cases: Decimal) -> Decimal:
+    """Estimated weekly $ impact of a per-case premium: premium $/case × weekly cases."""
+
+    return premium_per_case * weekly_cases
+
+
+def price_delta(current: Decimal, baseline: Decimal) -> Decimal:
+    """A post-award price move: current/effective/new price − the baseline/frozen/prior price."""
+
+    return current - baseline

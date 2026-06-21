@@ -9,9 +9,16 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.engine.formulas import (
+    awarded_cases,
     construct_price_from_parts,
     coverage_ratio,
     delta_vs_historical,
+    line_spend,
+    premium_dollars,
+    price_delta,
+    savings_dollars,
+    savings_fraction,
+    weekly_impact,
     z_score,
 )
 
@@ -62,3 +69,17 @@ def test_delta_vs_historical() -> None:
     assert delta_vs_historical(D("11.00"), D("10.00")) == D("0.1")
     assert delta_vs_historical(D("11.00"), None) is None  # no baseline
     assert delta_vs_historical(D("11.00"), D("0")) is None
+
+
+def test_spend_and_savings() -> None:
+    assert awarded_cases(D("600"), D("0.5")) == D("300.0")
+    assert line_spend(D("11.50"), D("300")) == D("3450.00")
+    assert savings_dollars(D("1000"), D("900")) == D("100")
+    assert savings_fraction(D("1000"), D("900")) == D("0.1")
+    assert savings_fraction(D("0"), D("900")) == D("0")  # no baseline -> 0, not a division error
+
+
+def test_premium_impact_and_price_delta() -> None:
+    assert premium_dollars(D("11.50"), D("10.00")) == D("1.50")
+    assert weekly_impact(D("1.50"), D("600")) == D("900.00")
+    assert price_delta(D("9.75"), D("10.00")) == D("-0.25")
