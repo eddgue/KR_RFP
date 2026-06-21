@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 from app.core.config.settings import get_settings
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.cycle.loader import load_cycle
+from app.pilot.models import Run
+from app.pilot.run_repo import get_run
 from app.pilot.service import PilotService
 from app.pilot.vault import RunPaths
 
@@ -43,17 +45,34 @@ def service() -> PilotService:
     return PilotService(_vault_root(), isolate_db=False, db_runs=True)
 
 
-def resolve_paths(slug: str) -> RunPaths:
-    """The `RunPaths` for an existing run, or 404 if the slug isn't a real run."""
+def resolve_run(db: Session, slug: str) -> Run:
+    """The `pilot.run` row for a slug, or 404 if there is no such run (ADR-0018 Slice 3).
 
-    paths = service().run_paths(slug)
-    if not paths.root.is_dir():
+    The console resolves run identity from the DB, not the vault folder: a run EXISTS iff it has a
+    `pilot.run` row. The vault folder may or may not be present (it is, in the dual-write era), but
+    it is no longer the source of truth for "is this a real run".
+    """
+
+    run = get_run(db, slug)
+    if run is None:
         raise AppError(
             code=ErrorCode.NOT_FOUND,
             message=f"No run named {slug!r}.",
             status_code=404,
         )
-    return paths
+    return run
+
+
+def resolve_paths(db: Session, slug: str) -> RunPaths:
+    """The `RunPaths` for an existing run, or 404 if the slug isn't a real run (DB-resolved).
+
+    Existence is checked against `pilot.run` (Slice 3), not the folder. The returned `RunPaths`
+    still points at the vault location so the upload/file routes work in the dual-write era; later
+    slices stop touching disk entirely.
+    """
+
+    resolve_run(db, slug)  # 404 if no DB row
+    return service().run_paths(slug)
 
 
 def resolve_round_id(db: Session, paths: RunPaths, round_no: int) -> str:
@@ -61,14 +80,12 @@ def resolve_round_id(db: Session, paths: RunPaths, round_no: int) -> str:
 
     `gate_required` (400) when the run has no cycle yet (setup not ingested); `validation_error`
     (400) when the round is beyond the cycle's round count. Shared by the bids endpoints AND the
-    bid-template endpoint so an out-of-range round is never mislabeled as "no cycle yet".
+    bid-template endpoint so an out-of-range round is never mislabeled as "no cycle yet". The cycle
+    link is read from the `pilot.run` row (Slice 3), not `cycle_id.txt`.
     """
 
-    cycle_id_value = (
-        paths.cycle_id_file.read_text(encoding="utf-8").strip()
-        if paths.cycle_id_file.exists()
-        else ""
-    )
+    run = resolve_run(db, paths.slug)
+    cycle_id_value = run.cycle_id or ""
     if not cycle_id_value:
         raise AppError(
             code=ErrorCode.GATE_REQUIRED,

@@ -13,7 +13,6 @@ with the bids router via `app.api.v1.pilot_common`.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -26,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
+from app.api.v1.pilot_common import resolve_paths, resolve_round_id, resolve_run, service
 from app.auth.deps import CurrentUser
 from app.comms.resolvers import SupplierEmailDraft
 from app.core.errors.taxonomy import AppError, ErrorCode
@@ -36,12 +35,13 @@ from app.domain.eng.read import (
     ScenarioComparisonRow,
     ScenarioDetail,
 )
-from app.pilot.status import read_status
+from app.pilot.models import Run
+from app.pilot.run_repo import list_run_records
+from app.pilot.status import kanban
 from app.pilot.vault import (
     SUBDIR_INPUTS,
     RunPaths,
     build_run_zip,
-    is_rehearsal,
     stage_filename,
     write_to_run,
 )
@@ -165,24 +165,17 @@ class RecordAdjustmentResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# metadata helpers (commodity / label / stage from the run's vault files)
+# metadata helpers (commodity / label / stage / cycle from the pilot.run row, Slice 3)
 # --------------------------------------------------------------------------- #
-_NOTES_TITLE_RE = re.compile(r"^#\s*NOTES\s*[—-]\s*(.+)$")
+def _board_for(db: Session, run: Run, paths: RunPaths) -> dict[str, list[str]]:
+    """The kanban board for a run, with the cycle link resolved from the DB row (not files).
 
-
-def _label_from_notes(paths: RunPaths) -> str:
-    """The run's label — read from the NOTES.md title (`# NOTES — {label}`), never re-stamped.
-
-    RUN.md's title gets rewritten to the commodity on each kanban render, so NOTES.md (whose header
-    is written once at creation) is the stable source for the human label. Falls back to the slug.
+    Run identity (and the cycle link) is DB-resolved (Slice 3): the kanban reads the governed cycle
+    state for `run.cycle_id` and the file-presence signal (setup_present) from the vault folder
+    while the dual-write era keeps the folder around. A run with no cycle yields a files-only board.
     """
 
-    if paths.notes_md.exists():
-        for line in paths.notes_md.read_text(encoding="utf-8").splitlines():
-            match = _NOTES_TITLE_RE.match(line.strip())
-            if match:
-                return match.group(1).strip()
-    return paths.slug
+    return kanban(db, run.cycle_id, paths)
 
 
 def _stage_label(board: dict[str, list[str]]) -> str:
@@ -198,28 +191,25 @@ def _stage_label(board: dict[str, list[str]]) -> str:
     return "Setup"
 
 
-def _has_cycle(paths: RunPaths) -> bool:
-    """True once setup has been ingested — the run's cycle_id.txt exists and is non-empty.
+def _has_cycle(db: Session, slug: str) -> bool:
+    """True once setup has been ingested — the run row carries a cycle_id (DB-resolved, Slice 3).
 
     A durable, file-generation-independent signal: a returning user who ingested setup but hasn't
-    generated a template yet should still have the post-setup steps unlocked (re-uploading setup
-    would re-create the cycle).
+    generated a template yet still has the post-setup steps unlocked. Resolves the `pilot.run` row
+    (404 if the run doesn't exist), so the award/comms routes that gate on a cycle stay DB-backed.
     """
 
-    return paths.cycle_id_file.exists() and bool(
-        paths.cycle_id_file.read_text(encoding="utf-8").strip()
-    )
+    return bool(resolve_run(db, slug).cycle_id)
 
 
-def _summary(paths: RunPaths, board: dict[str, list[str]]) -> RunSummary:
-    header = read_status(paths)
+def _summary(run: Run, board: dict[str, list[str]]) -> RunSummary:
     return RunSummary(
-        slug=paths.slug,
-        commodity=header.get("Commodity", ""),
-        label=_label_from_notes(paths),
-        rehearsal=is_rehearsal(paths),
+        slug=run.slug,
+        commodity=run.commodity,
+        label=run.label,
+        rehearsal=run.rehearsal,
         stage=_stage_label(board),
-        has_cycle=_has_cycle(paths),
+        has_cycle=bool(run.cycle_id),
     )
 
 
@@ -280,13 +270,18 @@ def list_runs(
     user: CurrentUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> list[RunSummary]:
-    """Every run in the vault, each with a one-line stage label from its kanban."""
+    """Every run, from the `pilot.run` table (Slice 3 — DB-resolved, not a vault scan).
+
+    Each run's stage label comes from its kanban (the governed cycle state + the vault folder's
+    file-presence signal while the dual-write era keeps the folder around).
+    """
 
     svc = service()
     summaries: list[RunSummary] = []
-    for paths in svc.list_runs():
-        board = svc.status(db, paths)
-        summaries.append(_summary(paths, board))
+    for run in list_run_records(db):
+        paths = svc.run_paths(run.slug)
+        board = _board_for(db, run, paths)
+        summaries.append(_summary(run, board))
     return summaries
 
 
@@ -310,8 +305,9 @@ def create_run(
     paths = svc.start_run(
         commodity=body.commodity, label=body.label, rehearsal=body.rehearsal, session=db
     )
-    board = svc.status(db, paths)
-    summary = _summary(paths, board)
+    run = resolve_run(db, paths.slug)  # the just-dual-written pilot.run row
+    board = _board_for(db, run, paths)
+    summary = _summary(run, board)
     return RunDetail(**summary.model_dump(), kanban=board)
 
 
@@ -324,9 +320,10 @@ def get_run(
     """One run's summary + its full kanban board, or 404 if the slug isn't a real run."""
 
     svc = service()
-    paths = resolve_paths(slug)
-    board = svc.status(db, paths)
-    summary = _summary(paths, board)
+    run = resolve_run(db, slug)
+    paths = svc.run_paths(slug)
+    board = _board_for(db, run, paths)
+    summary = _summary(run, board)
     return RunDetail(**summary.model_dump(), kanban=board)
 
 
@@ -337,10 +334,11 @@ def get_run(
 def list_run_files(
     slug: str,
     user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
 ) -> list[RunFile]:
     """The files in the run's inputs/ + outputs/ dirs, or 404 if the slug isn't a real run."""
 
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     return _run_files(paths)
 
 
@@ -349,6 +347,7 @@ def download_run_file(
     slug: str,
     name: str,
     user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
 ) -> FileResponse:
     """Stream a run file as an attachment, or 404 if the run/file is missing.
 
@@ -356,7 +355,7 @@ def download_run_file(
     is served (see `_resolve_run_file`); the response is an xlsx attachment the browser downloads.
     """
 
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     target = _resolve_run_file(paths, name)
     return FileResponse(
         path=target,
@@ -370,6 +369,7 @@ def download_run_file(
 def download_run_archive(
     slug: str,
     user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     """Stream the run's full folder set (skeleton + files) as one zip, or 404 if the run is missing.
 
@@ -378,7 +378,7 @@ def download_run_archive(
     to (see `build_run_zip`).
     """
 
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     return Response(
         content=build_run_zip(paths),
         media_type="application/zip",
@@ -410,11 +410,11 @@ def ingest_setup(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     data = file.file.read()
     uploaded = write_to_run(paths, SUBDIR_INPUTS, stage_filename(1, "setup_kickoff"), data)
     cycle_id = svc.ingest_setup(db, paths, uploaded)
-    board = svc.status(db, paths)
+    board = _board_for(db, resolve_run(db, slug), paths)
     return IngestSetupResponse(cycle_id=cycle_id, kanban=board)
 
 
@@ -439,10 +439,10 @@ def generate_bid_template(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
     generated = svc.generate_bid_template(db, paths, round)
-    board = svc.status(db, paths)
+    board = _board_for(db, resolve_run(db, slug), paths)
     return GenerateTemplateResponse(filename=generated.name, kanban=board)
 
 
@@ -472,7 +472,7 @@ def run_analysis(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     resolve_round_id(db, paths, round)  # gate_required (no cycle) vs validation_error (bad round)
     out_path = svc.run_round(db, paths, round, actor=user.username)
 
@@ -513,7 +513,7 @@ def list_run_analyses(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     return svc.list_analyses(db, paths)
 
 
@@ -535,7 +535,7 @@ def get_scenario_comparison(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     _ensure_analysis(db, paths, slug, analysis_run_id)
     return svc.scenario_comparison(db, paths, analysis_run_id)
 
@@ -558,7 +558,7 @@ def get_scenario_detail(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     _ensure_analysis(db, paths, slug, analysis_run_id)
     try:
         return svc.scenario_detail(db, paths, analysis_run_id, scenario_code)
@@ -590,7 +590,7 @@ def freeze_award(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     _ensure_analysis(db, paths, slug, body.analysis_run_id)
     try:
         award_id = svc.freeze_award(
@@ -627,7 +627,7 @@ def list_run_awards(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     return svc.list_awards(db, paths)
 
 
@@ -646,9 +646,9 @@ def get_run_award(
     layer), and the full version history (v0 FROZEN → vN). 404 if the run / award doesn't exist.
     """
 
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     # An award can't exist before a cycle does — treat "no cycle" as "no such award" (404).
-    if not _has_cycle(paths):
+    if not _has_cycle(db, slug):
         raise AppError(
             code=ErrorCode.NOT_FOUND,
             message=f"No frozen award {award_id!r} on run {slug!r}.",
@@ -687,10 +687,10 @@ def record_award_adjustment(
     """
 
     svc = service()
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     # Scope to THIS run's cycle (another run's award / no cycle is a 404) and fetch the award's real
     # cells in one shot — `award_detail` raises ValueError when the id isn't ours.
-    if not _has_cycle(paths):
+    if not _has_cycle(db, slug):
         raise AppError(
             code=ErrorCode.NOT_FOUND,
             message=f"No frozen award {award_id!r} on run {slug!r}.",
@@ -767,8 +767,8 @@ def get_award_comms_drafts(
     `[#BuyerName]`. 404 if the run / award is unknown (scoped to the run's cycle).
     """
 
-    paths = resolve_paths(slug)
-    if not _has_cycle(paths):
+    paths = resolve_paths(db, slug)
+    if not _has_cycle(db, slug):
         raise AppError(
             code=ErrorCode.NOT_FOUND,
             message=f"No frozen award {award_id!r} on run {slug!r}.",
@@ -802,8 +802,8 @@ def get_rejection_comms_drafts(
     `[#BuyerName]`. 404 if the run / award is unknown (scoped to the run's cycle).
     """
 
-    paths = resolve_paths(slug)
-    if not _has_cycle(paths):
+    paths = resolve_paths(db, slug)
+    if not _has_cycle(db, slug):
         raise AppError(
             code=ErrorCode.NOT_FOUND,
             message=f"No frozen award {award_id!r} on run {slug!r}.",
@@ -837,7 +837,7 @@ def get_feedback_comms_drafts(
     `[#BuyerName]`. 400 (`gate_required`) before any cycle; 404 for an unknown run / analysis run.
     """
 
-    paths = resolve_paths(slug)
+    paths = resolve_paths(db, slug)
     _ensure_analysis(db, paths, slug, analysis_run_id)
     return service().feedback_email_drafts(db, paths, analysis_run_id, buyer_name=user.username)
 
@@ -847,7 +847,7 @@ def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: s
     SEALED analyses (404) — so an unknown / other-run analysis id is never silently served.
     """
 
-    if not _has_cycle(paths):
+    if not _has_cycle(db, slug):
         raise AppError(
             code=ErrorCode.GATE_REQUIRED,
             message=f"Run {slug!r} has no sealed analysis yet — run a round's analysis first.",

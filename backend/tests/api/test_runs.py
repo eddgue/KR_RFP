@@ -99,3 +99,69 @@ def test_get_unknown_run_404(client, seed_user, vault_root) -> None:  # type: ig
     _login(client, seed_user)
     resp = client.get(f"{RUNS}/does-not-exist-20260101-abcdef")
     assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_run_resolves_from_db_with_no_folder(  # type: ignore[no-untyped-def]
+    client, seed_user, vault_root, db_session
+) -> None:
+    """A run existing ONLY as a pilot.run row (no vault folder) still lists + reads back (Slice 3).
+
+    Run identity is DB-resolved: the console surfaces a run from its `pilot.run` row even when no
+    `runs/<slug>/` folder exists (the stateless target). This inserts a row directly (the vault dir
+    is the empty temp `vault_root`), then asserts the list + detail resolve it from the DB.
+    """
+
+    from app.pilot.run_repo import create_run_record
+
+    _login(client, seed_user)
+
+    slug = "ghost-tomato-20260621-deadbe"
+    create_run_record(
+        db_session, slug=slug, commodity="Ghost Tomatoes", label="Folderless", rehearsal=False
+    )
+
+    # It lists from the DB even though no vault folder was ever created.
+    listed = client.get(RUNS)
+    assert listed.status_code == 200
+    summary = next((r for r in listed.json() if r["slug"] == slug), None)
+    assert summary is not None, listed.json()
+    assert summary["commodity"] == "Ghost Tomatoes"
+    assert summary["label"] == "Folderless"
+    assert summary["has_cycle"] is False
+
+    # And reads back by slug from the DB row (no folder on disk).
+    one = client.get(f"{RUNS}/{slug}")
+    assert one.status_code == 200
+    body = one.json()
+    assert body["slug"] == slug
+    assert body["commodity"] == "Ghost Tomatoes"
+    assert set(body["kanban"]) == {"Done", "Doing", "Next", "Waiting on you"}
+
+
+@pytest.mark.integration
+def test_created_run_still_resolves_after_folder_removed(  # type: ignore[no-untyped-def]
+    client, seed_user, vault_root, db_session
+) -> None:
+    """Deleting a created run's vault folder does NOT drop it from the console — DB is the identity.
+
+    Creates a run (which dual-writes the pilot.run row + the folder), removes the folder, and
+    asserts the run still lists and reads back: the source of truth is the DB row, not the files.
+    """
+
+    import shutil
+
+    _login(client, seed_user)
+    created = client.post(
+        RUNS, json={"commodity": "Field Tomatoes", "label": "Survives", "rehearsal": False}
+    )
+    assert created.status_code == 201
+    slug = created.json()["slug"]
+
+    # Wipe the vault folder entirely — only the pilot.run row remains.
+    shutil.rmtree(vault_root / "runs" / slug)
+
+    assert slug in {r["slug"] for r in client.get(RUNS).json()}
+    one = client.get(f"{RUNS}/{slug}")
+    assert one.status_code == 200
+    assert one.json()["slug"] == slug

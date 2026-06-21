@@ -20,11 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
+from app.api.v1.pilot_common import resolve_round_id, resolve_run, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
 from app.domain.bid.models import BidLine
 from app.pilot.flex_ingest import ColumnMapping, MappingProposal
+from app.pilot.status import kanban
 from app.pilot.vault import SUBDIR_INPUTS, RunPaths, stage_filename, write_to_run
 
 router = APIRouter()
@@ -185,7 +186,8 @@ def import_bids(
     """
 
     svc = service()
-    paths = resolve_paths(run)
+    run_row = resolve_run(db, run)  # 404 if no such run (DB-resolved identity, Slice 3)
+    paths = service().run_paths(run)
     # Validate the round against the cycle up front so a bad round is a clean 400, not a 500 deep
     # in the service (so even flexible-propose, which writes nothing, rejects an impossible round).
     resolve_round_id(db, paths, round)
@@ -196,7 +198,7 @@ def import_bids(
             paths, SUBDIR_INPUTS, stage_filename(_stage(round), f"round{round}_bids_uploaded"), data
         )
         count = _ingest_bids(svc, db, paths, round, uploaded, actor=user.username)
-        return IngestedResponse(ingested=count, kanban=svc.status(db, paths))
+        return IngestedResponse(ingested=count, kanban=kanban(db, run_row.cycle_id, paths))
 
     # flexible — write the bytes to a temp scratch path inside inputs/ so the service reads a file.
     scratch = write_to_run(paths, SUBDIR_INPUTS, f"round{round}_raw_supplier_drop.xlsx", data)
@@ -212,7 +214,7 @@ def import_bids(
 
     result = svc.ingest_any(db, paths, round, scratch, confirm=True, actor=user.username)
     assert isinstance(result, int)  # noqa: S101 — confirm=True path returns the ingested count
-    return IngestedResponse(ingested=result, kanban=svc.status(db, paths))
+    return IngestedResponse(ingested=result, kanban=kanban(db, run_row.cycle_id, paths))
 
 
 @router.get("", response_model=list[BidLineView], summary="List a round's ingested bids")
@@ -229,9 +231,10 @@ def list_bids(
     cycle yet / the round is out of range.
     """
 
-    paths = resolve_paths(run)
+    run_row = resolve_run(db, run)  # 404 if no such run (DB-resolved identity, Slice 3)
+    paths = service().run_paths(run)
     round_id = resolve_round_id(db, paths, round)
-    cycle_id = paths.cycle_id_file.read_text(encoding="utf-8").strip()
+    cycle_id = run_row.cycle_id or ""
     # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (one row per period in a
     # timeframe's span). This list is the IDENTITY grain (one row per supplier × dc × lot × item ×
     # tf), so collapse the fanned period rows to ONE representative per cell with DISTINCT ON — the
