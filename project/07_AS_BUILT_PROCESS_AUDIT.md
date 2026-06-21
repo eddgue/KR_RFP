@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.2
+version: 1.3
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -286,8 +286,37 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ---
 
-## Appendix — revision log
+## 12. Re-running this audit — triggers, not calendar
 
-- **v1.2 (2026-06-21):** added the **Platform maturity snapshot** table at the top (whole-platform status in one glance, for a director-level read). (Sponsor review of v1.1.)
-- **v1.1 (2026-06-21):** added §4 System of Record hierarchy and §5 Failure domains; elevated **G-B to CRITICAL (existential)**; re-ranked priorities to lead with the audit-event wiring; added the "where the project stands" framing. (Sponsor review of v1.0.)
-- **v1.0 (2026-06-21):** initial as-built audit at commit `d563aad`.
+A calendar audit is mostly noise; an audit **after meaningful architectural change** catches drift while it is still cheap to fix. Re-run this audit on the events below — scoped to what changed — and treat it as a **release gate**: *no major version is complete until this document is updated* (ratified in **D37**; operationalized in `02_WAYS_OF_WORKING` §8 + Definition of Done).
+
+| Trigger | Audit scope |
+|---|---|
+| New major version | Full audit |
+| New data store | Full audit |
+| New agent added | Workflow + permissions |
+| New write path added | State / write-location |
+| New user role added | RBAC |
+| New UI surface added | UX visibility |
+| New approval process added | Governance |
+| Pre-production rollout | Full audit |
+| Post-production rollout | Full audit |
+
+**Every re-run answers the same five questions** (the section answering each today in parentheses):
+
+1. **What is the workflow now?** (§1 flowchart, §2 stages)
+2. **What records exist, and where are they stored?** (§3 data flow, §4 System of Record)
+3. **Who can read / write / approve them?** (§6 gates, §2 human layer, RBAC / G-C)
+4. **What must be surfaced to users?** (§2 human/UX layer)
+5. **Where are the gaps between design and implementation?** (§9 gap analysis, the six-gap summary)
+
+---
+
+## Appendix — version history (track the delta)
+
+The value of this audit is the **delta**, not the snapshot. Each entry records **Added** (capabilities), **Closed** (gaps), and **Introduced** (new gaps), so anyone can answer *"when did this capability appear?"* or *"when did this control disappear?"* without reverse-engineering git history.
+
+- **v1.3 (2026-06-21)** — *Added:* re-audit trigger table + five standing questions (§12); release-gate policy (D37, WAYS_OF_WORKING §8); this delta-format history. *Closed:* none. *Introduced:* none.
+- **v1.2 (2026-06-21)** — *Added:* Platform maturity snapshot at the top. *Closed:* none. *Introduced:* none.
+- **v1.1 (2026-06-21)** — *Added:* §4 System of Record hierarchy, §5 Failure domains, "where the project stands" framing. *Reclassified:* G-B → CRITICAL / existential. *Closed:* none. *Introduced:* none.
+- **v1.0 (2026-06-21)** — Initial as-built audit at commit `d563aad`. *Baseline gaps opened:* G-A (flat-13 not wired), G-B (audit chain not on decisions), G-C (RBAC not enforced), G-D (sign-off decorative), G-E (HTTP API front-half only), G-F (PBA / importer / external feeds absent).
