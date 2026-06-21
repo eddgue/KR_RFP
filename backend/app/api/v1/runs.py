@@ -28,6 +28,7 @@ from app.api.deps import get_db
 from app.api.v1.pilot_common import resolve_paths, resolve_round_id, service
 from app.auth.deps import CurrentUser
 from app.core.errors.taxonomy import AppError, ErrorCode
+from app.domain.awd.read import AwardDetail, AwardSummary
 from app.domain.eng.read import (
     AnalysisSummary,
     ScenarioComparisonRow,
@@ -571,6 +572,60 @@ def freeze_award(
             status_code=400,
         ) from exc
     return FreezeAwardResponse(award_id=award_id, scenario_code=body.scenario_code)
+
+
+@router.get(
+    "/{slug}/awards",
+    response_model=list[AwardSummary],
+    summary="List a run's frozen awards",
+)
+def list_run_awards(
+    slug: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[AwardSummary]:
+    """The run's FROZEN awards (oldest first, each with its line count + latest layer version).
+
+    Empty list when the run has no cycle / no frozen award yet (a list endpoint, never a gate). 404
+    if the run doesn't exist.
+    """
+
+    svc = service()
+    paths = resolve_paths(slug)
+    return svc.list_awards(db, paths)
+
+
+@router.get(
+    "/{slug}/awards/{award_id}",
+    response_model=AwardDetail,
+    summary="Inspect one frozen award (baseline + effective + version history)",
+)
+def get_run_award(
+    slug: str,
+    award_id: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> AwardDetail:
+    """One frozen award: baseline lines, the EFFECTIVE price per cell (baseline overlaid by every
+    layer), and the full version history (v0 FROZEN → vN). 404 if the run / award doesn't exist.
+    """
+
+    paths = resolve_paths(slug)
+    # An award can't exist before a cycle does — treat "no cycle" as "no such award" (404).
+    if not _has_cycle(paths):
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        )
+    try:
+        return service().award_detail(db, paths, award_id)
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.NOT_FOUND,
+            message=f"No frozen award {award_id!r} on run {slug!r}.",
+            status_code=404,
+        ) from exc
 
 
 def _ensure_analysis(db: Session, paths: RunPaths, slug: str, analysis_run_id: str) -> None:
