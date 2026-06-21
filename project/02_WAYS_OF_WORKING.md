@@ -61,7 +61,7 @@ Acceptance criteria written · gap/epic linked · data-model impact identified �
 
 ## 5. Definition of Done (a story is complete)
 
-Code + migration merged · unit/integration tests green · migration roundtrip passes · API contract updated · RBAC/tenancy honored · audit events emitted · docs/ADR updated · **As-Built Audit updated if an audit trigger was hit (§8, D37)** · demoable in a vertical slice · no new hard-delete or live-formula fragility introduced.
+Code + migration merged · unit/integration tests green · migration roundtrip passes · API contract updated · RBAC/tenancy honored · audit events emitted · docs/ADR updated · **pre-merge audit-impact review run, and the As-Built Audit + gap register updated in the same change if any audit trigger was hit (§8, D37/D39)** · demoable in a vertical slice · no new hard-delete or live-formula fragility introduced.
 
 ## 6. Quality gates (per phase)
 
@@ -77,10 +77,16 @@ Code + migration merged · unit/integration tests green · migration roundtrip p
 - The **Target Spec v1.0** is the living source of truth; the two original packages and the audit are frozen inputs under `specs/` and `audit/`.
 - Every squad keeps its plan current in `project/squads/<squad>/`.
 
-## 8. As-Built Audit — event-triggered, and a release gate
+## 8. As-Built Audit — living model of reality, event-triggered, a release gate
 
-The **As-Built Process Audit** (`project/07_AS_BUILT_PROCESS_AUDIT.md`, PM-007) is a **living** document, refreshed on **architecture events, not a calendar** — a quarterly audit is mostly noise; an audit after meaningful change catches drift while it is cheap to fix. Its trigger table and the five standing questions live in that doc (§12). The headline rule:
+The **As-Built Process Audit** (`project/07_AS_BUILT_PROCESS_AUDIT.md`, PM-007) is a **living model of reality** — it documents the system **as actually implemented**, not as intended. If implementation and the audit disagree, implementation is reviewed and the audit is corrected to match reality (D39). It is refreshed on **architecture events, not a calendar**. Its trigger conditions, standing questions, required sections, and release-gate states live in that doc (§12–§13). The headline rule:
 
 > **No major version is complete until the As-Built Audit is updated.** (D37)
 
-Re-audit triggers (scope per PM-007 §12): new major version · new data store · new agent · new write path · new user role · new UI surface · new approval process · pre-/post-production rollout. Each update records the **delta** (Added capabilities / Closed gaps / Introduced gaps), so "when did this capability appear / when did this control disappear?" is answerable without reverse-engineering git. This makes the audit part of the development process rather than documentation that drifts into fiction.
+**Pre-merge audit-impact review (part of the DoD).** On every PR (including Codex review), ask whether the change touches **workflow · state transitions · persistence · runtime boundaries · permissions · governance · auditability · user-visible behavior · failure domains**. If **any** answer is yes, the audit **and the gap register** are reviewed and updated **in the same change, before merge** — the audit moves with the code.
+
+**Re-audit triggers** (scope per PM-007 §12.1): new process stage / lifecycle transition / approval path / human interaction / automation · new table / file output / storage location / write path / system of record · new service / MCP tool / agent / orchestrator logic / execution boundary / integration · new role / permission / RBAC / approval / audit-logging change · new screen / workflow surface / operator action / user-visible state · new subsystem / dependency / runtime / deployment model · major version / pre-/post-production rollout.
+
+**Release-gate states** (PM-007 §12.3): a major version yields **PASS** (audit reflects implementation; no critical control missing), **CONDITIONAL** (known risks documented and explicitly accepted in the gap register with an owner), or **FAIL** (audit doesn't reflect implementation or a critical control is missing — do not ship).
+
+Each update records the **delta** (Added / Modified / Removed capabilities · Closed gaps · New gaps), so "when did this capability appear / when did this control disappear?" is answerable without reverse-engineering git. This makes the audit part of the development process rather than documentation that drifts into fiction.

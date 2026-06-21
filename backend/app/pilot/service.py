@@ -57,6 +57,7 @@ from app.domain.eng.read import (
 )
 from app.domain.eng.runner import EngineRunner, IncumbentRow
 from app.engine.interface import PRESET_WEIGHTS, EngineConfig, WeightPreset
+from app.fiscal.calendar import FiscalPeriod, all_periods, period_for_date
 from app.output.booking_guide import (
     BookingAwardView,
     write_booking_guide_internal_xlsx,
@@ -694,6 +695,11 @@ class PilotService:
         }
 
         # bid_line counts per round (names not keys: rounds reported by their number).
+        # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods, so count the LOGICAL
+        # lines (DISTINCT identity cells) — NOT the fanned storage rows — so this stays the priced
+        # count the buyer ingested (matches `ingest_bids`'s returned N and the API contract). Only
+        # ACTIVE (`is_scoreable`) rows are counted — mirrors the engine's `_read_bid_lines` filter,
+        # so a re-submission that drops a cell (prior rows superseded) doesn't overcount this round.
         bid_counts = [
             {
                 "round": round_number_by_id.get(round_id, 0),
@@ -701,8 +707,10 @@ class PilotService:
             }
             for round_id, count in session.execute(
                 text(
-                    "SELECT round_id, count(*) FROM bid.bid_line "
-                    "WHERE cycle_id = :cyc GROUP BY round_id"
+                    "SELECT round_id, "
+                    "count(DISTINCT (supplier_id, dc_id, lot_id, item_id, tf_id)) "
+                    "FROM bid.bid_line WHERE cycle_id = :cyc AND is_scoreable = true "
+                    "GROUP BY round_id"
                 ),
                 {"cyc": cycle_id},
             ).all()
@@ -1100,6 +1108,71 @@ class PilotService:
                 board["Waiting on you"].append(line)
         status_mod.render_run_md(runpaths, board)
 
+    def _period_ids_by_timeframe(
+        self, session: Session, cycle_id: str
+    ) -> dict[str, list[str | None]]:
+        """Resolve each cycle timeframe to its flat-13 fiscal-period span (INTAKE §1a / Option B).
+
+        Maps `tf_id -> [fiscal_period_id, ...]` by reading the timeframe's stored calendar dates
+        (`cyc.cycle_timeframe.start_date/end_date`), walking them to the covering
+        `ref.fiscal_period` rows (`period_for_date`), and collecting each period's id as TEXT (the
+        `bid_line` column is varchar; `ref.fiscal_period.id` is uuid — store via `str()`/`::text`).
+
+        GRACEFUL FALLBACK: a timeframe whose dates fall OUTSIDE the seeded FY16–36 calendar (a
+        synthetic/placeholder cycle) cannot be resolved to periods — it maps to `[None]`, so the
+        caller writes the single tf-grain row with `fiscal_period_id` NULL exactly as before. The
+        supersede logic + the two filtered unique indexes (migration 0016) cover both grains.
+        """
+
+        rows = session.execute(
+            text(
+                "SELECT tf_id, start_date, end_date FROM cyc.cycle_timeframe WHERE cycle_id = :cyc"
+            ),
+            {"cyc": cycle_id},
+        ).all()
+        # fiscal_period (fiscal_year, period) -> id::text, for the years the calendar seeds.
+        fp_id_by_year_period = {
+            (int(fy), int(p)): str(fid)
+            for fy, p, fid in session.execute(
+                text("SELECT fiscal_year, period, id FROM ref.fiscal_period")
+            ).all()
+        }
+
+        spans: dict[str, list[str | None]] = {}
+        for tf_id, start, end in rows:
+            try:
+                first, last = period_for_date(start), period_for_date(end)
+            except ValueError:
+                spans[tf_id] = [None]  # dates outside the seeded calendar -> tf-grain fallback
+                continue
+            period_ids: list[str | None] = []
+            ok = True
+            # Walk the contiguous span first..last (inclusive) across (possibly) two FYs.
+            for fp in self._period_walk(first, last):
+                fid = fp_id_by_year_period.get((fp.fiscal_year, fp.period))
+                if fid is None:
+                    ok = False
+                    break
+                period_ids.append(fid)
+            spans[tf_id] = period_ids if (ok and period_ids) else [None]
+        return spans
+
+    @staticmethod
+    def _period_walk(first: FiscalPeriod, last: FiscalPeriod) -> list[FiscalPeriod]:
+        """The inclusive fiscal-period span from `first` to `last`, ordered by (FY, period)."""
+
+        ordered = sorted(all_periods(), key=lambda p: (p.fiscal_year, p.period))
+        out: list[FiscalPeriod] = []
+        collecting = False
+        for fp in ordered:
+            if fp.fiscal_year == first.fiscal_year and fp.period == first.period:
+                collecting = True
+            if collecting:
+                out.append(fp)
+            if fp.fiscal_year == last.fiscal_year and fp.period == last.period:
+                break
+        return out
+
     def _persist_bid_lines(
         self,
         session: Session,
@@ -1238,41 +1311,54 @@ class PilotService:
             submission_by_sup[supplier_id] = submission_id
             return submission_id
 
+        # Option B (INTAKE §1a): store bids FLAT at the 13 fiscal periods. Each priced tf-grain line
+        # is FANNED OUT to one bid.bid_line per fiscal period in its timeframe's span — the payload
+        # is replicated verbatim, only `fiscal_period_id` differs. The engine/scenarios/awards stay
+        # timeframe-grain via a representative-row collapse downstream; the storage row count grows
+        # (≤13×) but `count` keeps the LOGICAL line semantics (the API contract: `ingested == N`).
+        period_ids_by_tf = self._period_ids_by_timeframe(session, cycle.cycle_id)
+
         count = 0
         for line in lines:
             if line.completeness is not Completeness.BID:
                 continue
             ident = line.identity
-            session.add(
-                BidLine(
-                    bid_line_id=_new_id(),
-                    submission_id=_submission_for(ident.supplier_id),
-                    cycle_id=cycle.cycle_id,
-                    round_id=round_id,
-                    supplier_id=ident.supplier_id,
-                    dc_id=ident.dc_id,
-                    lot_id=ident.lot_id,
-                    item_id=ident.item_id,
-                    tf_id=ident.tf_id,
-                    currency_code="USD",
-                    price_basis=line.price_basis or "ALL_IN",
-                    submitted_all_in_case=line.components.all_in,
-                    fob_case=line.components.fob,
-                    delivery_surcharge_case=line.components.delivery_surcharge or None,
-                    vegcool_surcharge_case=line.components.vegcool_surcharge or None,
-                    lot_discount_case=line.components.lot_discount or None,
-                    price_basis_resolved=line.price_basis or None,
-                    transit_days=line.transit_days,
-                    volume_minimum_cases=line.total_vol_offered,
-                    exclusivity_required_flag=False,
-                    validity_status="VALID",
-                    source_row_number=line.source_row_number,
-                    created_at=now,
-                    is_scoreable=True,
-                    is_awardable=True,
+            submission_id = _submission_for(ident.supplier_id)
+            # The timeframe's fiscal-period span; `[None]` for a tf that doesn't map (fallback) ->
+            # a single tf-grain row exactly as before.
+            period_ids = period_ids_by_tf.get(ident.tf_id) or [None]
+            for fiscal_period_id in period_ids:
+                session.add(
+                    BidLine(
+                        bid_line_id=_new_id(),
+                        submission_id=submission_id,
+                        cycle_id=cycle.cycle_id,
+                        round_id=round_id,
+                        supplier_id=ident.supplier_id,
+                        dc_id=ident.dc_id,
+                        lot_id=ident.lot_id,
+                        item_id=ident.item_id,
+                        tf_id=ident.tf_id,
+                        fiscal_period_id=fiscal_period_id,
+                        currency_code="USD",
+                        price_basis=line.price_basis or "ALL_IN",
+                        submitted_all_in_case=line.components.all_in,
+                        fob_case=line.components.fob,
+                        delivery_surcharge_case=line.components.delivery_surcharge or None,
+                        vegcool_surcharge_case=line.components.vegcool_surcharge or None,
+                        lot_discount_case=line.components.lot_discount or None,
+                        price_basis_resolved=line.price_basis or None,
+                        transit_days=line.transit_days,
+                        volume_minimum_cases=line.total_vol_offered,
+                        exclusivity_required_flag=False,
+                        validity_status="VALID",
+                        source_row_number=line.source_row_number,
+                        created_at=now,
+                        is_scoreable=True,
+                        is_awardable=True,
+                    )
                 )
-            )
-            count += 1
+            count += 1  # LOGICAL priced lines, NOT the fanned storage rows (API contract).
         session.flush()
         return count, superseded_total
 

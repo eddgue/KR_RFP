@@ -229,15 +229,38 @@ def list_bids(
     paths = resolve_paths(run)
     round_id = resolve_round_id(db, paths, round)
     cycle_id = paths.cycle_id_file.read_text(encoding="utf-8").strip()
+    # OPTION B (INTAKE §1a): bids are STORED flat at the 13 fiscal periods (one row per period in a
+    # timeframe's span). This list is the IDENTITY grain (one row per supplier × dc × lot × item ×
+    # tf), so collapse the fanned period rows to ONE representative per cell with DISTINCT ON — the
+    # fanned rows share an identical payload, so any one represents the cell (a tf-grain NULL-period
+    # row is its own representative). Keeps the listing contract at the identity grain.
+    # Only ACTIVE (`is_scoreable`) rows are listed — mirrors the engine's `_read_bid_lines` filter
+    # so the listing shows the CURRENT submission per cell. A re-submission supersedes prior rows
+    # (flips them non-scoreable, never hard-deletes); without this filter the DISTINCT ON could
+    # surface a superseded row as the cell's representative.
     rows = (
         db.execute(
             select(BidLine)
-            .where(BidLine.cycle_id == cycle_id, BidLine.round_id == round_id)
+            .where(
+                BidLine.cycle_id == cycle_id,
+                BidLine.round_id == round_id,
+                BidLine.is_scoreable.is_(True),
+            )
+            .distinct(
+                BidLine.supplier_id,
+                BidLine.dc_id,
+                BidLine.lot_id,
+                BidLine.item_id,
+                BidLine.tf_id,
+            )
             .order_by(
                 BidLine.supplier_id,
                 BidLine.dc_id,
                 BidLine.lot_id,
+                BidLine.item_id,
                 BidLine.tf_id,
+                BidLine.fiscal_period_id.nulls_last(),
+                BidLine.bid_line_id,
             )
         )
         .scalars()
