@@ -1,7 +1,7 @@
 ---
 doc: As-Built Process Audit
 id: PM-007
-version: 1.0
+version: 1.1
 status: Review — feature development HELD pending sign-off
 created: 2026-06-21
 audited_commit: d563aad (main, immediately after PR #8 merged)
@@ -22,18 +22,22 @@ It is also a **UX/UI map**: each stage is shown in two layers — the *system* l
 
 **What works end to end (driven by `PilotService` + the MCP harness):** start run → setup ingest (full cycle/scope creation) → bid template → bid intake (strict *and* flexible) → V3 engine (5-factor scoring, 7 scenario lenses A–G, split allocation) → human-selected award freeze → versioned post-award layers → generated workbooks (alignment, booking guide, per-supplier guides, post-award) → close-out (archive→purge). Sealed analysis runs and frozen awards are immutability-guarded. Per-run isolated databases keep runs apart at the harness runtime.
 
-**The six material gaps** (detail + evidence below):
+**The six gaps — one CRITICAL, five material** (detail + evidence below):
 
-| # | Gap | Impact | Backlog |
-|---|---|---|---|
-| **G-A** | **Flat-13 period fan-out is built but NOT wired.** The column, indexes, and fan-out engine exist; the live ingest path never calls it, so bids are stored at the **timeframe** grain (`fiscal_period_id` NULL). | The "data flat at 13 periods" model (D35) isn't actually in effect for stored bids. | D35, migrations 0014–0016 |
-| **G-B** | **The audit hash-chain doesn't cover award decisions.** The chained `audit.event_log` is mechanically correct but the **only** caller is commodity creation. Engine seal, award freeze, supersede, ingest emit **no** events. | The marketed tamper-evident provenance (E-05) does not currently record the decisions that matter. Provenance today rests on immutable sealed rows + git + run_data.json. | E-05 |
-| **G-C** | **RBAC is defined but not enforced.** A full permission matrix + separation-of-duties exists; **no route uses it** — every route is bare session auth, and the dev principal holds all roles. | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 |
-| **G-D** | **Sign-off is decorative.** It exists only as a workbook tab + an unused permission — no transition, no state, no gate. | No portfolio sign-off step (E-22) in the running system. | E-22 |
-| **G-E** | **The HTTP API is front-half only.** `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs. | The web console can set up + take bids, but cannot run the engine, award, or adjust — those need the MCP harness. | E-25 |
-| **G-F** | **PBA / contract builder is absent**, and so are external feeds (iTrade/KCMS), the supplier importer, and any deck/letter/email/send path. | The post-award final step and supplier master intake the sponsor flagged don't exist yet. | E-33, E-34, E-08/E-09, E-24 |
+| # | Gap | Severity | Impact | Backlog |
+|---|---|---|---|---|
+| **G-B** | **The audit hash-chain doesn't cover award decisions.** The chained `audit.event_log` is mechanically correct but the **only** caller is commodity creation. Engine seal, award freeze, supersede, ingest emit **no** events. | 🔴 **CRITICAL** (existential) | The tamper-evident provenance (E-05) records **none** of the decisions that matter. The "why did Supplier A get 35%?" trail does not exist. | E-05 |
+| **G-A** | **Flat-13 period fan-out is built but NOT wired.** The column, indexes, and fan-out engine exist; the live ingest path never calls it, so bids are stored at the **timeframe** grain (`fiscal_period_id` NULL). | 🟠 Material | The "data flat at 13 periods" model (D35) isn't actually in effect for stored bids. | D35, migrations 0014–0016 |
+| **G-C** | **RBAC is defined but not enforced.** A full permission matrix + separation-of-duties exists; **no route uses it** — every route is bare session auth, and the dev principal holds all roles. | 🟠 Material | Author≠approver, sign-off/send restrictions, in-gate approval are not actually gated. | E-03 |
+| **G-D** | **Sign-off is decorative.** It exists only as a workbook tab + an unused permission — no transition, no state, no gate. | 🟠 Material | No portfolio sign-off step (E-22) in the running system. | E-22 |
+| **G-E** | **The HTTP API is front-half only.** `run_round`, `freeze_award`, `record_adjustment`, `history` are **MCP-only**; the `cycles`/`awards`/`documents`/`ingest` routers are empty stubs. | 🟠 Material | The web console can set up + take bids, but cannot run the engine, award, or adjust — those need the MCP harness. | E-25 |
+| **G-F** | **PBA / contract builder is absent**, and so are external feeds (iTrade/KCMS), the supplier importer, and any deck/letter/email/send path. | 🟠 Material | The post-award final step and supplier master intake the sponsor flagged don't exist yet. | E-33, E-34, E-08/E-09, E-24 |
+
+> **Why G-B is existential, not functional.** The platform's thesis is *AI-generated, not AI-managed* — every number must be defensible by a human-owned, tamper-evident record. The first hard question in production will be **"why did Supplier A receive 35% and Supplier B 15%?"**, and the answer must be a chain: **bid received → analysis run → scenario selected → award frozen → adjustment applied**. That chain's machinery exists and is cryptographically sound, but today it records **only commodity creation** — none of those five events. Until it does, the decisions that carry the commercial and legal weight have **no tamper-evident provenance**. Every other gap is functional (a feature isn't built yet); this one undermines the core governance promise, so it is classified existential.
 
 **Two runtimes, two isolation models (important):** the **MCP harness** gives each run its *own database* (D30, `kr_rfp_run_<slug>`); the **web console** runs against the *shared* app database with per-run `cycle_id`/`round_id` scoping (D36) and no per-query RLS yet. Both are real and coexist.
+
+**Where the project stands.** This is not a prototype. It is a functioning RFP lifecycle + analysis engine + versioned awards + immutable analysis + reproducible runs + document generation + an MCP execution surface, with a partially built web console. The core risk is no longer *"can this work?"* — it is **"can governance, traceability, and operational controls catch up before adoption expands?"** The sections below (System of Record, Failure Domains, and the gap analysis) are written to answer that question.
 
 ---
 
@@ -129,7 +133,49 @@ flowchart LR
 
 ---
 
-## 4. Gates — enforced vs aspirational
+## 4. System of Record hierarchy
+
+> **The rule.** For every business artifact there is **exactly one authoritative store**. Every other representation — a generated Excel, a JSON export, a cached view, a printout — is a **render** of that store at a point in time, never a source. **If a generated document and its governed record disagree, the record wins** and the document is stale or tampered. Declare this *before* the first production dispute ("the booking-guide Excel says X, the database says Y"), because after it starts there is no neutral way to pick a winner.
+
+| Business artifact | System of record (authoritative) | Renders / exports (subordinate) |
+|---|---|---|
+| Cycle / RFP definition + scope | `cyc.cycle` + `cyc.*` (Postgres) | setup workbook (input), `run_data.json` |
+| Reference master (DC / supplier / item) | `ref.dc` / `ref.supplier` / `ref.item` | setup workbook tabs; supplier import (future) |
+| Supplier bid | `bid.bid_line` (+ `bid.bid_submission`) | uploaded bid workbook, normalized workbook |
+| Analysis / scenarios | `eng.analysis_run` (sealed) + `eng.bid_score` / `eng.analysis_scenario(_award)` | alignment workbook |
+| Award decision | `awd.award` + `awd.award_line` (FROZEN) | booking guide, per-supplier guides |
+| Post-award changes | `awd.award_adjustment(_line)` (append-only) | post-award workbook |
+| Provenance / who-did-what-when | `audit.event_log` (hash-chained) — **authoritative only once wired (G-B)** | git history + `run_data.json` (the *interim* stand-in today) |
+| Generated document (the file itself) | vault filesystem (git-versioned) | — *(authoritative for the artifact, not for the values inside it)* |
+| Official contract | **PBA — future (E-33)** | — |
+
+Two consequences worth stating outright:
+- **The database outranks every workbook.** A booking guide is a render of `awd.award`; an alignment sheet is a render of `eng.analysis_run`. The vault filesystem is authoritative for the *document as an artifact* (what was generated/sent), never for the decision values printed inside it.
+- **Provenance has no real SoR yet.** Because the audit chain isn't wired (G-B), "who did what when" currently rests on immutable sealed rows + git history + `run_data.json`. Those are an *interim* stand-in; `audit.event_log` becomes the system of record for provenance only when G-B is closed — another reason G-B is critical.
+
+---
+
+## 5. Failure domains (load-bearing vs convenience)
+
+Not every component carries equal weight. Two structural facts shape the blast radius: **(a)** every governed write is *add+flush inside the caller's unit of work — never an internal commit*, so a failure mid-stage **rolls the whole stage back atomically** (no partial/corrupt governed state); **(b)** vault git commit/push failures are **deliberately swallowed** (D34 — git is a persistence convenience, never a blocker).
+
+| Component / failure | Immediate impact | Class |
+|---|---|---|
+| **Award freeze** (`freeze_award`) | no sealed official award can be produced | **Governance-critical** |
+| **Audit writer** (`AuditWriter`) | a decision's provenance event is not recorded | **Governance-critical** (today *latent* — not yet wired, G-B) |
+| **Immutability guards** (sealed/frozen) | sealed runs / frozen awards could be mutated | **Governance-critical** (integrity) |
+| **Engine** (`run_round`) | no scenarios → award cannot proceed | Operational-blocking |
+| **Bid intake** (`ingest_bids`/`ingest_any`) | a round cannot take bids → supplier blocked | Operational-blocking |
+| **Post-award adjustment** | a reprice cannot be recorded → contract drift uncaptured | Governance-significant |
+| **Vault commit / push** | document + state not persisted off-box | Provenance / recovery (DB still authoritative) |
+| **Per-run DB provision / snapshot** (D30/D34) | a run cannot isolate or resume on a fresh box | Availability (harness runtime) |
+| **Workbook generation** (`output/*`) | a document isn't produced; the data is intact in the DB and re-renderable | **Convenience** |
+
+**Design implication for closing G-B:** because writes are atomic within the unit of work, **wiring each audit event into the same transaction as its decision makes the event atomic with the decision** — you cannot get a frozen award without its `FROZEN` event, or a sealed run without its `SEALED` event. That is the correct way to close G-B: not a best-effort side log, but an event that shares the decision's commit boundary (and therefore inherits its rollback).
+
+---
+
+## 6. Gates — enforced vs aspirational
 
 | Gate | Status | Where |
 |---|---|---|
@@ -151,7 +197,7 @@ flowchart LR
 
 ---
 
-## 5. Loops
+## 7. Loops
 
 | Loop | Where | Bound / exit |
 |---|---|---|
@@ -166,7 +212,7 @@ There is **no optimisation loop inside the engine** — `run_analysis` is single
 
 ---
 
-## 6. Audit / event-log status (G-B detail)
+## 8. Audit / event-log status (G-B detail)
 
 The hash-chained `audit.event_log` is **mechanically complete and correct**: `prev_event_hash`→`event_hash = sha256(canonical(fields) || prev)`, per-tenant `seq` taken `FOR UPDATE`, genesis = 64 zeros, written in the caller's transaction (writer.py:46–82). Eight `EventType`s are defined (CREATED, SEALED, FROZEN, SUPERSEDED, SIGNED_OFF, SENT, GATE_APPROVED, IMPORTED).
 
@@ -174,7 +220,7 @@ The hash-chained `audit.event_log` is **mechanically complete and correct**: `pr
 
 ---
 
-## 7. Built · partial · missing (gap analysis → backlog)
+## 9. Built · partial · missing (gap analysis → backlog)
 
 **Built (working):** vault scaffold + git + per-run isolated DBs + snapshot/rehydrate · setup ingest → full cycle/scope · bid template gen · strict + flexible intake w/ quarantine · V3 engine (5-factor scoring, eligibility gates, 7 lenses, split allocator, sealed reproducible runs) → **E-18/E-19/E-20** · award freeze + append-only post-award layers → **E-21** · alignment/booking-guide/supplier-guide/post-award workbooks → **E-23 (booking guide part)** · immutability guards · MCP surface covering the full lifecycle · web: auth+2FA, dashboard, run detail, **bid intake** → **E-26 (started)**.
 
@@ -196,7 +242,7 @@ The hash-chained `audit.event_log` is **mechanically complete and correct**: `pr
 
 ---
 
-## 8. Known issues queued (fix after this review)
+## 10. Known issues queued (fix after this review)
 
 Captured here so the audit reflects the true state; queued as the first post-review batch (sponsor: queue, not now):
 
@@ -206,10 +252,18 @@ Captured here so the audit reflects the true state; queued as the first post-rev
 
 ---
 
-## 9. Recommended priorities (to frame the review)
+## 11. Recommended priorities (to frame the review)
 
+0. **(CRITICAL) Wire audit events into every decision** (G-B, E-05) — emit `IMPORTED` / `SEALED` / `FROZEN` / `SUPERSEDED` **inside the same transaction** as each decision so the event is atomic with it (no frozen award without its event). This is the one existential gap: without it the "AI-generated, not AI-managed" thesis has no tamper-evident trail.
 1. **Wire the flat-13 fan-out into intake** (G-A) — small, high-value, makes D35 real.
-2. **Emit audit events at seal/freeze/supersede/ingest** (G-B, E-05) — closes the provenance gap on the decisions that matter.
-3. **Build the alignment/scenario web screen + the award/post-award HTTP surface** (G-E, E-25) — the biggest missing UX and the planned centerpiece; unblocks running RFPs end-to-end in the console.
-4. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official".
+2. **Build the alignment/scenario web screen + the award/post-award HTTP surface** (G-E, E-25) — the biggest missing UX and the planned centerpiece; unblocks running RFPs end-to-end in the console.
+3. **Enforce RBAC + sign-off** (G-C/G-D, E-03/E-22) — author≠approver and a real sign-off gate before "official".
+4. **Back the app-layer guards with DB-level enforcement** — immutability triggers + tenant RLS; today both rest on app-layer listeners + edge principal only.
 5. **Spec the PBA/contract builder + supplier importer** (G-F, E-33/E-34) — the sponsor-flagged post-award step and supplier master intake.
+
+---
+
+## Appendix — revision log
+
+- **v1.1 (2026-06-21):** added §4 System of Record hierarchy and §5 Failure domains; elevated **G-B to CRITICAL (existential)**; re-ranked priorities to lead with the audit-event wiring; added the "where the project stands" framing. (Sponsor review of v1.0.)
+- **v1.0 (2026-06-21):** initial as-built audit at commit `d563aad`.
