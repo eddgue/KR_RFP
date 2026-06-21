@@ -36,6 +36,7 @@ from typing import Protocol
 
 from openpyxl import Workbook
 
+from app.engine.formulas import awarded_cases, line_spend, savings_fraction
 from app.output.formatting import (
     DECISION_SUPPORT_STRAP,
     NUMFMT_INT,
@@ -143,12 +144,8 @@ def write_booking_guide_internal_xlsx(
     for c in sorted(
         award.cells, key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, ""))
     ):
-        savings_frac = (
-            (c.routing_baseline - c.awarded_price) / c.routing_baseline
-            if c.routing_baseline > 0
-            else Decimal("0")
-        )
-        awarded_cases = c.period_cases * c.volume_share
+        savings_frac = savings_fraction(c.routing_baseline, c.awarded_price)
+        cases = awarded_cases(c.period_cases, c.volume_share)
         key_ref = (
             f"{dc_code.get(c.dc_id, c.dc_id[:6])}·{lot_code.get(c.lot_id, c.lot_id[:6])}·"
             f"{sup_code.get(c.supplier_id, c.supplier_id[:6])}"
@@ -162,8 +159,8 @@ def write_booking_guide_internal_xlsx(
         # Demo economics use All-In as both the FOB and the landed basis (placeholders only).
         ws.cell(row=row, column=7, value=float(c.awarded_price))
         ws.cell(row=row, column=8, value=float(c.awarded_price))
-        ws.cell(row=row, column=9, value=float(awarded_cases))
-        ws.cell(row=row, column=10, value=float(c.awarded_price * awarded_cases))
+        ws.cell(row=row, column=9, value=float(cases))
+        ws.cell(row=row, column=10, value=float(line_spend(c.awarded_price, cases)))
         ws.cell(row=row, column=11, value=float(c.routing_baseline))
         ws.cell(row=row, column=12, value=float(savings_frac))  # fraction -> 0.0% fmt
         ws.cell(row=row, column=13, value=key_ref)
@@ -237,15 +234,15 @@ def write_supplier_award_guides_xlsx(
             cells_by_sup[sup_id],
             key=lambda c: (dc_name.get(c.dc_id, ""), lot_name.get(c.lot_id, "")),
         ):
-            awarded_cases = c.period_cases * c.volume_share
+            cases = awarded_cases(c.period_cases, c.volume_share)
             ws.cell(row=row, column=1, value=dc_name.get(c.dc_id, c.dc_id[:6]))
             ws.cell(row=row, column=2, value=lot_name.get(c.lot_id, c.lot_id[:6]))
             ws.cell(row=row, column=3, value=item_name.get(c.item_id, c.item_id[:6]))
             ws.cell(row=row, column=4, value=tf_name.get(c.tf_id, c.tf_id[:6]))
             ws.cell(row=row, column=5, value=float(c.volume_share))
-            ws.cell(row=row, column=6, value=float(awarded_cases))
+            ws.cell(row=row, column=6, value=float(cases))
             ws.cell(row=row, column=7, value=float(c.awarded_price))
-            ws.cell(row=row, column=8, value=float(c.awarded_price * awarded_cases))
+            ws.cell(row=row, column=8, value=float(line_spend(c.awarded_price, cases)))
             row += 1
             n_rows += 1
         format_table(

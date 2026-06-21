@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.domain.eng.models import AnalysisScenario
+from app.engine.formulas import savings_dollars
 from app.output.scenario_workbook import (
     CellInfo,
     _gather_cells,
@@ -273,9 +274,9 @@ def scenario_detail(
     spend = row.total_spend if row is not None else Decimal("0")
     savings = ScenarioSavingsSummary(
         total_spend=float(spend),
-        savings_vs_incumbent=float(baseline_total - spend),
+        savings_vs_incumbent=float(savings_dollars(baseline_total, spend)),
         savings_vs_incumbent_pct=float(row.savings_vs_baseline_frac) if row is not None else 0.0,
-        savings_vs_stly=float(stly_total - spend),
+        savings_vs_stly=float(savings_dollars(stly_total, spend)),
         savings_vs_stly_pct=float(row.savings_vs_stly_frac) if row is not None else 0.0,
     )
 

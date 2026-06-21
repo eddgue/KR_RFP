@@ -106,3 +106,34 @@ def delta_vs_historical(price: Decimal, routing_baseline: Decimal | None) -> Dec
     if routing_baseline is None or routing_baseline <= _ZERO:
         return None
     return (price - routing_baseline) / routing_baseline
+
+
+# --------------------------------------------------------------------------- #
+# Spend & savings (reporting formulas — alignment views, booking guide, comms).
+# --------------------------------------------------------------------------- #
+def awarded_cases(period_cases: Decimal, volume_share: Decimal) -> Decimal:
+    """Cases awarded to a supplier on a cell: projected period cases × their volume share."""
+
+    return period_cases * volume_share
+
+
+def line_spend(price_per_case: Decimal, cases: Decimal) -> Decimal:
+    """Spend on one awarded line: price per case × cases."""
+
+    return price_per_case * cases
+
+
+def savings_dollars(baseline_spend: Decimal, actual_spend: Decimal) -> Decimal:
+    """Absolute savings vs a baseline: baseline − actual."""
+
+    return baseline_spend - actual_spend
+
+
+def savings_fraction(baseline_spend: Decimal, actual_spend: Decimal) -> Decimal:
+    """Savings as a fraction of the baseline: (baseline − actual) / baseline; 0 when baseline ≤ 0.
+
+    The single definition the scenario-comparison view, the lens detail, and the booking guide all
+    quote, so the alignment workbook and the app never report a different savings %.
+    """
+
+    return (baseline_spend - actual_spend) / baseline_spend if baseline_spend > _ZERO else _ZERO
