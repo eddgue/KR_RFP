@@ -1,11 +1,11 @@
 ---
 doc: As-Built Specification (incorporating the Process Audit)
 id: PM-007
-version: 1.23
+version: 1.24
 status: Living — single source of truth; Phase 1 (pre–Live Run #1) per 08_RELEASE_GOVERNANCE
 governance: living model of reality — maintained per the As-Built rule (no sprint complete until updated); D39 + 08_RELEASE_GOVERNANCE
 created: 2026-06-21
-audited_commit: SOURCE code-verified at a5abc6c (the two A-adjacent fixes #4 actor-fidelity + #5 setup once-per-run guard; on the v1.20 base e28f57f). This SPEC document is committed later on the same branch (claude/wizardly-pasteur-n4acb8). Service.py line refs across §1/§2/§3/§8 refreshed for the a5abc6c insertions.
+audited_commit: SOURCE code-verified at ed2d26a (the no-server-side-file-storage refactor, ADR-0018 / E-42; slices s0 15d957e → s6 ed2d26a, on the v1.21 base a5abc6c). This SPEC document is committed later on the same branch (claude/wizardly-pasteur-n4acb8). `app/pilot/service.py` line refs across §2/§3/§8/§16 refreshed for the refactor insertions (~+850 lines: the bytes-ingest paths, the DB-run identity wiring, and the `persist_outputs`-gated vault side-effects shifted every method below the import block).
 depends_on: PM-004 (Program Backlog), PM-008 (Release Governance), 03_DECISION_LOG
 ---
 
@@ -51,7 +51,7 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 | Post-award versioning (layers) | ✅ Operational |
 | Document generation (workbooks) | ✅ Operational |
 | Supplier comms (email drafts, E-37) | 🟡 Partial — deterministic template-merge, draft-only HTTP reads (award · feedback · non-selection); **no send, no draft-review UI** (gap **G-H**); invite/template/incomplete-bid/PBA gated on data |
-| Web console (UI) | 🟡 Partial — dashboard, run detail, intake, **alignment/scenario/freeze**, **awards (view + record adjustment)** all wired; **the alignment screen surfaces only a slice of the Excel alignment workbench** (gap **G-I**); sign-off, close-out, documents, comms-review, capacity surfaces still missing |
+| Web console (UI) | 🟡 Partial — dashboard, run detail, intake, **alignment/scenario/freeze**, **awards (view + record adjustment)** all wired; **stateless — writes ZERO server-side files (the DB is the sole store; ADR-0018 / E-42)**: a run is a `pilot.run` row, uploads stream to ingest, deliverables render on request; **the alignment screen surfaces only a slice of the Excel alignment workbench** (gap **G-I**); sign-off, close-out, documents, comms-review, capacity surfaces still missing |
 | Reproducible / sealed runs + per-run isolation | ✅ Operational |
 | Flat-13 period model | ✅ Operational (G-A closed v1.6) |
 | **Audit provenance (decision trail)** | ✅ Operational — **decision** audit chain operational (ingest/seal/freeze/supersede/adjustment chained in-txn; **G-B closed v1.4**); the **FULL write-point chain is NOT** — setup ingest and capacity ingest emit **no event**. Sign-off/send events land with G-D/E-24. |
@@ -66,8 +66,8 @@ Status vocabulary (D39): ✅ **Operational** · 🟡 **Partial** (built, not ful
 
 | # | Gap | Severity | Impact | Recommended action | Owner | Status |
 |---|---|---|---|---|---|---|
-| **G-A** | Flat-13 period fan-out wired into intake | 🟠 Material | bids stored flat at 13 periods; engine output byte-identical | D35/D38 | — | ✅ **Closed v1.6** (`service.py:1402,1412-1444`) |
-| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | — | ✅ **Closed v1.4** (emits `service.py:486/1349/1418`, `awd/service.py:156/245`; `tests/audit/test_decision_events.py`) |
+| **G-A** | Flat-13 period fan-out wired into intake | 🟠 Material | bids stored flat at 13 periods; engine output byte-identical | D35/D38 | — | ✅ **Closed v1.6** (`_persist_bid_lines` fan-out `service.py:1687-1732`; period map `:1486-1500`) |
+| **G-B** | Audit hash-chain now covers decisions | 🔴 Critical | bid→seal→freeze→adjust is tamper-evident + recomputable | E-05 | — | ✅ **Closed v1.4** (emits `service.py:706/1602/1671`, `awd/service.py:158/247`; `tests/audit/test_decision_events.py`) |
 | **G-C** | RBAC defined but **not enforced** — no route calls `require_permission` (`rbac.py:131`, referenced only at `api/deps.py:10`); dev principal holds all roles (`main.py:34-47`) | 🟠 Material | author≠approver, freeze/import/adjust not gated | E-03 — add `Depends(require_permission(...))`; real principals | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
 | **G-D** | Sign-off decorative — unused permission + workbook tab; no transition/state/gate; `SIGNED_OFF` never emitted | 🟠 Material | no portfolio sign-off step | E-22 | Ed (sponsor — accepted, Phase 1) | 🔴 Open |
 | **G-E** | HTTP API mostly wired; **`documents` router empty** (0 routes); draft→SENT absent | 🟠 Material | console runs/compares/freezes/views/adjusts/drafts; doc-gen/send surface missing | E-25 remainder + E-24 | Ed (sponsor — accepted, Phase 1) | 🟡 Partial |
@@ -92,53 +92,53 @@ flowchart TD
     classDef missing fill:#fce8e6,stroke:#c5221f,color:#a50e0e,stroke-dasharray:5 4;
     classDef built fill:#e8f0fe,stroke:#1a73e8,color:#174ea6;
 
-    A(["Start run / kickoff<br/>FS scaffold + isolated DB<br/>(service.py:175)"]):::built --> G0{"In-gate G12<br/>open on real data"}:::aspirational
-    G0 --> B["Setup ingest → cycle (once-per-run)<br/>ref.* / cyc.* / perf.* / norm.*<br/>(service.py:206 → setup_ingest.py:425-693)"]:::built
-    B --> C["Generate bid template (round n)<br/>3 sheets incl. Capacity<br/>(service.py:295)"]:::built
+    A(["Start run / kickoff<br/>console: pilot.run row (no folder)<br/>harness: FS scaffold + isolated DB<br/>(service.py:219)"]):::built --> G0{"In-gate G12<br/>open on real data"}:::aspirational
+    G0 --> B["Setup ingest → cycle (once-per-run)<br/>console streams bytes (no disk)<br/>ref.* / cyc.* / perf.* / norm.*<br/>(service.py:325 / :288 → setup_ingest.py:425-693)"]:::built
+    B --> C["Generate bid template (round n)<br/>3 sheets incl. Capacity<br/>(service.py:433; console renders on request)"]:::built
     C --> D["Bid intake"]:::built
-    D -->|"strict (our template)"| INGEST["ingest_bids (service.py:321)<br/>→ ingest_template + ingest_capacity"]:::built
-    D -->|"flexible (messy file)"| P{"Mapping proposal<br/>propose → confirm<br/>(service.py:389)"}:::enforced
+    D -->|"strict (our template)"| INGEST["ingest_bids_bytes / ingest_bids (service.py:573 / :462)<br/>→ ingest_template + ingest_capacity"]:::built
+    D -->|"flexible (messy file)"| P{"Mapping proposal<br/>propose → confirm<br/>(service.py:607 / :530)"}:::enforced
     P -->|"confirm"| INGEST
     INGEST --> KEYVAL{"Key validation / quarantine<br/>bids + capacity<br/>(bid_ingester.py:371, :645)"}:::enforced
-    KEYVAL --> E["bid.bid_line (flat at 13 periods)<br/>+ bid.capacity_statement/constraint (E-38)<br/>(service.py:1272 _persist_bid_lines)"]:::built
-    E --> F["Engine run_round → SEAL eng.*<br/>5-factor scores + 7 lenses A-G<br/>(service.py:429 → runner.py:155)"]:::built
+    KEYVAL --> E["bid.bid_line (flat at 13 periods)<br/>+ bid.capacity_statement/constraint (E-38)<br/>(service.py:1525 _persist_bid_lines)"]:::built
+    E --> F["Engine run_round → SEAL eng.*<br/>5-factor scores + 7 lenses A-G<br/>(service.py:650 → runner.py:155)"]:::built
     F -->|"re-run alignment (new sealed version)"| F
     F --> SEALSEAL{"Run seal (immutability guard)"}:::enforced
     SEALSEAL --> GRC{"Round close gate<br/>is_final set, never enforced"}:::aspirational
     GRC -->|"more rounds → next round"| C
     GRC -->|"final round"| H["Human selects scenario<br/>(Scenario B = default)"]:::built
-    H --> I["Freeze award → awd.award FROZEN<br/>(service.py:576 → awd/service.py:125)"]:::built
+    H --> I["Freeze award → awd.award FROZEN<br/>(service.py:802 → awd/service.py:126)"]:::built
     I --> FRZ{"Freeze seal (immutability guard)"}:::enforced
     FRZ --> J{"Sign-off gate"}:::missing
-    J --> K["Outputs: booking guide + per-supplier guides<br/>(service.py:578-600)"]:::built
+    J --> K["Outputs: booking guide + per-supplier guides<br/>console renders on request; harness writes vault<br/>(service.py:835 gate)"]:::built
     K --> CAPCHK["Capacity check → alignment workbook 'Capacity Check' tab (E-38b)<br/>(capacity_check.py:87/154)"]:::built
-    CAPCHK --> COMMS["E-37 comms drafts (draft-only HTTP reads)<br/>award · feedback · rejection<br/>(runs.py:754/788/823)"]:::built
+    CAPCHK --> COMMS["E-37 comms drafts (draft-only HTTP reads)<br/>award · feedback · rejection<br/>(runs.py:764/798/833)"]:::built
     COMMS --> SENT{"Draft → SENT"}:::missing
-    SENT --> L["Post-award adjustments<br/>append-only layers v1..vN<br/>(service.py:612 → awd/service.py:175)"]:::built
+    SENT --> L["Post-award adjustments<br/>append-only layers v1..vN<br/>(service.py:874 → awd/service.py:175)"]:::built
     L -->|"reprice loop"| L
     L --> PBA["PBA / contract builder"]:::missing
-    PBA --> M(["Close-out: archive → confirm → purge<br/>(service.py:1022 / 1032)"]):::built
+    PBA --> M(["Close-out: archive → confirm → purge (harness)<br/>(service.py:1287 / 1297)"]):::built
 ```
 
 ## 2. Stage-by-stage — system layer + human layer (STACKED)
 
-Persists key: **V**=vault git commit · **S**=run-DB snapshot (MCP runtime only) · **A**=audit event. Screen: built ✅ / partial ◐ / missing ⬜.
+Persists key: **V**=vault git commit (**HARNESS-only since E-42** — the console writes no files) · **S**=governed DB write (shared app DB on the console; per-run isolated DB + snapshot at the MCP runtime) · **A**=audit event. Screen: built ✅ / partial ◐ / missing ⬜. **Console (ADR-0018 / E-42):** the run is a `pilot.run` row, uploads stream to ingest, and every deliverable renders on request — so the governed DB writes (S·A) always run while the vault side-effects (V) are HARNESS-only.
 
 | Stage | System: method (file:line) → tables written | Persists | Exposure | Human: actor → screen → action |
 |---|---|:--:|---|---|
-| Start run | `start_run` (service.py:175) → FS scaffold + isolated DB | V·S | HTTP `POST /runs` (runs.py:299) · MCP `run_start` (:171) | Analyst → **Dashboard ✅** → "New run" |
-| Setup ingest → cycle | `ingest_setup` (service.py:206) → `ingest_setup_workbook` (setup_ingest.py:425-693) → `ref.*`, `cyc.*`, `perf.*`, `norm.normalization_run`. **Once-per-run** (service.py:220): a 2nd ingest is refused (409 conflict) — `cycle_id.txt` is never overwritten, so the prior cycle is never orphaned. | V·S | HTTP `POST /runs/{slug}/setup` (runs.py:395) · MCP `setup_ingest` (:235) | Analyst → **Intake ✅** → download kickoff, upload filled |
-| Bid template | `generate_bid_template` (service.py:295) → FS `..bid_template.xlsx` (3 sheets incl. **Capacity**) | V | HTTP `POST /runs/{slug}/rounds/{round}/template` (runs.py:424) · MCP `bid_template` (:256) | Buyer → **Intake ✅** → generate + download |
-| Bid intake — strict | `ingest_bids` (service.py:321, `actor`-threaded) → `ingest_template` + `ingest_capacity` → `_persist_bid_lines` (service.py:1272): `norm.source_artifact` (`created_by` = actor), `bid.bid_submission`, `bid.bid_line` (fanned to 13 periods) **+ A: IMPORTED/SUPERSEDED** (actor = importing user) | V·S·A | HTTP `POST /bids/import` (bids.py:164) · MCP `ingest_bids` (:270) | Buyer → **Intake ✅** → upload bids |
-| Bid intake — flexible | `ingest_any` (service.py:389): `infer_bid_mapping` → proposal; on confirm `apply_mapping` → `ingest_bids` (actor forwarded) | V·S·A | HTTP `POST /bids/import?mode=flexible` (bids.py:164) · MCP `ingest_any` (:285) | Buyer → **Intake ✅** → propose → review mapping → "Confirm & import" |
-| **Capacity ingest (E-38)** | `ingest_capacity` (bid_ingester.py:645, key-validated vs `scope.capacity_key_set()`) → persisted in same pass by `_persist_bid_lines` (service.py:1481-1525): `bid.capacity_statement` (1/supplier) + `bid.capacity_constraint` (CELL: dc×lot×tf). Re-send supersedes prior (service.py:1372). Counts surfaced in NOTES. **No A event.** | V·S | **No own route/tool** — rides `POST /bids/import` + MCP `ingest_bids`/`ingest_any` | Buyer → **Intake ✅** (same upload) → capacity sheet ingests automatically. **No capacity screen ⬜** |
-| Engine run / scenarios | `run_round` (service.py:429, `actor`-threaded → `run_by`) → `EngineRunner.run_analysis` (runner.py:155) → `eng.analysis_run` (sealed, hashed manifests), `eng.bid_score` (:377), `eng.analysis_scenario` (:411), `eng.analysis_scenario_award` (:436). **+ A: SEALED** (service.py:486, actor = running user). Writes versioned alignment workbook. | V·S·A | HTTP `POST …/rounds/{round}/analysis` (runs.py:457) + reads `GET …/analysis`, `…/scenarios`, `…/scenarios/{code}` (runs.py:500/521/544) · MCP `run_round` (:322) | Buyer → **Alignment ✅** → run analysis, compare 7 lenses (B pre-selected), inspect cell-by-cell. **Deep workbench is Excel-only (G-I).** |
-| Award freeze | `freeze_award` (service.py:576) → `awd_service.freeze_award` (awd/service.py:66; `Award` :125, `AwardLine` :140) FROZEN. **+ A: FROZEN** (awd/service.py:156). Writes booking + per-supplier guides + individual files (service.py:610-632). Idempotent on (cycle, run, scenario). | V·S·A | HTTP `POST …/awards/freeze` (runs.py:576) · MCP `select_award` (:343) | Buyer/Approver → **Alignment ✅** (FreezeAwardModal) → freeze a chosen lens (actor = authenticated user) |
+| Start run | `start_run` (service.py:219) → CONSOLE: a `pilot.run` row only, no folder (`persist_outputs` off, service.py:248-259); HARNESS: FS scaffold + isolated DB | S (console: `pilot.run`) · V·S (harness) | HTTP `POST /runs` (runs.py:300) · MCP `run_start` (:171) | Analyst → **Dashboard ✅** → "New run" |
+| Setup ingest → cycle | CONSOLE: `ingest_setup_bytes` (service.py:325) — the uploaded workbook streams straight into `ingest_setup_workbook` (setup_ingest.py:425-693) → `ref.*`, `cyc.*`, `perf.*`, `norm.normalization_run`; the cycle link lands on the `pilot.run` row (no `cycle_id.txt`, no file). HARNESS: `ingest_setup` (service.py:288) writes `cycle_id.txt` + commits the vault. **Once-per-run** (console checks the DB row service.py:338; harness service.py:301): a 2nd ingest is refused (409 conflict), so the prior cycle is never orphaned. | S (console: governed DB) · V·S (harness) | HTTP `POST /runs/{slug}/setup` (runs.py:405, streams — no disk) · MCP `setup_ingest` (:235) | Analyst → **Intake ✅** → download kickoff, upload filled |
+| Bid template | `generate_bid_template` (service.py:433). CONSOLE (`persist_outputs` off, service.py:449): writes NOTHING — the template renders on request from the deliverable registry. HARNESS: writes `..bid_template.xlsx` (3 sheets incl. **Capacity**) to `inputs/` + commits. | — (console: render-on-request) · V (harness) | HTTP `POST /runs/{slug}/rounds/{round}/template` (runs.py:432) → download via `GET …/files/{name}` (DB-rendered) · MCP `bid_template` (:256) | Buyer → **Intake ✅** → generate + download |
+| Bid intake — strict | CONSOLE: `ingest_bids_bytes` (service.py:573, `actor`-threaded) — upload streams in memory, NO disk. HARNESS: `ingest_bids` (service.py:462, surfaces signals in NOTES.md). Both → `ingest_template` + `ingest_capacity` → `_persist_bid_lines` (service.py:1525): `norm.source_artifact` (`created_by` = actor), `bid.bid_submission`, `bid.bid_line` (fanned to 13 periods) **+ A: IMPORTED/SUPERSEDED** (actor = importing user) | S·A (console) · V·S·A (harness) | HTTP `POST /bids/import` (bids.py:176, streams — no disk) · MCP `ingest_bids` (:270) | Buyer → **Intake ✅** → upload bids |
+| Bid intake — flexible | CONSOLE: `ingest_any_bytes` (service.py:607) — infer the mapping in memory → proposal; on confirm `apply_mapping` (in memory) → `ingest_bids_bytes`, NO scratch/normalized file written. HARNESS: `ingest_any` (service.py:530) writes the normalized template to `inputs/` then calls `ingest_bids` (actor forwarded). | S·A (console) · V·S·A (harness) | HTTP `POST /bids/import?mode=flexible` (bids.py:176) · MCP `ingest_any` (:285) | Buyer → **Intake ✅** → propose → review mapping → "Confirm & import" |
+| **Capacity ingest (E-38)** | `ingest_capacity` (bid_ingester.py:645, key-validated vs `scope.capacity_key_set()`) → persisted in the same pass by `_persist_bid_lines` (service.py:1734-1778): `bid.capacity_statement` (1/supplier) + `bid.capacity_constraint` (CELL: dc×lot×tf). Re-send supersedes prior (service.py:1625). Counts surfaced (NOTES.md on the harness; `BidIngestResult` to the route on the console). **No A event.** | S (console) · V·S (harness) | **No own route/tool** — rides `POST /bids/import` + MCP `ingest_bids`/`ingest_any` | Buyer → **Intake ✅** (same upload) → capacity sheet ingests automatically. **No capacity screen ⬜** |
+| Engine run / scenarios | `run_round` (service.py:650, `actor`-threaded → `run_by`) → `EngineRunner.run_analysis` (runner.py:106) → `eng.analysis_run` (runner.py:155, sealed, hashed manifests), `eng.bid_score` (:377), `eng.analysis_scenario` (:411), `eng.analysis_scenario_award` (:436). **+ A: SEALED** (service.py:706, actor = running user). The seal + SEALED event always run; the versioned alignment workbook is a `persist_outputs`-gated vault SIDE-EFFECT (service.py:735) — CONSOLE renders it on request from the sealed records, HARNESS writes it to `outputs/`. | S·A (console) · V·S·A (harness) | HTTP `POST …/rounds/{round}/analysis` (runs.py:465) + reads `GET …/analysis`, `…/scenarios`, `…/scenarios/{code}` (runs.py:510/531/554) · MCP `run_round` (:322) | Buyer → **Alignment ✅** → run analysis, compare 7 lenses (B pre-selected), inspect cell-by-cell. **Deep workbench is Excel-only (G-I).** |
+| Award freeze | `freeze_award` (service.py:802) → `awd_service.freeze_award` (awd/service.py:66; `Award` :126, `AwardLine` :141) FROZEN. **+ A: FROZEN** (awd/service.py:158). The freeze + FROZEN event always run; the booking + per-supplier guides + individual files are a `persist_outputs`-gated vault SIDE-EFFECT (service.py:835) — CONSOLE renders the guides on request, HARNESS writes them to `outputs/`. Idempotent on (cycle, run, scenario). | S·A (console) · V·S·A (harness) | HTTP `POST …/awards/freeze` (runs.py:584) · MCP `select_award` (:343) | Buyer/Approver → **Alignment ✅** (FreezeAwardModal) → freeze a chosen lens (actor = authenticated user) |
 | Sign-off | — *(decorative: unused permission + workbook tab; no transition/state; `SIGNED_OFF` never emitted)* | — | — | Approver → **Sign-off screen ⬜** |
-| Outputs (incl. E-37 comms) | Guides within `freeze_award`; post-award doc within `record_adjustment`. **E-37 comms** = deterministic template-merge, rendered on GET, never persisted/sent: `award_email_drafts` (service.py:1630), `feedback_email_drafts` (:1674), `rejection_email_drafts` (:1700) | V | Files: `GET …/files`, `…/files/{name}`, `…/archive`. Comms: `GET …/awards/{id}/comms/award` (:754), `…/comms/rejection` (:788), `…/analysis/{id}/comms/feedback` (:823). **`documents.py` empty.** | Buyer → **Outputs/Downloads ◐** (file list + zip). **No comms-draft review UI ⬜** |
-| Post-award adjustments | `record_adjustment` (service.py:612) → `awd_service.add_adjustment` (awd/service.py:175; `AwardAdjustment` :206, `AwardAdjustmentLine` :223). **+ A: CREATED** (awd/service.py:245). Off-award + duplicate-cell validated at route. Append-only v1..N. | V·S·A | HTTP `POST …/awards/{id}/adjustments` (runs.py:668) · MCP `record_adjustment` (:373) | Buyer → **Awards ✅** (RecordAdjustmentModal) → pick cells → new $/case → type/date/reason → submit |
-| History / versions | `list_awards` (service.py:1609), `award_detail` (:1620) over `awd/read.py` | — | HTTP `GET …/awards` (runs.py:614) + `…/{id}` (runs.py:635) · MCP `history` (:417) | Buyer → **Awards ✅** → frozen baseline + effective $/cell + Δ + version history (v0→vN) |
-| Close-out | `close_run` (service.py:1022) → archive zip; `purge_run` (service.py:1032) → drop run DB | V | **MCP only** ⛔ `close_run` (:501) / `purge_run` (:518) | Buyer → **Close-out screen ⬜** |
+| Outputs (incl. E-37 comms) | The workbook deliverables (guides within `freeze_award`, post-award doc within `record_adjustment`) — CONSOLE renders them on request from the DB-backed deliverable registry (`app/pilot/deliverables.py` → `enumerate_deliverables`), HARNESS writes them to the vault. **E-37 comms** = deterministic template-merge, rendered on GET, never persisted/sent: `award_email_drafts` (service.py:1925), `feedback_email_drafts` (:1984), `rejection_email_drafts` (:2010) | — (console: render-on-request) · V (harness) | Files: `GET …/files`, `…/files/{name}`, `…/archive` — all **render-on-request from the DB**, nothing read off disk (E-42). Comms: `GET …/awards/{id}/comms/award` (:764), `…/comms/rejection` (:798), `…/analysis/{id}/comms/feedback` (:833). **`documents.py` empty.** | Buyer → **Outputs/Downloads ◐** (file list + zip). **No comms-draft review UI ⬜** |
+| Post-award adjustments | `record_adjustment` (service.py:874) → `awd_service.add_adjustment` (awd/service.py:175; `AwardAdjustment` :207, `AwardAdjustmentLine` :224). **+ A: CREATED** (awd/service.py:247). The layer + CREATED event always run; the post-award doc is a `persist_outputs`-gated vault SIDE-EFFECT (service.py:911) — CONSOLE renders it on request, HARNESS writes it to `outputs/`. Off-award + duplicate-cell validated at route. Append-only v1..N. | S·A (console) · V·S·A (harness) | HTTP `POST …/awards/{id}/adjustments` (runs.py:678) · MCP `record_adjustment` (:373) | Buyer → **Awards ✅** (RecordAdjustmentModal) → pick cells → new $/case → type/date/reason → submit |
+| History / versions | `list_awards` (service.py:1904), `award_detail` (:1915) over `awd/read.py` | — | HTTP `GET …/awards` (runs.py:624) + `…/{id}` (runs.py:645) · MCP `history` (:417) | Buyer → **Awards ✅** → frozen baseline + effective $/cell + Δ + version history (v0→vN) |
+| Close-out | `close_run` (service.py:1287) → archive zip; `purge_run` (service.py:1297) → drop run DB | V (harness) | **MCP only** ⛔ `close_run` (:501) / `purge_run` (:518) | Buyer → **Close-out screen ⬜** |
 | PBA / contract | **absent** | — | — | → **Contract builder ⬜** |
 
 **Screens that exist today** (7 page routes; 7 screenshots in `/screenshots`): **Login + 2FA ✅** (`login/page.tsx`), **Dashboard / runs list ✅** (`(app)/page.tsx`), **Run detail / kanban ◐** (view + nav + zip only), **Bid intake ✅** (`intake/page.tsx`), **Alignment / scenario / freeze ✅** (`alignment/page.tsx` — 4 panels: AnalysisRunsPanel, ScenarioComparisonTable, ScenarioDetailPanel, FreezeAwardModal), **Awards / post-award ✅** (`awards/page.tsx` + RecordAdjustmentModal). **No UI** for: comms drafts (E-37), capacity (E-38), sign-off, close-out, documents — confirmed by repo-wide grep (zero `comms`/`capacity`/`signoff`/`closeout` in `frontend/`).
@@ -160,7 +160,7 @@ flowchart LR
     CYC --> ENG
     ENG --> AWD["awd.award + award_line (FROZEN)"]
     AWD --> ADJ["awd.award_adjustment(_line)<br/>(append-only layers)"]
-    AWD --> OUT["alignment / booking guide /<br/>supplier guides / post-award workbooks"]
+    AWD --> OUT["alignment / booking guide /<br/>supplier guides / post-award workbooks<br/>(console: render-on-request; harness: vault)"]
     CAP --> CK["output/capacity_check.py → alignment workbook 'Capacity Check' tab (E-38b)"]
     ART --> AUD["audit.event_log (hash-chained)"]
     ENG --> AUD
@@ -168,17 +168,18 @@ flowchart LR
     AWD -. "MISSING" .-> CON["PBA / contract"]:::missing
 ```
 
-**Every governed write is `add`/`execute` + `flush` inside the caller's unit of work — never an internal commit** (`core/db/session.py:43-59`: yield → `commit()` on success, `rollback()` on any exception, always `close()`); the vault git commit + DB snapshot happen *after* it closes.
+**Every governed write is `add`/`execute` + `flush` inside the caller's unit of work — never an internal commit** (`core/db/session.py:43-59`: yield → `commit()` on success, `rollback()` on any exception, always `close()`). On the **web console** the governed DB writes are the *only* persistence (the deliverable workbooks render on request from those rows — nothing is written to disk; ADR-0018 / E-42). On the **MCP harness**, the vault git commit + per-run DB snapshot happen *after* it closes.
 
 | Write point | file:line | Tables | Scoping |
 |---|---|---|---|
 | Cycle creation (setup ingest) | `setup_ingest.py:425,436,448,462,501,529,544,563,570,585,598,616,626,638,658,668,690` | `ref.client/commodity/subcommodity/dc/supplier/item`, `cyc.cycle/cycle_lot/cycle_item_scope/cycle_lot_item/cycle_timeframe/cycle_round/cycle_invited_supplier/cycle_projected_volume`, `norm.normalization_run`, `perf.historical_award_assignment/awarded_price_basis` | `cycle_id` on all cyc/perf; `ref.dc`/`ref.supplier` reused by natural key (D36); `ref.item` per-RFP |
-| Bid lines | `service.py:1347` (artifact), `:1365` (submission), `:1415` (`BidLine`), `:1294/:1328` (supersede UPDATE) | `norm.source_artifact`, `bid.bid_submission`, `bid.bid_line` | every row carries `cycle_id`+`round_id`+`supplier_id`; each priced line fanned to one row per fiscal period (`fiscal_period_id`, D38); `count` is logical lines |
-| **Stated capacity (E-38, ACTIVE)** | `service.py:1459` (`CapacityStatement`), `:1477` (`CapacityConstraint`), `:1338` (supersede UPDATE) | **`bid.capacity_statement`, `bid.capacity_constraint`** | one statement/supplier/round on the SAME `submission_id`+`source_artifact_id` as that supplier's bids; one CELL constraint per stated dc×lot×tf; prior → SUPERSEDED. Runs on strict + flexible intake |
+| **Run identity (web console, ADR-0018)** | `run_repo.py:18` (`create_run_record` — `start_run` service.py:252/273), `:47` (`set_run_cycle` — setup ingest service.py:321/350), `:57` (`delete_run_record` — close-out) | **`pilot.run`** | PK = `slug`; `commodity`/`label`/`rehearsal` metadata + nullable `cycle_id` link (replaces the vault folder + `cycle_id.txt`); **console-only** (the harness never writes it) |
+| Bid lines | `service.py:1634` (artifact), `:1653` (submission), `:1703` (`BidLine`), `:1581/:1615` (supersede UPDATE) | `norm.source_artifact`, `bid.bid_submission`, `bid.bid_line` | every row carries `cycle_id`+`round_id`+`supplier_id`; each priced line fanned to one row per fiscal period (`fiscal_period_id`, D38); `count` is logical lines |
+| **Stated capacity (E-38, ACTIVE)** | `service.py:1747` (`CapacityStatement`), `:1765` (`CapacityConstraint`), `:1625` (supersede UPDATE) | **`bid.capacity_statement`, `bid.capacity_constraint`** | one statement/supplier/round on the SAME `submission_id`+`source_artifact_id` as that supplier's bids; one CELL constraint per stated dc×lot×tf; prior → SUPERSEDED. Runs on strict + flexible intake |
 | Engine seal | `runner.py:155` (`AnalysisRun`), `:377` (`BidScore`), `:411` (`AnalysisScenario`), `:436` (`AnalysisScenarioAward`) | `eng.analysis_run`, `eng.bid_score`, `eng.analysis_scenario`, `eng.analysis_scenario_award` | `cycle_id`+`round_id`; children FK to run/scenario; `is_sealed=true`, hashed in/out manifests |
-| Award freeze | `awd/service.py:125` (`Award`), `:140` (`AwardLine`) | `awd.award`, `awd.award_line` | idempotent on `cycle_id`+`analysis_run_id`+`scenario_code` |
-| Post-award layer | `awd/service.py:206` (`AwardAdjustment`), `:223` (`AwardAdjustmentLine`) | `awd.award_adjustment`, `awd.award_adjustment_line` | `version_no` = max+1; append-only |
-| Audit (decision events, in-txn) | `service.py:1349` (SUPERSEDED), `:1418` (IMPORTED), `:486` (SEALED); `awd/service.py:156` (FROZEN), `:245` (CREATED); writer `core/audit/writer.py:134` | `audit.event_log` | per-tenant `client_id`+`seq` (`FOR UPDATE`); tenant resolved cycle/award→commodity→client (`recorder.py:20,40`); **raises if unresolvable** |
+| Award freeze | `awd/service.py:126` (`Award`), `:141` (`AwardLine`) | `awd.award`, `awd.award_line` | idempotent on `cycle_id`+`analysis_run_id`+`scenario_code` |
+| Post-award layer | `awd/service.py:207` (`AwardAdjustment`), `:224` (`AwardAdjustmentLine`) | `awd.award_adjustment`, `awd.award_adjustment_line` | `version_no` = max+1; append-only |
+| Audit (decision events, in-txn) | `service.py:1602` (SUPERSEDED), `:1671` (IMPORTED), `:706` (SEALED); `awd/service.py:158` (FROZEN), `:247` (CREATED); writer `core/audit/writer.py:134` | `audit.event_log` | per-tenant `client_id`+`seq` (`FOR UPDATE`); tenant resolved cycle/award→commodity→client (`recorder.py:20,40`); **raises if unresolvable** |
 | Auth user (out-of-band) | `auth/create_user.py:27` | `auth.app_user` | bootstrap/CLI helper; read at `auth/deps.py:54` |
 
 ## 4. System-of-Record hierarchy
@@ -187,15 +188,16 @@ flowchart LR
 
 | Business artifact | System of record (authoritative) | Renders (subordinate) |
 |---|---|---|
-| Cycle / RFP definition + scope | `cyc.cycle` + `cyc.cycle_*` | setup workbook (input), `run_data.json` |
+| **Run identity (web console)** | **`pilot.run` (slug + cycle link; ADR-0018)** | the harness vault folder (a `runs/<slug>/` dir + `cycle_id.txt`) is the harness's own identity, not the console's |
+| Cycle / RFP definition + scope | `cyc.cycle` + `cyc.cycle_*` | setup workbook (input); `run_data.json` (harness vault only) |
 | Reference master (DC/supplier/item/commodity) | `ref.dc` / `ref.supplier` / `ref.item` / `ref.commodity` | setup workbook tabs |
 | Supplier bid | `bid.bid_line` (+ `bid.bid_submission`) | uploaded bid workbook, normalized workbook |
-| **Stated capacity (E-38)** | **`bid.capacity_statement` + `bid.capacity_constraint`** | the returned Capacity sheet (input); the capacity-check evaluator (tested render, not yet wired) |
+| **Stated capacity (E-38)** | **`bid.capacity_statement` + `bid.capacity_constraint`** | the returned Capacity sheet (input); the alignment-workbook Capacity Check tab (E-38b, via the evaluator) |
 | Analysis / scenarios | `eng.analysis_run` (sealed) + `eng.bid_score` / `analysis_scenario` / `analysis_scenario_award` | alignment workbook, comms drafts |
 | Award decision | `awd.award` + `awd.award_line` (FROZEN) | booking guide, per-supplier guides |
 | Post-award changes | `awd.award_adjustment(_line)` (append-only) | post-award workbook |
-| Provenance / who-did-what-when | `audit.event_log` (hash-chained; G-B closed v1.4) | git history + `run_data.json` (corroborating) |
-| Generated document (the file) | vault filesystem (git-versioned) | — (authoritative for the artifact, not the values inside) |
+| Provenance / who-did-what-when | `audit.event_log` (hash-chained; G-B closed v1.4) | git history + `run_data.json` (harness vault, corroborating) |
+| Generated document (the file) | the governed records the document renders from (`cyc.*`/`eng.*`/`awd.*`) — **the document is always a render** | console: rendered on request from the DB (no stored file; E-42); harness: written to the git-versioned vault as a convenience copy |
 | Web-console user identity | `auth.app_user` | — |
 | Official contract | **PBA — future (E-33)** | — |
 
@@ -217,15 +219,15 @@ Two structural facts shape every blast radius: **(a)** every governed write is `
 
 | Gate | Status | Where (file:line) |
 |---|---|---|
-| Award-select is **human, not engine** | ✅ enforced structurally | `freeze_award` requires explicit run+scenario+award_code (service.py:576; runs.py:576); engine never auto-freezes |
+| Award-select is **human, not engine** | ✅ enforced structurally | `freeze_award` requires explicit run+scenario+award_code (service.py:802; runs.py:584); engine never auto-freezes |
 | Engine **decision-support language** guard | ✅ enforced | `assert_decision_support` on every scenario label/desc (engine/guards.py:41; v3.py:185) |
 | **Frozen award** immutability | ✅ enforced (app-layer) | `block_update_if_frozen`/`block_delete_governed` (core/audit/guards.py:56/45), registered main.py:62 |
 | **Sealed analysis-run** immutability | ✅ enforced (app-layer) | core/audit/guards.py:34/45, registered main.py:62 |
 | Bid **key validation / quarantine** | ✅ enforced | bid_ingester.py:371; MISSING_KEY/UNKNOWN_KEY/KEY_MISMATCH (bid_ingester.py:75-77) |
 | **Capacity key validation / quarantine** (E-38) | ✅ enforced | `ingest_capacity`/`_parse_capacity_row` (bid_ingester.py:645/692); keys vs `scope.capacity_key_set()`; negative-max → BAD_NUMERIC; blank sheet tolerated |
 | **Double-subtract** price guard | ✅ enforced (app + DB CHECK) | bid_ingester.py:288-302; DB `ck_bid_line_no_double_discount` (migration 0007:57-66) |
-| Premium-ceiling / coverage-floor eligibility | ✅ enforced (engine-internal) | `GATE_PREMIUM` scoring.py:320, `GATE_COVERAGE` scoring.py:325; per-cycle overrides service.py:534-537 |
-| Propose→confirm before flexible write | ✅ enforced | `ingest_any` returns proposal unless confirm (service.py:385) |
+| Premium-ceiling / coverage-floor eligibility | ✅ enforced (engine-internal) | `GATE_PREMIUM` scoring.py:320, `GATE_COVERAGE` scoring.py:325; per-cycle overrides service.py:792-800 (`_apply_cycle_safeties`) |
+| Propose→confirm before flexible write | ✅ enforced | `ingest_any`/`ingest_any_bytes` return the proposal unless confirm (service.py:555/630) |
 | **Capacity check** (allocation vs stated ceiling) | ✅ **surfaced (workbook)** — over-capacity flagged in the alignment workbook's Capacity Check tab (E-38b); advisory, never blocks | `scenario_workbook._gather_capacity_check` calls `evaluate_capacity` (capacity_check.py:87) + `load_active_capacity` (:154); rendered by `_write_capacity_check_tab` |
 | Concentration / max-suppliers-per-DC | ⚠️ **advisory flag only** — never blocks | `cap_breach_flag` (v3.py:282); category-concentration (v3.py:113) |
 | Tenant scoping | ✅ at the edge (no per-query RLS) | principal-derived; commodity create stamps `client_id` (ref/service.py:46) |
@@ -240,12 +242,12 @@ Two structural facts shape every blast radius: **(a)** every governed write is `
 | Loop | Where (file:line) | Bound / exit |
 |---|---|---|
 | Round loop R1..Rn | external repeat per `round_no`; rounds at setup (setup_ingest.py:612-617) | round_count **2..6**; no auto-advance, no enforced final-round close |
-| Propose→confirm intake | `ingest_any` (service.py:389); `infer_bid_mapping`/`apply_mapping` (flex_ingest.py:153/268) | exits on buyer `confirm=True`; ambiguities surfaced, never guessed |
-| Resubmit / supersede (bids) | `_submission_for` (service.py:1273); prior lines `is_scoreable=false` (:1294), submission → SUPERSEDED (:1326) + event (:1313) | one scoreable submission per (cycle, round, supplier) |
-| Resubmit / supersede (capacity, E-38) | prior `bid.capacity_statement` → SUPERSEDED (service.py:1336-1343) | latest statement only; append-only (status flip, rows retained) |
-| Alignment re-run | `run_round` repeatable; new sealed version (`_run_version_seq` service.py:1771) | unbounded; every run sealed + immutable |
-| Post-award reprice | `record_adjustment` (service.py:612) → `version_no = max+1` (awd/service.py:195) | unbounded, append-only over frozen v0 |
-| Close-out present→confirm→purge | `close_run` → `purge_run` (service.py:1022/1032) | terminal; archive retained, run DB dropped |
+| Propose→confirm intake | `ingest_any` (service.py:530) / `ingest_any_bytes` (service.py:607); `infer_bid_mapping`/`apply_mapping` (flex_ingest.py:153/268) | exits on buyer `confirm=True`; ambiguities surfaced, never guessed |
+| Resubmit / supersede (bids) | `_submission_for` (service.py:1560); prior lines `is_scoreable=false` (:1581), submission → SUPERSEDED (:1615) + event (:1602) | one scoreable submission per (cycle, round, supplier) |
+| Resubmit / supersede (capacity, E-38) | prior `bid.capacity_statement` → SUPERSEDED (service.py:1625-1627) | latest statement only; append-only (status flip, rows retained) |
+| Alignment re-run | `run_round` repeatable; new sealed version (`_run_version_seq` service.py:2081) | unbounded; every run sealed + immutable |
+| Post-award reprice | `record_adjustment` (service.py:874) → `version_no = max+1` (awd/service.py:195) | unbounded, append-only over frozen v0 |
+| Close-out present→confirm→purge | `close_run` → `purge_run` (service.py:1287/1297) | terminal; archive retained, run DB dropped (harness) |
 
 There is **no optimisation loop inside the engine** — `run_analysis` is single-pass, deterministic, with hashed input/output manifests (runner.py:150-155).
 
@@ -255,31 +257,31 @@ Mechanics (`core/audit/writer.py`): `prev_event_hash → event_hash = sha256(can
 
 | Event | Fires at (file:line) | In-txn? | Notes |
 |---|---|---|---|
-| `IMPORTED` | service.py:1418 (in `_persist_bid_lines`) | ✅ | one per new `bid.bid_submission`; actor = importing user (HTTP `user.username`) / `pilot` (MCP) |
-| `SUPERSEDED` | service.py:1349 | ✅ | one per prior submission, before the status flip; actor as IMPORTED |
-| `SEALED` | service.py:486 (in `run_round`) | ✅ | engine seal; actor = running user (HTTP `user.username`) / `pilot-runner` (MCP) |
-| `FROZEN` | awd/service.py:156 | ✅ (after flush :152) | actor = `frozen_by` (authenticated user) |
-| `CREATED` | awd/service.py:245 (in `add_adjustment`) | ✅ (after flush :236) | post-award layer |
+| `IMPORTED` | service.py:1671 (in `_persist_bid_lines`) | ✅ | one per new `bid.bid_submission`; actor = importing user (HTTP `user.username`) / `pilot` (MCP) |
+| `SUPERSEDED` | service.py:1602 | ✅ | one per prior submission, before the status flip; actor as IMPORTED |
+| `SEALED` | service.py:706 (in `run_round`) | ✅ | engine seal; actor = running user (HTTP `user.username`) / `pilot-runner` (MCP) |
+| `FROZEN` | awd/service.py:158 | ✅ (after flush :152) | actor = `frozen_by` (authenticated user) |
+| `CREATED` | awd/service.py:247 (in `add_adjustment`) | ✅ (after flush :236) | post-award layer |
 | `CREATED` (commodity) | ref/service.py:53 | ✅ | tenant-root commodity create |
 | `SIGNED_OFF` | — | ⬜ unwired | feature absent (G-D) |
 | `SENT` | — | ⬜ unwired | feature absent (E-24) |
 | `GATE_APPROVED` | — | ⬜ unwired | G12 in-gate absent (E-17) |
 
-**Decision audit chain operational** (ingest/seal/freeze/supersede/adjustment) ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`). **Actor fidelity:** all five decision events now record the *authenticated* operator — the HTTP path threads `user.username` through `ingest_bids`/`run_round`/`freeze_award`/`record_adjustment`, the MCP harness (no web auth) keeps the `pilot`/`pilot-runner` defaults; the importing user is also stamped on `norm.source_artifact.created_by` (`test_actor_threads_to_audit_events`). **The FULL write-point chain is NOT** — setup ingest (cycle creation) emits **no** event, and capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable rows + git + `run_data.json`.
+**Decision audit chain operational** (ingest/seal/freeze/supersede/adjustment) ✅ (G-B closed v1.4; `tests/audit/test_decision_events.py`). **Actor fidelity:** all five decision events now record the *authenticated* operator — the HTTP path threads `user.username` through `ingest_bids`/`run_round`/`freeze_award`/`record_adjustment`, the MCP harness (no web auth) keeps the `pilot`/`pilot-runner` defaults; the importing user is also stamped on `norm.source_artifact.created_by` (`test_actor_threads_to_audit_events`). **The FULL write-point chain is NOT** — setup ingest (cycle creation) emits **no** event, and capacity ingest emits **no** event. Provenance of decisions = the hash-chain; provenance of cycle/capacity creation = the immutable governed rows (on the console, that is the *only* provenance — there is no git/`run_data.json`; on the harness, the rows are corroborated by git + `run_data.json`).
 
 ## 9. Built · partial · missing (gap analysis → backlog)
 
-**Built (working):** vault + per-run isolated DB + snapshot/rehydrate · setup ingest → cycle/scope · bid template · strict+flexible intake w/ quarantine · flat-13 storage (G-A) · V3 engine (5 factors, gates, 7 lenses, split, sealed runs) · award freeze + append-only layers · alignment/booking/supplier/post-award workbooks · immutability guards · decision audit events (G-B) · MCP 17-tool surface · web: auth+2FA, dashboard, run detail, bid intake, **alignment screen, awards screen (read + adjustment form)**, comms draft reads · **E-38 capacity ingest+persist** (`bid.capacity_statement`/`capacity_constraint`) + pure evaluator (`output/capacity_check.py`) · capacity check surfaced in the alignment workbook (Capacity Check tab, E-38b).
+**Built (working):** **DB-backed run identity** (`pilot.run`) on the web console + per-run isolated DB + snapshot/rehydrate on the MCP harness · **stateless console** — uploads stream to ingest, deliverables render on request, ZERO server-side files (ADR-0018 / E-42) · setup ingest → cycle/scope · bid template · strict+flexible intake w/ quarantine · flat-13 storage (G-A) · V3 engine (5 factors, gates, 7 lenses, split, sealed runs) · award freeze + append-only layers · alignment/booking/supplier/post-award workbooks (DB-rendered on the console; vault-written on the harness) · immutability guards · decision audit events (G-B) · MCP 17-tool surface · web: auth+2FA, dashboard, run detail, bid intake, **alignment screen, awards screen (read + adjustment form)**, comms draft reads · **E-38 capacity ingest+persist** (`bid.capacity_statement`/`capacity_constraint`) + pure evaluator (`output/capacity_check.py`) · capacity check surfaced in the alignment workbook (Capacity Check tab, E-38b).
 
-**Partial / inert:** RBAC matrix defined, no route enforces (G-C) · `documents` router empty (G-E) · comms draft-only/no-send (G-H) · **web alignment screen ≠ alignment workbook (G-I)** · `is_awardable` set unconditionally `True` at ingest (service.py:1441) — no awardability logic · DB-level immutability triggers/RLS absent.
+**Partial / inert:** RBAC matrix defined, no route enforces (G-C) · `documents` router empty (G-E) · comms draft-only/no-send (G-H) · **web alignment screen ≠ alignment workbook (G-I)** — unchanged by E-42: the console now *renders* the alignment workbook on request, but the deep analytical workbench is still Excel-only, not in the screen · `is_awardable` set unconditionally `True` at ingest (service.py:1729) — no awardability logic · DB-level immutability triggers/RLS absent.
 
 **Missing:** PBA/contract (E-33) · supplier importer / feeds (E-34, E-08/09 — `ingest` router empty) · send/draft→SENT (E-24) · sign-off transition (E-22) · in-gate G12 / round-close (E-17/E-16).
 
 ## 10. Known issues queued (fix after this review)
 
 1. **Intake soft-gating keys off output files** — a returning user gets template/import re-locked until outputs exist; derive "done" from cycle/template state. *(intake/page.tsx)*
-2. **Template section shows only `kind:"output"`** — the generated template is in `inputs/`, so its download table stays empty after "Generate". *(TemplateSection.tsx)* — partly mitigated by `resolve_round_id` (pilot_common.py:54); verify the FE still routes the two error codes.
-3. **`is_awardable` unconditionally `True` at ingest** (service.py:1441) — no awardability logic yet (latent).
+2. **Template section shows only `kind:"output"`** — the generated bid template enumerates as a `kind:"input"` deliverable (`deliverables.py`), so its download table can stay empty after "Generate". *(TemplateSection.tsx)* — partly mitigated by `resolve_round_id` (pilot_common.py:80); verify the FE still routes the two error codes.
+3. **`is_awardable` unconditionally `True` at ingest** (service.py:1729) — no awardability logic yet (latent).
 
 ## 11. Build authorization → governed by `08_RELEASE_GOVERNANCE.md`
 
@@ -316,7 +318,7 @@ The objective: any future developer/operator/auditor/stakeholder can answer *how
 
 Implementation complete · review complete · this audit updated · gap register updated · critical findings reviewed. The gate yields: ✅ **PASS** (audit reflects implementation; no critical control missing) · 🟡 **CONDITIONAL** (known risks documented + explicitly accepted in the gap register with an owner) · 🔴 **FAIL** (audit doesn't reflect implementation, or a critical control is missing — do not ship).
 
-**Current release-gate read (v1.20):** 🟡 **CONDITIONAL** — the audit now reflects implementation, and the open gaps (G-C/D/E/F/H/I and G-J) are documented + owner-assigned. Not ✅ because G-C (RBAC) leaves freeze/adjust/import un-gated.
+**Current release-gate read (v1.24):** 🟡 **CONDITIONAL** — the audit now reflects implementation (incl. the post-refactor file-free console reality), and the open gaps (G-C/D/E/F/H/I and G-J) are documented + owner-assigned. The **storage architecture is now solid and stateless** — the web console writes ZERO server-side files; the DB is the sole store (ADR-0018 / E-42), deliverables render on request, and the file vault is a HARNESS-only verification oracle — so there is no longer any console file-persistence risk. Still not ✅ because G-C (RBAC) leaves freeze/adjust/import un-gated (and G-D/G-I remain open).
 
 ### 12.4 Pre-merge audit-impact review
 
@@ -335,13 +337,13 @@ Two runtimes wrap the **same** `PilotService`; the unit of work owns the transac
 | **Audit writer** (`AuditWriter`) | Appends hash-chained `audit.event_log`. | **Atomic with the decision** — no internal commit; inherits the decision's rollback (G-B) |
 | **Vault filesystem** (git per run) | Generated docs + `run_data.json`, git-versioned. **MCP-harness-only since E-42** — the web console no longer scaffolds or writes a vault. | Persistence **convenience** — commit/push failures swallowed (D34); DB authoritative |
 
-**Agents:** none autonomous at runtime — *AI-generated, not AI-managed*. Comms (E-37) are deterministic template-merge (no model in the loop), rendered on GET, never persisted/sent. **Integrations:** none live (iTrade/KCMS/importer future). **Execution environments:** Postgres 16, Alembic 0001–0018, git vault.
+**Agents:** none autonomous at runtime — *AI-generated, not AI-managed*. Comms (E-37) are deterministic template-merge (no model in the loop), rendered on GET, never persisted/sent. **Integrations:** none live (iTrade/KCMS/importer future). **Execution environments:** Postgres 16, Alembic 0001–0019, git vault (harness only).
 
 ---
 
 # Part II — As-Built Inventories & Registries
 
-*Reference catalog (current state). Code-verified via three read-only sweeps over HEAD `e28f57f`. Planned work is in §20–§21 only.*
+*Reference catalog (current state). Code-verified via three read-only sweeps over `e28f57f`, then reconciled to the post-refactor reality at HEAD `ed2d26a` (no-server-side-file-storage; `app/pilot/service.py` line refs refreshed, the `pilot.run` table added, the file-free console boundary corrected). Planned work is in §20–§21 only.*
 
 ## 14. Functional inventory (HTTP surface) — exhaustive
 
@@ -356,27 +358,27 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 | 5 | `GET /auth/me` | auth.py:144 | CurrentUser | — | current user |
 | 6 | `POST /auth/2fa/enroll` | auth.py:151 | CurrentUser | — | store TOTP secret; return otpauth URI |
 | 7 | `POST /auth/2fa/verify` | auth.py:172 | CurrentUser | `VerifyRequest` | verify → flip `totp_enabled` |
-| 8 | `GET /runs` | runs.py:278 | CurrentUser | — | list runs + stage label |
-| 9 | `POST /runs` | runs.py:299 | CurrentUser | `CreateRunRequest` | start run (`isolate_db=False`) → `start_run` (service.py:175) |
-| 10 | `GET /runs/{slug}` | runs.py:316 | CurrentUser | — | run detail + kanban; 404 unknown |
-| 11 | `GET /runs/{slug}/files` | runs.py:334 | CurrentUser | — | list the run's deliverables (**rendered on request from the DB**, E-42); `/files/{name}` + `/archive` likewise stream from the DB, nothing read off disk |
-| 12 | `GET /runs/{slug}/files/{name}` | runs.py:345 | CurrentUser | path-traversal guard | stream one run file |
-| 13 | `GET /runs/{slug}/archive` | runs.py:367 | CurrentUser | — | zip the run folder |
-| 14 | `POST /runs/{slug}/setup` | runs.py:395 | CurrentUser | UploadFile; **once-per-run** (2nd → 409 conflict) | setup workbook → cycle (service.py:206); emits no event |
-| 15 | `POST /runs/{slug}/rounds/{round}/template` | runs.py:424 | CurrentUser | round≥1; `resolve_round_id` | generate bid template (service.py:295) |
-| 16 | `POST /runs/{slug}/rounds/{round}/analysis` | runs.py:457 | CurrentUser (**no RUN_ENGINE perm**) | round≥1 | seal `eng.*` + alignment workbook (service.py:429); SEALED in-txn (actor = `user.username`) |
-| 17 | `GET /runs/{slug}/analysis` | runs.py:500 | CurrentUser | — | list sealed analyses |
-| 18 | `GET /runs/{slug}/analysis/{id}/scenarios` | runs.py:521 | CurrentUser | `_ensure_analysis` | compare 7 lenses A–G |
-| 19 | `GET /runs/{slug}/analysis/{id}/scenarios/{code}` | runs.py:544 | CurrentUser | bad code → 400 | one lens cell-by-cell |
-| 20 | `POST /runs/{slug}/awards/freeze` | runs.py:576 | CurrentUser (**no AWARD_FREEZE perm**) | `FreezeAwardRequest` | freeze lens → FROZEN award (service.py:576); FROZEN in-txn; idempotent |
-| 21 | `GET /runs/{slug}/awards` | runs.py:614 | CurrentUser | — | list frozen awards |
-| 22 | `GET /runs/{slug}/awards/{id}` | runs.py:635 | CurrentUser | `_has_cycle` else 404 | award detail: baseline + effective + history |
-| 23 | `POST /runs/{slug}/awards/{id}/adjustments` | runs.py:668 | CurrentUser (**no perm**) | `RecordAdjustmentRequest`; off-award → 400; dup cell → 400; cross-run → 404 | append post-award layer (service.py:612); CREATED in-txn |
-| 24 | `GET /runs/{slug}/awards/{id}/comms/award` | runs.py:754 | CurrentUser | `_has_cycle` else 404 | E-37 award drafts; **draft-only, no send, no DB write** |
-| 25 | `GET /runs/{slug}/awards/{id}/comms/rejection` | runs.py:788 | CurrentUser | `_has_cycle` else 404 | E-37 non-selection drafts; draft-only |
-| 26 | `GET /runs/{slug}/analysis/{id}/comms/feedback` | runs.py:823 | CurrentUser | `_ensure_analysis` | E-37 round-feedback drafts; draft-only |
-| 27 | `POST /bids/import` | bids.py:164 | CurrentUser (**no FEED_IMPORT perm**) | mode∈{strict,flexible}, round≥1, confirm | strict (service.py:321) or flexible propose→confirm (:389); IMPORTED+SUPERSEDED in-txn (actor = `user.username`); persists capacity (:1481-1524) |
-| 28 | `GET /bids` | bids.py:215 | CurrentUser | run, round≥1 | list a round's `bid.bid_line` at identity grain (ACTIVE only, DISTINCT ON) |
+| 8 | `GET /runs` | runs.py:275 | CurrentUser | — | list runs + stage label (from `pilot.run`, not a vault scan) |
+| 9 | `POST /runs` | runs.py:300 | CurrentUser | `CreateRunRequest` | start run (`isolate_db=False`, `db_runs=True`, `persist_outputs=False`) → `start_run` (service.py:219); writes a `pilot.run` row, no folder |
+| 10 | `GET /runs/{slug}` | runs.py:321 | CurrentUser | — | run detail + kanban; 404 if no `pilot.run` row |
+| 11 | `GET /runs/{slug}/files` | runs.py:340 | CurrentUser | — | list the run's deliverables (**rendered on request from the DB**, `enumerate_deliverables`, E-42); `/files/{name}` + `/archive` likewise stream from the DB, nothing read off disk |
+| 12 | `GET /runs/{slug}/files/{name}` | runs.py:356 | CurrentUser | exact-name match (no path-traversal surface — serves a render, not a disk file) | stream one DB-rendered deliverable |
+| 13 | `GET /runs/{slug}/archive` | runs.py:378 | CurrentUser | — | in-memory zip of every DB-rendered deliverable (no dir scan) |
+| 14 | `POST /runs/{slug}/setup` | runs.py:405 | CurrentUser | UploadFile (**streamed, not written to disk**); **once-per-run** (2nd → 409 conflict) | setup bytes → cycle (`ingest_setup_bytes`, service.py:325); cycle link on `pilot.run`; emits no event |
+| 15 | `POST /runs/{slug}/rounds/{round}/template` | runs.py:432 | CurrentUser | round≥1; `resolve_round_id` | generate bid template (service.py:433); console writes nothing — renders on request |
+| 16 | `POST /runs/{slug}/rounds/{round}/analysis` | runs.py:465 | CurrentUser (**no RUN_ENGINE perm**) | round≥1 | seal `eng.*` (service.py:650); SEALED in-txn (actor = `user.username`); alignment workbook renders on request (no vault write) |
+| 17 | `GET /runs/{slug}/analysis` | runs.py:510 | CurrentUser | — | list sealed analyses |
+| 18 | `GET /runs/{slug}/analysis/{id}/scenarios` | runs.py:531 | CurrentUser | `_ensure_analysis` | compare 7 lenses A–G |
+| 19 | `GET /runs/{slug}/analysis/{id}/scenarios/{code}` | runs.py:554 | CurrentUser | bad code → 400 | one lens cell-by-cell |
+| 20 | `POST /runs/{slug}/awards/freeze` | runs.py:584 | CurrentUser (**no AWARD_FREEZE perm**) | `FreezeAwardRequest` | freeze lens → FROZEN award (service.py:802); FROZEN in-txn; idempotent; guides render on request (no vault write) |
+| 21 | `GET /runs/{slug}/awards` | runs.py:624 | CurrentUser | — | list frozen awards |
+| 22 | `GET /runs/{slug}/awards/{id}` | runs.py:645 | CurrentUser | `_has_cycle` else 404 | award detail: baseline + effective + history |
+| 23 | `POST /runs/{slug}/awards/{id}/adjustments` | runs.py:678 | CurrentUser (**no perm**) | `RecordAdjustmentRequest`; off-award → 400; dup cell → 400; cross-run → 404 | append post-award layer (service.py:874); CREATED in-txn; post-award doc renders on request |
+| 24 | `GET /runs/{slug}/awards/{id}/comms/award` | runs.py:764 | CurrentUser | `_has_cycle` else 404 | E-37 award drafts; **draft-only, no send, no DB write** |
+| 25 | `GET /runs/{slug}/awards/{id}/comms/rejection` | runs.py:798 | CurrentUser | `_has_cycle` else 404 | E-37 non-selection drafts; draft-only |
+| 26 | `GET /runs/{slug}/analysis/{id}/comms/feedback` | runs.py:833 | CurrentUser | `_ensure_analysis` | E-37 round-feedback drafts; draft-only |
+| 27 | `POST /bids/import` | bids.py:176 | CurrentUser (**no FEED_IMPORT perm**) | mode∈{strict,flexible}, round≥1, confirm | **uploaded file streamed, never written to disk**: strict (`ingest_bids_bytes`, service.py:573) or flexible propose→confirm (`ingest_any_bytes`, service.py:607); IMPORTED+SUPERSEDED in-txn (actor = `user.username`); persists capacity (service.py:1734-1778) |
+| 28 | `GET /bids` | bids.py:226 | CurrentUser | run, round≥1 | list a round's `bid.bid_line` at identity grain (ACTIVE only, DISTINCT ON) |
 
 > **Mount-point note:** the analysis/award/adjustment/comms endpoints (#16–#26) live under the **`runs`** router, not the empty `awards` stub.
 
@@ -386,7 +388,7 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 
 ## 16. Data model (persisted state) — every table, status, writer:reader
 
-**Authoritative DDL = `db/baseline/schema.sql` (Alembic 0001) + migrations 0002–0018.** Live schema = **86 tables** (64 baseline + 22 migration-added) + 1 view (`perf.v_itrade_actual_paid_baseline`, dormant). *(The baseline file header says "63" but contains 64 `CREATE TABLE`s — it omits `ref.client`.)* Legend: **A**=ACTIVE (app writes and/or reads), **D**=DORMANT (provisioned, no app I/O). Writer/reader cells are non-test app code. **Crucial:** provisioned ≠ wired — follow-on work targets the EXISTING table, never a duplicate store.
+**Authoritative DDL = `db/baseline/schema.sql` (Alembic 0001) + migrations 0002–0019.** Live schema = **87 tables** (64 baseline + 23 migration-added, incl. the new `pilot.run` in its own `pilot` schema from migration `0019_pilot_run`) + 1 view (`perf.v_itrade_actual_paid_baseline`, dormant). *(The baseline file header says "63" but contains 64 `CREATE TABLE`s — it omits `ref.client`.)* Legend: **A**=ACTIVE (app writes and/or reads), **D**=DORMANT (provisioned, no app I/O). Writer/reader cells are non-test app code. **Crucial:** provisioned ≠ wired — follow-on work targets the EXISTING table, never a duplicate store.
 
 | schema.table | purpose | status | writer (file:line) | reader (file:line) |
 |---|---|:--:|---|---|
@@ -396,13 +398,13 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 | ref.dc | distribution center | A | setup_ingest.py:501 | cycle/loader.py:55; post_award_doc.py:86 |
 | ref.supplier | supplier master | A | setup_ingest.py:529 | cycle/loader.py:117 |
 | ref.item | item master | A | setup_ingest.py:544 | cycle/loader.py:70 |
-| ref.fiscal_period | 4-3-3-3 period dim (0014) | A | seeded by mig 0014 | service.py:1201 |
+| ref.fiscal_period | 4-3-3-3 period dim (0014) | A | seeded by mig 0014 | service.py:1486 |
 | ref.loading_location | supplier loading locations | D | — | — |
 | ref.fiscal_calendar | date→fiscal map (as-built) | D | — | — |
 | ref.supplier_alias / item_alias / dc_alias | alias resolution | D | — | — |
 | ref.master_data_quarantine | "never guess" queue | D | — | — |
 | cyc.cycle | RFP cycle keystone | A | setup_ingest.py:462 | cycle/loader.py:33; recorder.py:29,49 |
-| cyc.cycle_timeframe | timeframes | A | setup_ingest.py:598 | cycle/loader.py:87; service.py:1193; runner.py:204 |
+| cyc.cycle_timeframe | timeframes | A | setup_ingest.py:598 | cycle/loader.py:87; service.py:1478; runner.py:204 |
 | cyc.cycle_round | rounds | A | setup_ingest.py:616 | cycle/loader.py:98; runner.py:194 |
 | cyc.cycle_item_scope | item in/out scope | A | setup_ingest.py:570 | — |
 | cyc.cycle_lot | lots | A | setup_ingest.py:563 | cycle/loader.py:68 |
@@ -411,31 +413,31 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 | cyc.cycle_invited_supplier | invited denominator | A | setup_ingest.py:626 | cycle/loader.py:116; status.py:137 |
 | cyc.cycle_objective / pricing / scope_item / pba_term / commercial_term / rfi_question / timeline_event / narrative | kickoff satellites (0002) | D | — | — |
 | cyc.cycle_safety | pricing-safety terms (0003) | D | — | — |
-| norm.source_artifact | sha256 file lineage | A | service.py:1347 | (FK target) |
+| norm.source_artifact | sha256 file lineage | A | service.py:1634 | (FK target) |
 | norm.normalization_run | normalized-load run | A | setup_ingest.py:658 | — |
 | norm.normalization_run_source | run↔artifact link | D | — | — |
 | norm.attribute_def / lot_attribute | attribute catalog (0004) | D | — | — |
-| bid.bid_submission | submission header | A | service.py:1365; :1328(UPD) | service.py:1305 |
-| bid.bid_line | priced line (flat-13) | A | service.py:1415; :1294(UPD) | runner.py:233; scenario_workbook.py; bids.py:243 |
-| **bid.capacity_statement** | **stated-capacity header (E-38)** | **A** | **service.py:1459; :1338(UPD)** | **capacity_check.py:168** |
-| **bid.capacity_constraint** | **per-cell capacity ceiling (E-38)** | **A** | **service.py:1477** | **capacity_check.py:167** |
+| bid.bid_submission | submission header | A | service.py:1653; :1615(UPD) | service.py:1592 |
+| bid.bid_line | priced line (flat-13) | A | service.py:1703; :1581(UPD) | runner.py:233; scenario_workbook.py; bids.py:254 |
+| **bid.capacity_statement** | **stated-capacity header (E-38)** | **A** | **service.py:1747; :1625(UPD)** | **capacity_check.py:168** |
+| **bid.capacity_constraint** | **per-cell capacity ceiling (E-38)** | **A** | **service.py:1765** | **capacity_check.py:167** |
 | bid.supplier_capability | CONFIRMED_CAPABLE gate | D | — | — |
 | bid.eligibility_result / eligibility_gate_result / eligibility_exception | eligibility detail | D | — | — |
 | bid.landed_cost_result | landed-cost result | D | — | — |
 | bid.volume_scope_source_row / normalized_volume_scope / volume_scope_override / volume_scope_prep_issue | volume-scope prep | D | — | — |
-| eng.analysis_run | sealed decision-support run (0008) | A | runner.py:155 | eng/read.py:155; service.py:675 |
+| eng.analysis_run | sealed decision-support run (0008) | A | runner.py:155 | eng/read.py:155; service.py:1128 |
 | eng.bid_score | 5 banded factors→rec_score (0008) | A | runner.py:377 | scenario_workbook.py:554; comms/resolvers.py:214 |
 | eng.analysis_scenario | A–G lens headers (0008) | A | runner.py:411 | awd/service.py:111; eng/read.py:178 |
-| eng.analysis_scenario_award | split award rows (0008/0005/0009) | A | runner.py:436 | awd/service.py:111; service.py:1511 |
+| eng.analysis_scenario_award | split award rows (0008/0005/0009) | A | runner.py:436 | awd/service.py:111; service.py:1799 |
 | eng.metric_definition_version / scenario_config_version / engine_release | version pins | D | — | — |
 | eng.calculation_run / calculation_run_input | M0 solver spine | D | — | — |
 | eng.round_analysis_snapshot | canonical run per round | D | — | — |
 | eng.scenario / scenario_award (ALTERed 0005) / scenario_line_detail | M0 Scenario-A results | D | — | — |
 | eng.scenario_capacity_usage | M0 capacity arithmetic (keyed to dormant `calculation_run`; **NOT used by E-38**) | D | — | — |
-| awd.award | FROZEN award header (0010) | A | awd/service.py:125 | awd/read.py:102; recorder.py:48 |
-| awd.award_line | immutable baseline cell (0010) | A | awd/service.py:140 | awd/read.py:109; service.py:1123 |
-| awd.award_adjustment | append-only versioned layer (0010) | A | awd/service.py:206 | awd/read.py:112; awd/service.py:195 |
-| awd.award_adjustment_line | per-cell prior→new→delta (0010) | A | awd/service.py:223 | awd/service.py:355 |
+| awd.award | FROZEN award header (0010) | A | awd/service.py:126 | awd/read.py:102; recorder.py:48 |
+| awd.award_line | immutable baseline cell (0010) | A | awd/service.py:141 | awd/read.py:109; service.py:1959 |
+| awd.award_adjustment | append-only versioned layer (0010) | A | awd/service.py:207 | awd/read.py:112; awd/service.py:195 |
+| awd.award_adjustment_line | per-cell prior→new→delta (0010) | A | awd/service.py:224 | awd/service.py:359 |
 | perf.historical_award_assignment | routing baseline | A | setup_ingest.py:668 | cycle/loader.py:149 |
 | perf.historical_awarded_price_basis | preferred basis | A | setup_ingest.py:690 | cycle/loader.py:150 |
 | perf.historical_awarded_cost_ingestion_issue | importer issues | D | — | — |
@@ -444,9 +446,10 @@ Routers mounted at `app/api/router.py:16-23`. **Live routes: 28** (health 2 · a
 | audit.event_log | hash-chained event log | A | writer.py:134 | writer.py:97 (chain tail) |
 | audit.decision_note / round_supplier_participation / round_feedback_issued / round_field_reduction_decision | audit satellites | D | — | — |
 | auth.app_user | web-console user (0017) | A | auth/create_user.py:27 | auth/deps.py:54 |
+| **pilot.run** | **web-console run identity — `slug` PK, `commodity`/`label`/`rehearsal` + nullable `cycle_id` link (0019; ADR-0018 / E-42)** | **A (console)** | **run_repo.py:18 (`create_run_record`), :47 (`set_run_cycle`), :57 (`delete_run_record`)** | **run_repo.py:38 (`get_run`), :41 (`list_run_records`); pilot_common.py:58/89; deliverables.py via the route** |
 | perf.v_itrade_actual_paid_baseline (VIEW) | D11 savings baseline (0006) | D | — | — |
 
-**Status tally:** ACTIVE ≈ 36 (incl. the 2 E-38 capacity tables + `auth.app_user`); DORMANT ≈ 50 + 1 view. **Schema/code drift noted:** `eng.scenario_award` is ALTERed by migration 0005 (volume_share/is_fallback/cap_breach) yet the table is DORMANT — the live split model is in the ACTIVE `eng.analysis_scenario_award`.
+**Status tally:** ACTIVE ≈ 37 (incl. the 2 E-38 capacity tables + `auth.app_user` + the new `pilot.run`); DORMANT ≈ 50 + 1 view. **Schema/code drift noted:** `eng.scenario_award` is ALTERed by migration 0005 (volume_share/is_fallback/cap_breach) yet the table is DORMANT — the live split model is in the ACTIVE `eng.analysis_scenario_award`.
 
 ## 17. Analysis-engine inventory
 
@@ -499,7 +502,7 @@ Full item descriptions: `04_PROGRAM_BACKLOG.md`.
 | `cycle_timeline_event` modeled, not populated | invite/timeline comms gated | Open — feeds E-37 |
 | Sign-off decorative | no portfolio sign-off | Open — G-D |
 | Incomplete-bid lines classified, not persisted | incomplete-bid comms gated | Open — feeds E-37 |
-| `is_awardable` unconditionally `True` at ingest (service.py:1441) | no awardability logic | Open — latent |
+| `is_awardable` unconditionally `True` at ingest (service.py:1729) | no awardability logic | Open — latent |
 | **E-38 evaluator wired (G-G)** | capacity safety check surfaced in the alignment workbook (Capacity Check tab) | ✅ Closed v1.20 (workbook, E-38b); in-app surface = E-38c (deferred) |
 | **Web alignment screen ≠ workbook (G-I)** | deep alignment relegated to Excel | Open — design/Phase-4 |
 | **Tenancy under-documented (G-J)** | `auth.app_user` no tenant/role; run/vault listing not tenant-scoped | Open — Category C (multi-tenant) |
@@ -525,6 +528,7 @@ The target is production-ready execution of live sourcing events, validated over
 
 ## Appendix — version history (track the delta)
 
+- **v1.24 (2026-06-22)** — *As-Built reconciled to the post-refactor file-free reality (the v1.23 "pending follow-up" re-sweep): §2/§3/§16 corrected, line refs refreshed; no code change.* Completes the section-by-section re-sweep v1.23 flagged but deferred. **§2 stage table:** every affected row now distinguishes CONSOLE (governed DB writes + render-on-request; uploads stream to ingest) from HARNESS (the file vault) — no more "save the file into inputs/" / "writes versioned alignment workbook to outputs/" / "writes booking + per-supplier guides" stated as the console's behavior; the persists-key legend now marks **V** as harness-only since E-42 and **S** as the governed DB write. **§3:** the §3 write-points + §14 endpoint table re-verified against the CURRENT `app/pilot/service.py` and `app/api/v1/*.py` — every shifted `file:line` refreshed (the refactor added the bytes-ingest paths + the DB-run wiring + the `persist_outputs` gates, shifting all methods below the imports), a new **Run identity → `pilot.run`** write-point row added, and the upload endpoints noted as streaming (no `write_to_run`). **§16:** new **`pilot.run`** table row (its own `pilot` schema, migration `0019_pilot_run`); table count 86→87; status tally ACTIVE 36→37; bid/capacity/submission/award/audit writer:reader refs refreshed; §4 SoR gains a run-identity row and reframes the generated-document row as "always a render" (console render-on-request, harness vault copy). **§9 gap register re-assessed:** no status flips (no formal gap was about file storage) — G-I wording confirmed still true (the console now *renders* the alignment workbook, but the deep workbench remains Excel-only) and annotated as unchanged by E-42; the §9 "Built" line records DB-backed run identity + the stateless console. **Release-gate read:** stays 🟡 CONDITIONAL (G-C/D/I open) but now records that the **storage architecture is solid + stateless** (no console file-persistence risk). **Also refreshed** for the shifted refs: §1 flowchart, §6 gates, §7 loops, §8 event table + G-A/G-B emit refs, §10 known-issues, §20.2 tech-debt; §13 migration range 0001–0018→0001–0019. The **harness-as-verification-oracle** framing (§13) is preserved intact — the harness keeps its file vault on purpose. *No source/behavior change in this entry — DOCS-ONLY reconciliation, code-verified at `ed2d26a`.*
 - **v1.23 (2026-06-21)** — *No-server-side-file-storage refactor SHIPPED on the web-console path (ADR-0018 / E-42; sponsor lifted the timeline — hard pre-live-RFP requirement).* Implemented reality changed: **the web console now writes ZERO files** — the **database is the sole store.** Six slices (commits s0 `15d957e` → s6 `ed2d26a`): (0) generators render to bytes; (1) DB-driven deliverable registry (`app/pilot/deliverables.py`); (2) **run identity moved into the DB** — new `pilot` schema + `pilot.run` table, migration `0019_pilot_run` (round-trips), so a "run" is no longer a folder + `cycle_id.txt`; (3) the console resolves run identity from `pilot.run`; (4) uploads **stream to ingest in memory** (`ingest_setup_bytes`/`ingest_bids_bytes`/`ingest_any_bytes`); (5) downloads + `/archive` **render on request** from the DB and `run_round`/`freeze_award`/`record_adjustment` skip all vault writes; (6) the console **vault is decommissioned**. Discriminated by `PilotService(db_runs=True, persist_outputs=False)` (`pilot_common.service()`). **247 tests pass** (+14, incl. `test_uploads_leave_no_file_on_disk`, `test_downloads_render_from_db_with_empty_outputs`); ruff/format/mypy clean; migration round-trip green. **The MCP harness is UNCHANGED (defaults; keeps its file vault) and is now the explicit live-run VERIFICATION ORACLE** (§13 updated) — sponsor runs the engine/analysis files independently to compare against the manual work + the app; same deterministic engine + E-39 → identical analysis on identical inputs. §13 runtime boundaries + the `/files` endpoint + the vault row updated. **Pending follow-up:** a full section-by-section re-sweep of §2/§3/§16 `service.py` line refs (shifted by the refactor) and the persistence mapping — flagged, not yet done. New backlog: **E-43** (version savepoints + picker + compare-versions + ROUND/FINAL marker + meeting/date labels).
 - **v1.22 (2026-06-21)** — *First-draft UX/UI design captured + reviewed.* The Claude Design package (six screens — Login, Dashboard, Run Detail, Bid Intake, Awards, Alignment Workspace — built from this audit + the Kroger brand) is committed to `project/design/first_draft/` with `DESIGN_REVIEW.md` (the review of record). **Verdict:** strong, faithful, ship-worthy; a reskin-and-extend target for **E-26**. **New backlog epics from the review:** **E-40** decision-rationale capture (per-cell decision note + freeze note → audit trail — the WHY layer pairing with #4's WHO; carries a governance sub-decision on where it lives / whether it is hash-chained); **E-41** in-app alignment deep workbench (the per-cell editable award matrix + live custom-build + cell drill-down + diligence tabs — **closes G-I**, Category C). **Findings recorded (not yet built):** (a) the UI shows "vs STLY" as a hard metric — it must be labelled **synthetic / modeled** (the `_STLY_UPLIFT = 1.04` proxy, no real feed); (b) the design is **missing the finalize / "lock & close run"** close-out step that generates award + rejection notices — composes G-D/E-22 + E-37 + E-24; (c) parking lot: an email-drafter UI (E-37) is a future design ask, deliberately not spec'd. G-I row updated to reference the design + E-41. No source/behavior change in this entry.
 - **v1.21 (2026-06-21)** — *Two A-adjacent correctness fixes shipped (commit `a5abc6c`).* **#4 Actor fidelity:** the decision audit chain recorded a hardcoded `pilot` / `pilot-runner` for IMPORTED/SUPERSEDED/SEALED; an `actor` is now threaded through `ingest_bids`/`ingest_any`/`run_round` (and `_persist_bid_lines`), the web console passing the authenticated `user.username` (the MCP harness keeps the defaults — no web auth), and the importing user is stamped on `norm.source_artifact.created_by`. §8 event table + narrative updated. **#5 Setup once-per-run guard:** a 2nd `POST /runs/{slug}/setup` overwrote `cycle_id.txt` and silently orphaned the prior cycle; `ingest_setup` (service.py:220) now refuses it (409 CONFLICT) in both runtimes — §2/§3 + the flowchart note that. **#6 Scratch-file cleanup:** the flexible-intake *propose* path (`bids.py:203`) wrote the raw upload to a temp scratch file in `inputs/` then unlinked it — but the unlink was skipped if inference raised, leaking an orphan temp file on every malformed drop. Now a `try/finally` drops the scratch on success **or** failure. **Tests:** `test_actor_threads_to_audit_events`, `test_second_setup_ingest_is_refused`, `test_second_setup_post_is_conflict`, `test_flexible_propose_failure_cleans_scratch` (full suite 233 passed; ruff/format/mypy green). **Doc maintenance:** all `service.py` line refs in §1 (flowchart), §2 (stage table), §3 (API table + invariants), §8 (event table + G-B note) refreshed for the a5abc6c insertions (~+30 lines below the import block). No gap-register status change (G-B remains closed; the setup/capacity-emit-no-event note in §8 is unaffected — #4 changes *who*, not *whether*).
