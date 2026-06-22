@@ -67,11 +67,19 @@ drill-through, refresh Awards screenshot) · GCP deployment.
   exercised. Note: v1/v2 lens-B spend identical (Δ 0) — expected: the synthetic 2-supplier data has
   unambiguous per-cell winners the weight change doesn't flip; real contested data would move it. Left a
   closed run `field-tomatoes-20260622-…` in the DB.
-- **POTATO dry run: BLOCKED (needs a decision).** The real `potato_2026_rfp_input.xlsx` is the legacy
-  standalone-engine `CONFIG/IN_/DIM_` format (not ingestible by our pipeline), and there is **no potato
-  synthetic builder**. Options: a small **synthetic potato builder** (commodity-agnostic validation,
-  quick) vs a **legacy→owned converter** to run the real data + compare to the `potato_…_analysis_output`
-  golden (larger; relates to the live-test fan-in/fan-out granulation).
+- **POTATO dry run: ✅ DONE via the legacy→owned converter (2026-06-22).** Built
+  `backend/scripts/potato_legacy_dryrun.py` — reads the REAL `potato_2026_rfp_input.xlsx` (legacy
+  standalone-engine `CONFIG/IN_/DIM_` format) → emits OUR setup workbook + bid template → runs the full
+  loop via `PilotService` → compares OUR A–G lenses to the golden `potato_2026_rfp_analysis_output`.
+  Result (deterministic, re-run twice): **20 DCs / 27 lots / 17 suppliers / 2 TFs; 4,820 R2 (Delivered)
+  bids ingested, 0 quarantined; 7 lenses sealed.** **Lens ORDERING matches the golden exactly** (A < B=C=E=F,
+  D higher, G distinct) and per-cell prices agree. **But total spend is ~+27% (uniform):** OUR engine books
+  **all 271 demand cells**; the legacy books only **183** — it leaves **88 demand cells (~207k cases)
+  unawarded** (its premium-0.15 / coverage-0.8 gates drop them → unmet demand). **This is a coverage/gating
+  SEMANTIC difference between our V3 engine and the legacy, not a conversion bug** — a real finding for a
+  domain decision (does unmet demand stay unbooked, or get force-filled?). The converter only loaded the
+  Delivered (R2) round (single-round basis); the FOB-by-period legacy data ties to the live-test
+  fan-in/fan-out granulation.
 
 ## Verdict
 
