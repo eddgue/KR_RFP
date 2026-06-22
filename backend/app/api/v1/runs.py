@@ -115,6 +115,34 @@ class RunAnalysisResponse(BaseModel):
     filename: str = Field(description="The versioned alignment workbook written into outputs/.")
 
 
+class StrategyResponse(BaseModel):
+    """The run's EFFECTIVE engine strategy — the resolved weights + the four safeties the next
+    analysis will use (read straight off the cycle config the engine reads, never a copy)."""
+
+    weight_preset: str
+    weight_price: Decimal
+    weight_coverage: Decimal
+    weight_historical: Decimal
+    weight_zrisk: Decimal
+    weight_continuity: Decimal
+    premium_ceiling: Decimal
+    coverage_floor: Decimal
+    conc_thresh: Decimal
+    max_sup_dc: int
+
+
+class UpdateStrategyRequest(BaseModel):
+    """Set the run's engine strategy (persisted onto the cycle; the next analysis picks it up)."""
+
+    weight_preset: str = Field(
+        description="balanced | price_focus | coverage_focus | risk_averse | custom"
+    )
+    premium_ceiling: Decimal = Field(gt=0, le=1, description="Eligibility premium ceiling (0–1).")
+    coverage_floor: Decimal = Field(gt=0, le=1, description="Eligibility coverage floor (0–1).")
+    conc_thresh: Decimal = Field(gt=0, le=1, description="Concentration flag threshold (0–1).")
+    max_sup_dc: int = Field(ge=1, description="Max suppliers per DC.")
+
+
 class FreezeAwardRequest(BaseModel):
     """Promote a human-selected lens to a FROZEN award (the governed decision)."""
 
@@ -516,6 +544,73 @@ def run_analysis(
         scenario_count=scenario_count,
         filename=out_path.name,
     )
+
+
+@router.get(
+    "/{slug}/strategy",
+    response_model=StrategyResponse,
+    summary="Read the run's engine strategy (resolved weights + safeties)",
+)
+def get_strategy(
+    slug: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> StrategyResponse:
+    """The EFFECTIVE strategy the next analysis will use. 400 `gate_required` if no cycle yet."""
+
+    svc = service()
+    paths = resolve_paths(db, slug)
+    if not _has_cycle(db, slug):
+        raise AppError(
+            code=ErrorCode.GATE_REQUIRED,
+            message="No cycle yet — ingest the setup workbook first.",
+            status_code=400,
+        )
+    return StrategyResponse(**svc.get_strategy(db, paths))
+
+
+@router.put(
+    "/{slug}/strategy",
+    response_model=StrategyResponse,
+    summary="Set the run's engine strategy (persisted onto the cycle)",
+)
+def set_strategy(
+    slug: str,
+    body: UpdateStrategyRequest,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> StrategyResponse:
+    """Persist the weights preset + the four safeties onto the cycle; the next analysis uses them.
+
+    400 `gate_required` if no cycle yet, `validation_error` on an unknown preset / out-of-range
+    safety. The change is config (pre-decision); the sealed analysis tamper-seals the effective
+    config it actually ran under (C2).
+    """
+
+    svc = service()
+    paths = resolve_paths(db, slug)
+    if not _has_cycle(db, slug):
+        raise AppError(
+            code=ErrorCode.GATE_REQUIRED,
+            message="No cycle yet — ingest the setup workbook first.",
+            status_code=400,
+        )
+    try:
+        updated = svc.set_strategy(
+            db,
+            paths,
+            weight_preset=body.weight_preset,
+            premium_ceiling=body.premium_ceiling,
+            coverage_floor=body.coverage_floor,
+            conc_thresh=body.conc_thresh,
+            max_sup_dc=body.max_sup_dc,
+            actor=user.username,
+        )
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR, message=str(exc), status_code=400
+        ) from exc
+    return StrategyResponse(**updated)
 
 
 @router.get(

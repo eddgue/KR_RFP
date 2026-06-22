@@ -816,6 +816,85 @@ class PilotService:
             overrides["max_sup_dc"] = cycle.max_sup_dc
         return config.model_copy(update=overrides) if overrides else config
 
+    def get_strategy(self, session: Session, runpaths: RunPaths) -> dict[str, object]:
+        """Read the run's EFFECTIVE engine strategy (the config the next analysis will use).
+
+        Resolves exactly what `run_round` builds: the cycle's named weight preset (remapped to its
+        five-weight vector) with the cycle's four safeties layered over the default. So the panel
+        shows real, in-use numbers — not a separate copy that could drift.
+        """
+
+        cycle = self._load_cycle(session, runpaths)
+        cfg = self._apply_cycle_safeties(
+            self._apply_cycle_preset(_DEFAULT_CONFIG, cycle), cycle
+        )
+        return {
+            "weight_preset": cfg.preset.value,
+            "weight_price": cfg.weight_price,
+            "weight_coverage": cfg.weight_coverage,
+            "weight_historical": cfg.weight_historical,
+            "weight_zrisk": cfg.weight_zrisk,
+            "weight_continuity": cfg.weight_continuity,
+            "premium_ceiling": cfg.global_premium_threshold,
+            "coverage_floor": cfg.coverage_floor,
+            "conc_thresh": cfg.conc_thresh,
+            "max_sup_dc": cfg.max_sup_dc,
+        }
+
+    def set_strategy(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        *,
+        weight_preset: str,
+        premium_ceiling: Decimal,
+        coverage_floor: Decimal,
+        conc_thresh: Decimal,
+        max_sup_dc: int,
+        actor: str = "pilot",
+    ) -> dict[str, object]:
+        """Persist the buyer's in-app strategy onto the cycle; the next analysis picks it up.
+
+        Writes the named weight preset + the four engine safeties to `cyc.cycle` (the same fields
+        the setup workbook seeds). No new store and no engine change — `run_round` already layers
+        cycle fields over the default config, and the sealed analysis tamper-seals the effective
+        config (C2). The preset must be a known `WeightPreset`; the safeties are range-checked.
+        """
+
+        try:
+            preset = WeightPreset(weight_preset.strip().lower())
+        except ValueError as exc:
+            raise ValueError(f"unknown weight preset: {weight_preset!r}") from exc
+        for name, val in (
+            ("premium_ceiling", premium_ceiling),
+            ("coverage_floor", coverage_floor),
+            ("conc_thresh", conc_thresh),
+        ):
+            if not (Decimal("0") < val <= Decimal("1")):
+                raise ValueError(f"{name} must be between 0 and 1 (got {val})")
+        if max_sup_dc < 1:
+            raise ValueError(f"max_sup_dc must be >= 1 (got {max_sup_dc})")
+
+        cycle = self._load_cycle(session, runpaths)
+        session.execute(
+            text(
+                "UPDATE cyc.cycle SET engine_weight_preset = :preset, "
+                "engine_premium_ceiling = :prem, engine_coverage_floor = :cov, "
+                "engine_conc_thresh = :conc, engine_max_sup_dc = :maxsup "
+                "WHERE cycle_id = :cyc"
+            ),
+            {
+                "preset": preset.value,
+                "prem": premium_ceiling,
+                "cov": coverage_floor,
+                "conc": conc_thresh,
+                "maxsup": max_sup_dc,
+                "cyc": cycle.cycle_id,
+            },
+        )
+        session.flush()
+        return self.get_strategy(session, runpaths)
+
     def freeze_award(
         self,
         session: Session,
