@@ -43,10 +43,10 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | B3 | `backend/app/domain/{ref,cyc,bid}/**` | `files/B3_domain_ref_cyc_bid.md` | ✅ DONE (1085 ln) |
 | B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | ✅ DONE (1021 ln, 14 files) |
 | B5 | `backend/app/api/**` + `backend/app/core/**` | `files/B5_api_core.md` | ✅ DONE (896 ln, 33 files) |
-| B6 | `backend/app/{auth,comms,output,fiscal,cycle}/**` + any remaining `app/**` | `files/B6_auth_comms_output_fiscal_cycle.md` | PENDING |
-| B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_migrations_schema.md` | PENDING |
+| B6 | `backend/app/{auth,comms,output,fiscal,cycle}/**` + any remaining `app/**` | `files/B6_auth_comms_output_fiscal_cycle.md` | ✅ DONE (1012 ln, 31 files) |
+| B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_schema.md` (+`B7_migrations.md`) | ◐ schema ✅ 1610 ln; migrations file in progress |
 | B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | ✅ DONE (940 ln) |
-| B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | PENDING |
+| B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | ✅ DONE (1047 ln, 44 files, 104 tests) |
 | B9 | `backend/scripts/**`, `backend/demo/**`, `backend/{pyproject.toml,Dockerfile,README,*.cfg,*.ini}` | `files/B9_scripts_demo_config.md` | PENDING |
 | F1 | `frontend/app/**` (routes, layouts, globals) | `files/F1_app_routes.md` | ✅ DONE (794 ln) |
 | F2a | `frontend/components/{ui,shell,auth}/**` | `files/F2a_components_ui_shell_auth.md` | ✅ DONE (922 ln, 14 files) |
@@ -55,7 +55,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | F3 | `frontend/lib/**` + `frontend/{next.config.mjs,tailwind.config.ts,package.json,tsconfig,Dockerfile,*.css}` | `files/F3_lib_config.md` | ✅ DONE (666 ln, 21 files) |
 | D1 | `project/0*_*.md` (charter→governance) + `project/{DATA_AND_PROCESS_MAP,DESIGN_BRIEF,NO_FILE_STORAGE_PLAN,PRE_TEST_READINESS,RECONCILIATION_SEAMS}.md` | `files/D1_project_governance.md` | PENDING |
 | D2 | `project/squads/**` | `files/D2_squads.md` | PENDING |
-| D3 | `project/design/**` (canonical; redesign3 uploads = note as snapshots) | `files/D3_design.md` | PENDING |
+| D3 | `project/design/**` (canonical; redesign3 uploads = note as snapshots) | `files/D3_design.md` | ✅ DONE (307 ln, 129 files) |
 | D4 | `docs/adr/**` + `specs/**` | `files/D4_adr_specs.md` | PENDING |
 | D5 | `project/triage/**`, `reference/**`, `mcp/**`, `deploy/**`, `infra/**`, root `*.md`, `*.json`, `.mcp.json` | `files/D5_triage_ref_mcp_deploy_root.md` | PENDING |
 | D6 | `var/**` (design snapshots + run vault notes + demo outputs) | `files/D6_var_archives.md` | ✅ DONE (413 ln) |
