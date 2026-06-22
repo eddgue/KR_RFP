@@ -108,17 +108,17 @@ export function NewRunModal({ open, onClose, onCreated }: NewRunModalProps) {
           />
         </FormField>
 
-        <label className="flex items-start gap-2.5 rounded-md border border-line bg-surface-subtle px-3 py-2.5">
+        <label className="flex items-start gap-2.5 rounded-control border border-border bg-surface-subtle px-3 py-2.5">
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-line-strong text-accent focus:ring-2 focus:ring-accent/40"
+            className="mt-0.5 h-4 w-4 rounded border-border text-brand-primary focus:ring-2 focus:ring-brand-sky/40"
             checked={rehearsal}
             onChange={(e) => setRehearsal(e.target.checked)}
             disabled={submitting}
           />
           <span className="text-sm">
-            <span className="font-medium text-ink">Rehearsal run</span>
-            <span className="block text-xs text-ink-muted">
+            <span className="font-medium text-text-strong">Rehearsal run</span>
+            <span className="block text-xs text-text-muted">
               Practice run — kept separate from production sourcing.
             </span>
           </span>
@@ -127,7 +127,7 @@ export function NewRunModal({ open, onClose, onCreated }: NewRunModalProps) {
         {error && (
           <div
             role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            className="rounded-control border border-danger/30 bg-danger-bg px-3 py-2 text-sm text-danger"
           >
             {error}
           </div>
