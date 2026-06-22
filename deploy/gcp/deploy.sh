@@ -20,6 +20,7 @@
 #   PROJECT_ID            (required) the GCP project id
 #   REGION               (default: us-central1)
 #   APP_PREFIX           (default: kr-rfp)   names every resource: <prefix>-backend, etc.
+#   DB_EDITION           (default: ENTERPRISE)    Cloud SQL edition (ENTERPRISE fits the cheap tier)
 #   DB_TIER              (default: db-f1-micro)   Cloud SQL machine tier
 #   DB_NAME              (default: kr_rfp)
 #   DB_USER              (default: kr_rfp_app)
@@ -40,6 +41,7 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:-}"
 REGION="${REGION:-us-central1}"
 APP_PREFIX="${APP_PREFIX:-kr-rfp}"
+DB_EDITION="${DB_EDITION:-ENTERPRISE}"   # ENTERPRISE supports the cheap shared-core tiers below
 DB_TIER="${DB_TIER:-db-f1-micro}"
 DB_NAME="${DB_NAME:-kr_rfp}"
 DB_USER="${DB_USER:-kr_rfp_app}"
@@ -124,8 +126,11 @@ ensure_cloud_sql() {
     info "instance exists."
   else
     info "creating instance (this takes several minutes the first time) ..."
+    # --edition is REQUIRED: gcloud now defaults new instances to ENTERPRISE_PLUS, and the cheap
+    # shared-core tiers (db-f1-micro / db-g1-small) only exist on the ENTERPRISE edition. Pin it.
     gcloud sql instances create "${SQL_INSTANCE}" \
       --database-version=POSTGRES_16 \
+      --edition="${DB_EDITION}" \
       --tier="${DB_TIER}" \
       --region="${REGION}" \
       --storage-auto-increase \

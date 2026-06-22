@@ -70,6 +70,7 @@ required):
 | `SEED_ADMIN_PASSWORD` | **yes (for the seed)** | — | the `admin` console login password |
 | `REGION` | no | `us-central1` | the Cloud Run + Cloud SQL region |
 | `APP_PREFIX` | no | `kr-rfp` | names every resource (`<prefix>-backend`, `<prefix>-sql`, …) |
+| `DB_EDITION` | no | `ENTERPRISE` | Cloud SQL edition (ENTERPRISE supports the cheap shared-core tiers; gcloud otherwise defaults to ENTERPRISE_PLUS, which rejects `db-f1-micro`) |
 | `DB_TIER` | no | `db-f1-micro` | Cloud SQL machine tier |
 | `DB_NAME` | no | `kr_rfp` | the application database name |
 | `DB_USER` | no | `kr_rfp_app` | the application DB user |
