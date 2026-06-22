@@ -10,6 +10,12 @@ against: project/design/DESIGN_REQUESTS.md (§A/§B/§C), project/design/DESIGN_
 
 # Redesign3 — gap analysis
 
+> **SPONSOR DECISION (2026-06-22): E-44 design stays PARKED.** Do **not** send the two E-44 gaps (the
+> A1 modality picker + cost-line manager, and the B6 mixed-grain breakdown) to the designer now —
+> revisit the design when E-44 is scheduled to build. Punch-list item 1 is therefore **deferred**; only
+> the minor cleanup (items 3 / stale screenshots + freeze re-shoot) remains as designer feedback, low
+> priority. A4 Comms stays parked. Redesign3's non-E-44 set is on-baseline and build-ready when needed.
+
 Reviewing the designer's **Redesign3** deliverable (`project/design/redesign3/`) against the requested
 screens (§A), visuals (§B), midpoints (§C), and decisions **D42 / D43 / D44**. Read-and-assess only —
 no frontend code was changed.
