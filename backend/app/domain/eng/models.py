@@ -58,6 +58,9 @@ class AnalysisRun(EngBase):
     run_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     run_finished_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     run_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    # E-43 savepoint: an optional human-given name for this sealed alignment version. Plain
+    # metadata, not a governed decision (no audit event); freeze (E-21) stays the only governed seal.
+    label: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class BidScore(EngBase):

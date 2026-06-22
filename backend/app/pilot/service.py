@@ -2114,6 +2114,52 @@ class PilotService:
             return []
         return read_list_analyses(session, cycle_id)
 
+    def name_version(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        analysis_run_id: str,
+        *,
+        label: str,
+        actor: str = "pilot",
+    ) -> AnalysisSummary:
+        """Name a sealed alignment version — a lightweight SAVEPOINT, not a governed decision.
+
+        Sets `eng.analysis_run.label` for a sealed run scoped to THIS run's cycle (E-43). Writes NO
+        audit event: naming is plain metadata, done freely mid-meeting; FREEZE (E-21) stays the
+        only governed seal. Returns the updated `AnalysisSummary` (version ordinal + the new name).
+        Raises `ValueError` (empty name / no cycle) or `LookupError` (run isn't a sealed analysis).
+        """
+
+        cycle_id = self._run_cycle_id(session, runpaths)
+        if cycle_id is None:
+            raise ValueError("run has no cycle yet — ingest the setup workbook first")
+        clean = (label or "").strip()[:120]
+        if not clean:
+            raise ValueError("version name must not be empty")
+
+        found = session.execute(
+            text(
+                "SELECT 1 FROM eng.analysis_run "
+                "WHERE analysis_run_id = :id AND cycle_id = :cyc AND is_sealed = true"
+            ),
+            {"id": analysis_run_id, "cyc": cycle_id},
+        ).first()
+        if found is None:
+            raise LookupError(f"analysis run {analysis_run_id} not found for this run")
+        session.execute(
+            text(
+                "UPDATE eng.analysis_run SET label = :label "
+                "WHERE analysis_run_id = :id AND cycle_id = :cyc"
+            ),
+            {"label": clean, "id": analysis_run_id, "cyc": cycle_id},
+        )
+        session.flush()
+        for summary in read_list_analyses(session, cycle_id):
+            if summary.analysis_run_id == analysis_run_id:
+                return summary
+        raise LookupError(analysis_run_id)  # pragma: no cover — just updated this row
+
     def list_awards(self, session: Session, runpaths: RunPaths) -> list[AwardSummary]:
         """The run's cycle's FROZEN awards (typed views), or [] if no cycle yet.
 

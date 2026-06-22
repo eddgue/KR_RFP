@@ -143,6 +143,12 @@ class UpdateStrategyRequest(BaseModel):
     max_sup_dc: int = Field(ge=1, description="Max suppliers per DC.")
 
 
+class NameVersionRequest(BaseModel):
+    """Name a sealed alignment version — a lightweight savepoint (NOT a freeze)."""
+
+    label: str = Field(min_length=1, max_length=120, description="Human-given version name.")
+
+
 class FreezeAwardRequest(BaseModel):
     """Promote a human-selected lens to a FROZEN award (the governed decision)."""
 
@@ -611,6 +617,37 @@ def set_strategy(
             code=ErrorCode.VALIDATION_ERROR, message=str(exc), status_code=400
         ) from exc
     return StrategyResponse(**updated)
+
+
+@router.patch(
+    "/{slug}/analysis/{analysis_run_id}",
+    response_model=AnalysisSummary,
+    summary="Name a sealed alignment version (lightweight savepoint, not a freeze)",
+)
+def name_analysis_version(
+    slug: str,
+    analysis_run_id: str,
+    body: NameVersionRequest,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> AnalysisSummary:
+    """Set a human name on a sealed alignment version — a savepoint the buyer makes freely during a
+    live alignment meeting. **Not governed**: writes NO audit event; FREEZE stays the only governed
+    seal. 404 if the version isn't a sealed analysis of this run; 400 on an empty name / no cycle.
+    """
+
+    svc = service()
+    paths = resolve_paths(db, slug)
+    try:
+        return svc.name_version(
+            db, paths, analysis_run_id, label=body.label, actor=user.username
+        )
+    except LookupError as exc:
+        raise AppError(code=ErrorCode.NOT_FOUND, message=str(exc), status_code=404) from exc
+    except ValueError as exc:
+        raise AppError(
+            code=ErrorCode.VALIDATION_ERROR, message=str(exc), status_code=400
+        ) from exc
 
 
 @router.get(

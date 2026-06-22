@@ -54,6 +54,9 @@ class AnalysisSummary(BaseModel):
     round_number: int = Field(description="The 1-based cycle round this analysis scored.")
     engine_version: str
     sealed_at: datetime = Field(description="When the run finished + sealed (UTC).")
+    label: str | None = Field(
+        default=None, description="Optional savepoint name (E-43); None for an unnamed run."
+    )
 
 
 class ScenarioComparisonRow(BaseModel):
@@ -151,7 +154,7 @@ def list_analyses(session: Session, cycle_id: str) -> list[AnalysisSummary]:
     rows = session.execute(
         text(
             "SELECT r.analysis_run_id, r.engine_version, r.run_finished_at, "
-            "       COALESCE(cr.round_number, 0) AS round_number "
+            "       COALESCE(cr.round_number, 0) AS round_number, r.label "
             "FROM eng.analysis_run r "
             "LEFT JOIN cyc.cycle_round cr ON cr.round_id = r.round_id "
             "WHERE r.cycle_id = :cyc AND r.is_sealed = true "
@@ -166,8 +169,9 @@ def list_analyses(session: Session, cycle_id: str) -> list[AnalysisSummary]:
             round_number=int(round_number),
             engine_version=engine_version,
             sealed_at=sealed_at,
+            label=label,
         )
-        for seq, (run_id, engine_version, sealed_at, round_number) in enumerate(rows, start=1)
+        for seq, (run_id, engine_version, sealed_at, round_number, label) in enumerate(rows, start=1)
     ]
 
 
