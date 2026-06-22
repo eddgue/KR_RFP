@@ -17,9 +17,9 @@ bytes, empty-flag, created, modified). Vendored/generated trees (`.git`, `node_m
 caches) are counted in the census, not per-file audited (not ours).
 
 **Three-layer report (synthesized AFTER the per-file slices land):**
-- `LAYER1_ARCHITECTURE_DATA_DATAFLOWS.md` — architecture, data model, data flows.
-- `LAYER2_CODE_PROCESS_DECISIONS.md` — code, process, decision points.
-- `LAYER3_UX_UI.md` — screens, components, interactions, states.
+- `LAYER1_ARCHITECTURE_DATA_DATAFLOWS.md` — architecture, data model, data flows. (pending)
+- `LAYER2_CODE_PROCESS_DECISIONS.md` — code, process, decision points. (pending)
+- `LAYER3_UX_UI.md` — screens, components, interactions, states. ✅ DONE (458 ln; synthesized from F1/F2a/F2b/F2c/F3 + D3).
 
 **Per-file deep audit lives in `AS_BUILT/files/<slice>.md`.** Each file entry MUST carry: path · what
 it is · **detailed WHY it exists / why it's shaped this way / what breaks without it** · key
