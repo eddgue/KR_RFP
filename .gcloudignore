@@ -1,0 +1,18 @@
+# gcloud upload filter for `gcloud builds submit` (deploy/gcp/deploy.sh).
+#
+# WHY THIS FILE EXISTS: without a .gcloudignore, gcloud falls back to .gitignore when deciding what
+# to upload to Cloud Build. .gitignore excludes `reference/samples/*`, so it strips the one potato
+# sample the backend image COPYs for the deploy seed (reference/samples/potato_2026_rfp_input.xlsx)
+# even though that file is committed — and the image build then fails at that COPY step.
+#
+# So: import .gitignore for all the usual noise (.venv, __pycache__, node_modules, var/, ...), then
+# RE-INCLUDE that single sample so it reaches the build context. .dockerignore still trims the rest
+# of reference/ out of the actual image layer (only this one file is COPYd in).
+
+.git
+.gcloudignore
+
+#!include:.gitignore
+
+# Re-include the single sample the backend image needs (overrides reference/samples/* above).
+!reference/samples/potato_2026_rfp_input.xlsx
