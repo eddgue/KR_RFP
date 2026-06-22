@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # local http://localhost testing — a browser silently drops a Secure cookie over plain http, so
     # login appears to "succeed" but no session sticks. Keep it true in every deployed environment.
     auth_cookie_secure: bool = True
+    # SameSite policy for the session cookie. Local dev serves console + API on the SAME site
+    # (localhost), where "lax" works and is the safe default. In a deployed split-origin setup
+    # (console and API on DIFFERENT sites, e.g. two *.run.app hosts) the browser will NOT return a
+    # Lax cookie on the cross-site API call, so login never sticks — set AUTH_COOKIE_SAMESITE=none
+    # there (which the browser only honours together with Secure, already true above).
+    auth_cookie_samesite: str = "lax"
     # The browser console is a separate origin from this API and sends the session cookie
     # cross-origin, so credentialed CORS must allow its EXACT origin(s). Comma-separated; a wildcard
     # "*" is invalid with credentials, so list real origins. Default is the local Next dev server;

@@ -8,7 +8,7 @@ auth primitives in `app/auth/security.py`; this layer only does request/response
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel, Field
@@ -82,6 +82,15 @@ def _user_view(user: AppUser) -> UserView:
     return UserView(id=str(user.id), username=user.username, totp_enabled=user.totp_enabled)
 
 
+def _cookie_samesite() -> Literal["lax", "strict", "none"]:
+    """The configured SameSite policy, narrowed to the values set_cookie accepts (default lax)."""
+
+    value = get_settings().auth_cookie_samesite.strip().lower()
+    if value not in ("lax", "strict", "none"):
+        value = "lax"
+    return cast(Literal["lax", "strict", "none"], value)
+
+
 def _set_session_cookie(response: Response, user: AppUser) -> None:
     token = create_session_token(str(user.id), username=user.username)
     response.set_cookie(
@@ -90,7 +99,7 @@ def _set_session_cookie(response: Response, user: AppUser) -> None:
         max_age=session_cookie_max_age_seconds(),
         httponly=True,
         secure=get_settings().auth_cookie_secure,
-        samesite="lax",
+        samesite=_cookie_samesite(),
         path="/",
     )
 
@@ -136,7 +145,13 @@ def login(
 def logout(response: Response) -> Response:
     """Clear the session cookie (idempotent — safe to call without a session)."""
 
-    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    # Match the attributes the cookie was set with so the browser actually clears it cross-site.
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        secure=get_settings().auth_cookie_secure,
+        samesite=_cookie_samesite(),
+    )
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 

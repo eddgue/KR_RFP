@@ -294,7 +294,7 @@ deploy_backend() {
     --port 8000 \
     --add-cloudsql-instances "${SQL_CONNECTION_NAME}" \
     --min-instances "${MIN_INSTANCES}" \
-    --set-env-vars "ENV=production,DATABASE_URL=${db_url}" \
+    --set-env-vars "ENV=production,DATABASE_URL=${db_url},AUTH_COOKIE_SAMESITE=none" \
     --set-secrets "AUTH_SECRET_KEY=${SECRET_APP_KEY}:latest" \
     --project "${PROJECT_ID}"
 
