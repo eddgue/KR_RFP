@@ -38,7 +38,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 
 | Slice | Scope (paths) | Output file | Status |
 |-------|---------------|-------------|:------:|
-| B1 | `backend/app/engine/**` (scoring, allocation, formulas, v3, runner, guards, stub, interface) | `files/B1_engine.md` | PENDING |
+| B1 | `backend/app/engine/**` (scoring, allocation, formulas, v3, runner, guards, stub, interface) | `files/B1_engine.md` | ✅ DONE (867 ln, 9 files) |
 | B2 | `backend/app/pilot/**` (service, ingesters, deliverables, vault, status, models) | `files/B2_pilot.md` | PENDING |
 | B3 | `backend/app/domain/{ref,cyc,bid}/**` | `files/B3_domain_ref_cyc_bid.md` | PENDING |
 | B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | PENDING |
