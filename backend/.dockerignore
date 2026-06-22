@@ -1,0 +1,25 @@
+# Keep the backend build context small + reproducible. Dependencies are installed from
+# pyproject.toml inside the image, so the local virtualenv and all caches are pure noise.
+#
+# NOTE: tests/ is intentionally NOT excluded — deploy/gcp/seed.py reuses the TOMATO synthetic
+# builders from tests/pilot/test_pilot_cycle_e2e.py, and the seed runs inside this image.
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+demo/output

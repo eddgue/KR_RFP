@@ -15,6 +15,7 @@ dependencies = [
     "passlib[argon2]>=1.7",  # web console auth: argon2 password hashing (constant-time verify)
     "pyotp>=2.9",            # web console auth: TOTP 2FA (provisioning URI + verify)
     "pyjwt>=2.8",            # web console auth: signed session JWT in the kr_session cookie
+    "python-multipart>=0.0.9",  # FastAPI multipart/form-data: the file-upload routes (bid/setup ingest)
 ]
 
 [project.optional-dependencies]

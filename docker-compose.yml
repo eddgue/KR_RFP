@@ -1,0 +1,133 @@
+# Full-stack LOCAL verification of the Cloud Run deployment shape — postgres + backend + frontend,
+# wired exactly the way the two Cloud Run services will be, but on one machine. This is the de-risk
+# harness for deploy/gcp/: build both images, bring this up, and confirm the stack comes up green
+# (postgres healthy -> migrations applied -> backend /ready -> frontend HTML -> seed runs).
+#
+#   docker compose up --build -d        # build images + start the stack
+#   docker compose run --rm seed        # seed the admin user + the two demo cycles (optional)
+#   docker compose down -v              # stop + wipe the data volume
+#
+# This is a DEV convenience: the DB password is a well-known local default and AUTH_COOKIE_SECURE is
+# off (plain http on localhost). Cloud Run uses Secret Manager + HTTPS — see deploy/gcp/README.md.
+name: kr-rfp
+
+services:
+  # ---- Postgres: the governed system of record -------------------------------------------------
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kr_rfp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kr_rfp}
+      POSTGRES_DB: ${POSTGRES_DB:-kr_rfp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kr_rfp} -d ${POSTGRES_DB:-kr_rfp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # ---- migrate: one-shot `alembic upgrade head`, gated on a healthy DB, before the API serves ----
+  # Decoupled from the serving container (Cloud Run runs migrations as a separate job too): it runs
+  # to completion and exits, and the backend waits for it via service_completed_successfully.
+  migrate:
+    build:
+      # Repo-root context: the backend image needs db/baseline/schema.sql alongside backend/ in
+      # their real relative layout (alembic 0001 reads <repo-root>/db/baseline/schema.sql).
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://kr_rfp:kr_rfp@db:5432/kr_rfp}
+      ENV: ${ENV:-local}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ---- backend: FastAPI on uvicorn, binds 0.0.0.0:8000 (the image's $PORT default) ---------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://kr_rfp:kr_rfp@db:5432/kr_rfp}
+      ENV: ${ENV:-local}
+      # The frontend is a separate origin and sends the session cookie cross-origin, so credentialed
+      # CORS must allow its EXACT origin. In the cloud this is the deployed frontend URL.
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      # Local http://localhost only: a Secure cookie is silently dropped over plain http, so login
+      # would "succeed" with no session. Cloud Run is HTTPS, so this stays true (the default) there.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      # Signs the session JWT. A throwaway local default; Cloud Run sources this from Secret Manager.
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-dev-insecure-local-compose-secret}
+      PORT: "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # python is in the image (no curl); hit the readiness probe (DB reachable) over loopback.
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/ready').status==200 else 1)\""
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # ---- frontend: Next standalone server, NEXT_PUBLIC_API_BASE_URL baked at build time ------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* is inlined at build time. The browser talks to the backend on the HOST
+        # (localhost:8000), not the compose-internal name — it runs outside the compose network.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    environment:
+      PORT: "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "node -e \"require('http').get('http://localhost:3000/login',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))\""
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  # ---- seed: admin user + TOMATO synthetic cycle + POTATO real-data cycle (run on demand) --------
+  # `docker compose run --rm seed`. Uses the same image/DB as the backend; commits its work.
+  seed:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "/app/deploy/gcp/seed.py"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://kr_rfp:kr_rfp@db:5432/kr_rfp}
+      ENV: ${ENV:-local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-local-dev-pw}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    profiles:
+      # Keep seed out of `up` (it is a job, not a long-running service); start it explicitly with
+      # `docker compose run --rm seed` or `docker compose --profile seed up seed`.
+      - seed
+
+volumes:
+  db_data:

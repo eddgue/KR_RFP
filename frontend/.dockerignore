@@ -1,0 +1,19 @@
+# Keep the frontend build context small + reproducible. node_modules is reinstalled from the
+# lockfile inside the image (never copied from the host), and build/runtime artifacts are
+# regenerated, so none of these belong in the context.
+node_modules
+.next
+out
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Dockerfile
+.dockerignore
+README.md
+tsconfig.tsbuildinfo
+.git
+.gitignore

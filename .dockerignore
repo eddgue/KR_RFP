@@ -1,0 +1,48 @@
+# Root build context ignore — the backend image builds from the REPO ROOT (it needs both backend/
+# and db/baseline/schema.sql in their real relative layout; see backend/Dockerfile). Keep the
+# context lean: exclude everything heavy/irrelevant. The Dockerfile COPYs only what it needs
+# (backend/, db/, deploy/gcp/seed.py, and one reference sample), so a broad allow-list here is safe.
+
+# Python / build noise
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/*.egg-info
+
+# Node / frontend (the frontend has its OWN image + context; never needed in the backend image)
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# Secrets / env
+**/.env
+**/.env.*
+!**/.env.example
+
+# VCS + editor
+.git
+.gitignore
+**/.DS_Store
+
+# Large data dirs not needed by the backend image. reference/ is 150MB+; the backend Dockerfile
+# copies ONLY the single potato legacy sample it needs (see the explicit COPY there), so ignore the
+# rest of reference/ and the vault/screenshots/etc. (NB: a later COPY can still reach an ignored
+# path only if re-included; we instead keep the one needed file out of these globs.)
+reference/samples/_allocation_models
+reference/samples/*.docx
+reference/samples/*.html
+reference/samples/itrade_*
+reference/samples/bid_*
+var
+screenshots
+audit
+mcp
+specs
+docs
+project
+docker-compose*.yml
