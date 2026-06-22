@@ -1,7 +1,9 @@
 import type { Config } from "tailwindcss";
 
-// "Clean enterprise" palette — muted neutrals + a single restrained accent.
-// Dense, calm, data-first. Tuned for compact tables and status chips.
+// Locked v2 design tokens (KR_RFP RFP Console): calm by default, gravity at
+// exceptions and governed decisions. Legacy aliases (accent / ink / line /
+// panel) are retained — pointed at the locked values — so in-flight components
+// keep compiling during the E-26 re-skin; they're removed once migration lands.
 const config: Config = {
   content: [
     "./app/**/*.{ts,tsx}",
@@ -11,36 +13,61 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Neutral surface scale (cool gray).
+        brand: {
+          DEFAULT: "#084999",
+          primary: "#084999",
+          "primary-hover": "#0a5bbf",
+          ink: "#0b1f3a", // navy sidebar / dark surfaces
+          sky: "#2478ce", // focus ring + recommended-cell tint
+        },
+        // legacy alias -> brand primary
+        accent: { DEFAULT: "#084999", hover: "#0a5bbf", soft: "#e8eff8" },
+        text: {
+          strong: "#102a4c",
+          DEFAULT: "#16243d",
+          muted: "#5b6b82",
+          subtle: "#8a97a8",
+          faint: "#9aa7b6",
+        },
+        // legacy alias -> text scale
+        ink: { DEFAULT: "#16243d", strong: "#102a4c", muted: "#5b6b82", subtle: "#8a97a8" },
         surface: {
           DEFAULT: "#ffffff",
-          subtle: "#f7f8fa",
+          app: "#eceff4",
+          card: "#ffffff",
+          subtle: "#f7f9fc",
           muted: "#eef0f3",
         },
-        ink: {
-          DEFAULT: "#1c2530",
-          muted: "#5b6573",
-          subtle: "#8a93a1",
+        border: {
+          DEFAULT: "#e3e8ef",
+          hairline: "#eef1f5",
         },
-        line: {
-          DEFAULT: "#e2e6ec",
-          strong: "#cdd3dc",
-        },
-        accent: {
-          DEFAULT: "#2563a8",
-          hover: "#1f5390",
-          soft: "#e8f0f9",
-        },
+        // legacy alias -> border
+        line: { DEFAULT: "#e3e8ef", strong: "#cdd3dc", hairline: "#eef1f5" },
+        success: { DEFAULT: "#1a7a4f", bg: "#e7f3ea" },
+        warning: { DEFAULT: "#c98a1a", bg: "#fdf6e8" },
+        danger: { DEFAULT: "#b3261e", bg: "#fbe9e7" },
+        sealed: { DEFAULT: "#1d4ed8", bg: "#eef4ff" },
+      },
+      fontFamily: {
+        display: ["var(--font-montserrat)", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["var(--font-nunito)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],
       },
       boxShadow: {
-        panel: "0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06)",
-        modal: "0 10px 38px rgba(16, 24, 40, 0.18), 0 3px 12px rgba(16, 24, 40, 0.10)",
+        card: "0 1px 3px rgba(16,42,76,.05)",
+        raised: "0 2px 8px rgba(8,73,153,.14)",
+        panel: "0 1px 3px rgba(16,42,76,.05)", // legacy alias -> card
+        modal: "0 24px 64px rgba(16,42,76,.3)",
       },
       borderRadius: {
-        panel: "0.625rem",
+        control: "8px",
+        card: "12px",
+        modal: "14px",
+        pill: "20px",
+        panel: "12px", // legacy alias -> card
       },
     },
   },

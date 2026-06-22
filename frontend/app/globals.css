@@ -12,11 +12,26 @@ body {
 }
 
 body {
-  @apply bg-surface-subtle text-ink antialiased;
-  font-feature-settings: "tnum" 1, "cv01" 1;
+  @apply bg-surface-app text-ink antialiased;
+  font-feature-settings: "tnum" 1;
 }
 
-/* Tabular numerals for dense data tables. */
+/* Headings & metrics render in the display face (Montserrat). */
+h1,
+h2,
+h3,
+h4,
+.font-display {
+  font-family: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Tabular numerals for dense data tables and metrics. */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Accessible focus ring (brand sky), 2px offset — every interactive element. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #2478ce;
+  outline-offset: 2px;
 }
