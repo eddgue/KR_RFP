@@ -88,6 +88,31 @@ Empty / loading / error / read-only(historic) for A1–A7 — the handoff alread
 
 ---
 
+## C. MIDPOINTS — reconciliation-step surfaces (the "middle steps" no screen owns)
+
+These are the human-facing **resolution surfaces** for the in-between mappings between grains &
+systems (see `DATA_AND_PROCESS_MAP.md` seams + `RECONCILIATION_SEAMS.md`). They're where real data
+silently breaks, and no lifecycle screen owns them — so each needs a design. **One pattern for all:
+propose → human confirms/corrects → sticky; never guess silently.** Calm by default; surface only when
+a reconciliation needs attention.
+
+- **M1 · Editable column mapper** (= A3) — messy-file column→field override + ambiguity resolution.
+- **M2 · Lot/item ↔ SKU mapping (sticky)** — propose the item→lot grouping and the **lot→iTrade-SKU**
+  links (one lot → *many* SKUs), human confirms, the map **sticks across cycles** (E-11). This is the
+  headline midpoint: it's the prerequisite for real STLY, contracted-vs-effective (E-28), and
+  price-discovery (E-35). Same confidence/propose treatment as the column mapper.
+- **M3 · Supplier / DC identity resolution** — when an incoming supplier/DC name doesn't cleanly match
+  the master: match-to-existing / merge / create-new (dedup), so identities don't silently fork (E-34).
+- **M4 · Unit / pack-size reconciliation** — when a feed/file quotes a different unit or pack than the
+  RFP ("/lb vs /case"), a normalization-confirm so the numbers line up (today an unflagged mismatch).
+- **M5 · Ingest exception / quarantine resolution** — the fix-and-retry surface for quarantined rows
+  (setup AND bids): the row, the reason (key mismatch / bad number / missing field), and a resolve
+  action. Extend the Bid Intake exception queue into a resolution workflow, and add the setup side.
+- **M6 · Date → timeframe/period reconciliation** — when timeframe dates are missing/ambiguous, a
+  confirm step instead of silent fabrication (the month-13 fallback risk).
+
+---
+
 ## Recommended request order
 1. **A1 Cycle Setup / Strategy** (the live-path hole) + **B1** (the 3 tweaks — cheap, finishes the baseline).
 2. **A2 Finalize / Close-out** (backend is built — design the UI to match).
@@ -95,3 +120,6 @@ Empty / loading / error / read-only(historic) for A1–A7 — the handoff alread
 4. **A4 Comms (E-37)** — the next major surface when un-parked.
 5. **Tier 2 (A5/A6/A7)** before a second operator / production.
 B2–B4 ride along with whichever screens they belong to.
+**Midpoints (§C):** **M1** (editable mapper) + **M5** (quarantine resolution) ride with intake; **M2**
+(lot↔SKU sticky map) + **M3/M4** land with the iTrade feed (E-08/E-11) but should be designed now so
+the pattern is consistent; **M6** rides with A1 (Cycle Setup).

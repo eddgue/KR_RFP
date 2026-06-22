@@ -16,7 +16,11 @@ context to ground it. Read this cover, then the included docs.
 The v2 handoff is the **UI baseline** (you + the auditor agreed: *calm by default, gravity only at
 exceptions and governed decisions*). The six screens (Login · Dashboard · Run Detail/Overview · Bid
 Intake · Alignment Workspace · Awards) and the **Handoff** design-system page stand. Do **not** rework
-the core experience — the asks below are **corrections + net-new screens + visuals** that build on it.
+the core experience — the asks below are **corrections + net-new screens + visuals + midpoints** that build on it.
+
+> **The live test will run on THIS rebuilt design (Next.js + Tailwind), not the current frontend.** So
+> completing this set — the missing screens *and* the midpoints — is on the path to go-live, not a
+> later polish pass.
 
 **Rebuild target:** the `.dc.html` are the **visual source of truth to rebuild in Next.js + Tailwind —
 not merged.** Point the developer at **`Handoff.dc.html` first** (tokens for `theme.extend`, component
@@ -60,8 +64,22 @@ In priority order (details, data bindings, decisions, access points + states are
   meeting/date labels (E-43), the deep-workbench diligence charts (E-41), price-movement (E-35, later).
 - Closed/finalized iconography + the run-status states (B4).
 
+## 4b. Midpoints — the in-between reconciliation steps (full list in `DESIGN_REQUESTS.md` §C)
+
+The "middle steps" no lifecycle screen owns — where data is mapped/reconciled across grains & systems,
+and where real data silently breaks. Each needs a human-facing **propose → confirm/correct → sticky**
+surface (never guess):
+- **M1** editable column mapper (= A3) · **M2** lot/item ↔ **SKU** sticky map (E-11 — the headline;
+  prerequisite for real STLY, E-28, E-35) · **M3** supplier/DC identity resolution / dedup (E-34) ·
+  **M4** unit / pack-size reconciliation · **M5** ingest quarantine resolution (setup + bids) ·
+  **M6** date → timeframe/period confirm.
+
+Grounded in `RECONCILIATION_SEAMS.md` + the seam nodes on `DATA_AND_PROCESS_MAP.md`.
+
 ## 5. Recommended order
 **A1 (setup/strategy) + the 3 corrections** → **A2 (finalize UI)** → A3/A4 → Tier-2 (A5/A6/A7).
+Design the **midpoints (§C)** alongside the screens they ride with (M1/M5 with intake, M6 with A1,
+M2/M3/M4 with the iTrade feed but patterned now).
 
 ## 6. What's in this bundle
 - **`DESIGN_PACKAGE.md`** (this cover).
@@ -69,4 +87,5 @@ In priority order (details, data bindings, decisions, access points + states are
 - **`SCREEN_COVERAGE_AUDIT.md`** — the delivered-vs-needed analysis the asks come from.
 - **`DATA_AND_PROCESS_MAP.md`** — the data-relationship ERD + the process/data-flow flowchart
   (decision points, access points, the reconciliation "middle-step" seams) — grounds where each screen sits.
+- **`RECONCILIATION_SEAMS.md`** — the standing register of the in-between mapping seams (the source for the §C midpoints).
 - **`handoff/`** — the locked v2 baseline (the 6 screens + `Handoff.dc.html` + Kroger assets).
