@@ -20,7 +20,7 @@ an enhancement unless flagged vital.
 | 1 | Sign in (password + optional 2FA) | ✅ | ✅ Login | No |
 | 2 | Create run | ✅ | ✅ Dashboard | No |
 | 3 | Ingest setup/kickoff workbook → cycle | ✅ stream-ingest | ✅ Intake step 1 | No |
-| 4 | Set strategy (weights / safeties / modality / costs) | config exists | ⚠️ **no UI (A1 missing)** | **Judgment call A** |
+| 4 | Set strategy (weights / safeties) | ✅ get/set on cycle | ✅ **minimal strategy panel (Run Detail)** | No (built) |
 | 5 | Generate round bid template | ✅ | ✅ Intake step 2 | No (fixed cost model = matches the manual) |
 | 6 | Suppliers fill template → import bids | ✅ strict + flexible | ✅ Intake step 3 | No **if** strict owned template used (**call C**) |
 | 7 | Run analysis → scenarios A–G | ✅ | ✅ Alignment | No |
@@ -40,16 +40,14 @@ comparison is apples-to-apples.
 
 These aren't bugs — they're scope choices for the *first* pre-test. Each has a low-risk default.
 
-- **A — Strategy config (A1).** There's no in-app screen to tune weights/safeties (and the E-44
-  modality/cost manager is deferred). Analysis runs on the **default EngineConfig** (ADR-0016
-  strategy-agnostic). *Default:* run the pre-test on defaults (valid analysis; matches the harness).
-  *Alternative:* build a **minimal** weights/safeties panel first if the buyer must tune in-app.
-- **B — Where it runs.** Not deployed yet. *Default:* run the pre-test **locally** (backend + Postgres +
-  `next dev`) — fastest, fine for a comparison pre-test. *Alternative:* do **GCP deploy prep** first
-  (Cloud Run + Cloud SQL) if the pre-test must be on a shared/remote environment.
-- **C — Import path.** The **editable column mapper (M1)** isn't built; flexible import is confirm-only.
-  *Default:* use the **strict owned template** for the pre-test (deterministic, no mapper needed).
-  *Alternative:* accept suppliers' own messy sheets → needs M1 first.
+- **A — Strategy config — ✅ RESOLVED (built a minimal panel).** A weights-preset + four-safeties
+  panel on Run Detail reads/sets the EFFECTIVE `EngineConfig` (persisted to the cycle; the next
+  analysis uses it). Backend `GET/PUT /runs/{slug}/strategy` + tests; no engine change. The full A1
+  (incl. the E-44 modality/cost manager) stays deferred.
+- **B — Where it runs — ✅ RESOLVED: LOCAL.** The pre-test runs locally (backend + Postgres + `next
+  dev`). GCP deploy prep (Cloud Run + Cloud SQL) is **parked** for a later, wider live test.
+- **C — Import path — ✅ RESOLVED: STRICT owned template.** Deterministic import; the editable column
+  mapper (M1) is **not** needed for the pre-test and stays deferred.
 
 ## Deferred (NOT blockers for the scoped first pre-test)
 
@@ -60,7 +58,9 @@ drill-through, refresh Awards screenshot) · GCP deployment.
 
 ## Verdict
 
-With the three defaults (A: default strategy · B: local run · C: strict template), the **end-to-end RFP
-lifecycle is functional on the new design** for a first pre-test and a clean comparison to the harness +
-manual model. None of the deferred items block *that* scoped run — but each is a real limitation to
-acknowledge before a *wider* live test (esp. A1 tuning, M1 messy-file import, and deployment).
+**Pre-test build scope is COMPLETE** (sponsor's three calls: A — minimal strategy panel BUILT · B —
+run LOCAL · C — STRICT owned template). The **end-to-end RFP lifecycle is functional on the new
+design** for a first pre-test and a clean comparison to the harness + manual model. None of the
+deferred items (E-44 modality/cost, full A1, M1 mapper, comms-send, GCP deploy, the 3 design
+corrections) block *that* scoped run — but each is a real limitation to acknowledge before a *wider*
+live test (esp. M1 messy-file import and deployment).
