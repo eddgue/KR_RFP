@@ -46,11 +46,11 @@ A large human-built Excel allocation model (~32 MB). Relevant sheets:
 
 ## FINDINGS to reconcile (do NOT silently change live code — confirm first)
 
-### A. Discounts: PERCENT in the manual, DOLLARS in our engine ⚠ (the sponsor's "some costs come in as percent")
+### A. Discounts: PERCENT in the manual, DOLLARS in our engine — ✅ RESOLVED 2026-06-22 (discounts = % of FOB)
 - Manual: `% Discount for Full-Lot Award`, `Incremental % Discount` — **percentages** (of the FOB bid price).
-- Ours: `construct_price_from_parts` does `fob + delivery + vegcool − lot_discount − all_lot_discount` treating them as **$ amounts**; the ingester reads `lot_discount = _to_decimal(raw.get(BidColumn.LOT_DISCOUNT.value))` — **no %→$ conversion**.
-- **Risk:** a manual-style file with "5" (= 5%) would be read as **−$5/case**. Our owned template names the column `Lot Discount` (not "% Discount"), so this may be an **intentional unit change** in our template — but the **known-template adapter** (RECONCILIATION_SEAMS) **must convert % → $** when ingesting manual-format files, and D43's percent-line model (base = FOB, per-line) is the right home for it.
-- **Action (to confirm):** decide our owned template's discount unit ($ vs %); ensure construct-price + the adapter agree; add a test.
+- Ours (today): `construct_price_from_parts` does `fob + delivery + vegcool − lot_discount − all_lot_discount` treating them as **$ amounts**; the ingester reads `lot_discount = _to_decimal(raw.get(BidColumn.LOT_DISCOUNT.value))` — **no %→$ conversion**.
+- **Resolution (D43):** discounts are **percent-of-FOB** (base = FOB bid price, applied before surcharges). Rationale: matches the manual; suppliers express volume discounts as %; a % is **grain-robust** (scales with whatever FOB it multiplies — per-period or timeframe), where a fixed `$` would mean different things at different grains. *(My call on the evidence; sponsor can override to `$` since it's supplier-facing.)*
+- **Action (E-44):** switch `construct_price_from_parts` from `$`-subtraction to **percent-of-FOB**; ingester reads them as percents; the known-template adapter converts any legacy `$`-stated discount; add a test (a % discount changes the price proportionally and is stable across grains).
 
 ### B. RPC is a first-class cost line in the manual; not a distinct engine component
 - Manual: `RPC Cost Impact (+/- $/Case)` gated by `Is Kroger Requesting this item in RPCs?` / `RPCs? (Y/N)`.
