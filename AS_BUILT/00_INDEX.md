@@ -54,9 +54,9 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | F2c | `frontend/components/{intake,runs}/**` | `files/F2c_components_intake_runs.md` | ✅ DONE (915 ln) |
 | F3 | `frontend/lib/**` + `frontend/{next.config.mjs,tailwind.config.ts,package.json,tsconfig,Dockerfile,*.css}` | `files/F3_lib_config.md` | ✅ DONE (666 ln, 21 files) |
 | D1 | `project/0*_*.md` (charter→governance) + `project/{DATA_AND_PROCESS_MAP,DESIGN_BRIEF,NO_FILE_STORAGE_PLAN,PRE_TEST_READINESS,RECONCILIATION_SEAMS}.md` | `files/D1_project_governance.md` | ✅ DONE (521 ln; 45 D + 48 E enumerated) |
-| D2 | `project/squads/**` | `files/D2_squads.md` | PENDING |
+| D2 | `project/squads/**` | `files/D2_squads.md` | ✅ DONE (1192 ln) |
 | D3 | `project/design/**` (canonical; redesign3 uploads = note as snapshots) | `files/D3_design.md` | ✅ DONE (307 ln, 129 files) |
-| D4 | `docs/adr/**` + `specs/**` | `files/D4_adr_specs.md` | PENDING |
+| D4 | `docs/adr/**` + `specs/**` | `files/D4_adr_specs.md` | ✅ DONE (1137 ln, 27 files) |
 | D5 | `project/triage/**`, `reference/**`, `mcp/**`, `deploy/**`, `infra/**`, root `*.md`, `*.json`, `.mcp.json` | `files/D5_triage_ref_mcp_deploy_root.md` | ✅ DONE (854 ln, 58 files) |
 | D6 | `var/**` (design snapshots + run vault notes + demo outputs) | `files/D6_var_archives.md` | ✅ DONE (413 ln) |
 | R1 | root config/dotfiles (`.gitignore`, `.dockerignore`, `.gcloudignore`, `.editorconfig`, `.github/**`, `docker-compose*.yml`, `.claude/**`) | `files/R1_root_config.md` | ✅ DONE (693 ln, 8 files; `.mcp.json` audited here — D5 should cross-ref not dup) |
