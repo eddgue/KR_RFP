@@ -1,7 +1,7 @@
 ---
 doc: AS-BUILT EXHAUSTIVE AUDIT — master index + resumable tracker
 id: ASBUILT-INDEX
-status: IN PROGRESS (started 2026-06-22). Fresh, ground-up. Reuses NOTHING from the old `audit/`.
+status: ✅ COMPLETE (2026-06-22). Fresh, ground-up. Reuses NOTHING from the old `audit/`. 22 per-file slices + 3 layer reports + census v2, all committed.
 rule: nothing skipped · nothing assumed · every file (incl. empty) · detailed WHY for everything · not one char skipped
 contract: see /CLAUDE.md (ABSOLUTE REQUIREMENTS + GUIDING PRINCIPLES). Every audit agent gets it injected.
 ---
@@ -17,7 +17,7 @@ bytes, empty-flag, created, modified). Vendored/generated trees (`.git`, `node_m
 caches) are counted in the census, not per-file audited (not ours).
 
 **Three-layer report (synthesized AFTER the per-file slices land):**
-- `LAYER1_ARCHITECTURE_DATA_DATAFLOWS.md` — architecture, data model, data flows. (re-synthesizing — first run was killed)
+- `LAYER1_ARCHITECTURE_DATA_DATAFLOWS.md` — architecture, data model, data flows. ✅ DONE (659 ln; 10 mermaid diagrams, all 64 tables, 46 FKs, 4 type drifts, full precision inventory).
 - `LAYER2_CODE_PROCESS_DECISIONS.md` — code, process, decision points. ✅ DONE (689 ln; code map + 10 processes + D1–D45 enforcement index + 31-row gap register).
 - `LAYER3_UX_UI.md` — screens, components, interactions, states. ✅ DONE (458 ln; synthesized from F1/F2a/F2b/F2c/F3 + D3).
 
