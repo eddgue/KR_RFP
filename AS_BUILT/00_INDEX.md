@@ -42,7 +42,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | B2 | `backend/app/pilot/**` (service, ingesters, deliverables, vault, status, models) | `files/B2_pilot.md` | PENDING |
 | B3 | `backend/app/domain/{ref,cyc,bid}/**` | `files/B3_domain_ref_cyc_bid.md` | PENDING |
 | B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | PENDING |
-| B5 | `backend/app/api/**` + `backend/app/core/**` | `files/B5_api_core.md` | PENDING |
+| B5 | `backend/app/api/**` + `backend/app/core/**` | `files/B5_api_core.md` | ✅ DONE (896 ln, 33 files) |
 | B6 | `backend/app/{auth,comms,output,fiscal,cycle}/**` + any remaining `app/**` | `files/B6_auth_comms_output_fiscal_cycle.md` | PENDING |
 | B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_migrations_schema.md` | PENDING |
 | B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | PENDING |
@@ -58,7 +58,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | D3 | `project/design/**` (canonical; redesign3 uploads = note as snapshots) | `files/D3_design.md` | PENDING |
 | D4 | `docs/adr/**` + `specs/**` | `files/D4_adr_specs.md` | PENDING |
 | D5 | `project/triage/**`, `reference/**`, `mcp/**`, `deploy/**`, `infra/**`, root `*.md`, `*.json`, `.mcp.json` | `files/D5_triage_ref_mcp_deploy_root.md` | PENDING |
-| D6 | `var/**` (design snapshots + run vault notes + demo outputs) | `files/D6_var_archives.md` | PENDING |
+| D6 | `var/**` (design snapshots + run vault notes + demo outputs) | `files/D6_var_archives.md` | ✅ DONE (413 ln) |
 | R1 | root config/dotfiles (`.gitignore`, `.dockerignore`, `.gcloudignore`, `.editorconfig`, `.github/**`, `docker-compose*.yml`, `.claude/**`) | `files/R1_root_config.md` | ✅ DONE (693 ln, 8 files; `.mcp.json` audited here — D5 should cross-ref not dup) |
 
 (Slices may be split further if a single agent can't be exhaustive within one pass — record the split here.)
