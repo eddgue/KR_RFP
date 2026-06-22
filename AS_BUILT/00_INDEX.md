@@ -39,13 +39,13 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | Slice | Scope (paths) | Output file | Status |
 |-------|---------------|-------------|:------:|
 | B1 | `backend/app/engine/**` (scoring, allocation, formulas, v3, runner, guards, stub, interface) | `files/B1_engine.md` | ✅ DONE (867 ln, 9 files) |
-| B2 | `backend/app/pilot/**` (service, ingesters, deliverables, vault, status, models) | `files/B2_pilot.md` | PENDING |
-| B3 | `backend/app/domain/{ref,cyc,bid}/**` | `files/B3_domain_ref_cyc_bid.md` | PENDING |
-| B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | PENDING |
+| B2 | `backend/app/pilot/**` (service, ingesters, deliverables, vault, status, models) | `files/B2_pilot.md` | ✅ DONE (1340 ln) |
+| B3 | `backend/app/domain/{ref,cyc,bid}/**` | `files/B3_domain_ref_cyc_bid.md` | ✅ DONE (1085 ln) |
+| B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | ✅ DONE (1021 ln, 14 files) |
 | B5 | `backend/app/api/**` + `backend/app/core/**` | `files/B5_api_core.md` | ✅ DONE (896 ln, 33 files) |
 | B6 | `backend/app/{auth,comms,output,fiscal,cycle}/**` + any remaining `app/**` | `files/B6_auth_comms_output_fiscal_cycle.md` | PENDING |
 | B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_migrations_schema.md` | PENDING |
-| B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | PENDING |
+| B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | ✅ DONE (940 ln) |
 | B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | PENDING |
 | B9 | `backend/scripts/**`, `backend/demo/**`, `backend/{pyproject.toml,Dockerfile,README,*.cfg,*.ini}` | `files/B9_scripts_demo_config.md` | PENDING |
 | F1 | `frontend/app/**` (routes, layouts, globals) | `files/F1_app_routes.md` | ✅ DONE (794 ln) |
