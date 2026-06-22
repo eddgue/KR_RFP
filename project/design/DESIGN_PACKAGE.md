@@ -11,6 +11,12 @@ created: 2026-06-22
 This is the **full design deliverable**: what to keep, what to fix, what to build next, and the
 context to ground it. Read this cover, then the included docs.
 
+**The three big things (the spine of this package):** (1) **treat data like data** — every control is
+a data operation, so define how data is treated on each state change (**§0**); (2) **full screen
+gaps** — the missing lifecycle screens (**§3** here / **§A** in `DESIGN_REQUESTS.md`); (3) **design the
+midpoints** — the in-between reconciliation steps no screen owns (**§4b** here / **§C** in
+`DESIGN_REQUESTS.md`). Everything else (corrections, visuals, interaction rules) supports these three.
+
 ## 0. Guiding principle (read first) — data-driven: every control is a data operation
 
 **This is a data-driven process. A "button" is never just a UI state — it is a DATA operation.** For
