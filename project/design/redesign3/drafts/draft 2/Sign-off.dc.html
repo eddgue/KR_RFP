@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#16243d;background:#eceff4;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  a{text-decoration:none;color:inherit}
+  button{font-family:inherit;cursor:pointer}
+  input,textarea{font-family:inherit}
+  .rs-min{display:none}
+  @media (max-width:1240px){ .rs-full{display:none} .rs-min{display:inline} }
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#c2ccd9;border-radius:6px;border:2px solid #eceff4}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes slideIn{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#eceff4">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside style="width:{{ nav.w }};flex:none;background:#0b1f3a;color:#cdd8ea;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .16s ease;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 16px 16px;justify-content:{{ nav.justify }}">
+      <div style="width:30px;height:30px;flex:none;border-radius:7px;background:#084999;display:flex;align-items:center;justify-content:center"><img src="assets/kroger-k-white.svg" alt="Kroger" style="width:17px;height:auto;display:block"></div>
+      <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#fff;letter-spacing:.2px;white-space:nowrap">RFP Console</div></sc-if>
+    </div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:6px 18px 4px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Sourcing</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <a href="Dashboard.dc.html" title="Runs" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Runs</span></sc-if>
+      </a>
+    </nav>
+    <div style="margin:10px 14px;height:1px;background:#1c3454"></div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:2px 18px 6px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Field Tomatoes</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <a href="Cycle Setup.dc.html" title="Setup" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Setup</span></sc-if>
+      </a>
+      <a href="Bid Intake.dc.html" title="Intake" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Intake</span></sc-if>
+      </a>
+      <a href="Reconciliation.dc.html" title="Reconciliation" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"/><path d="M3 8V3h5M16 21h5v-5"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Reconciliation</span></sc-if>
+      </a>
+      <a href="Alignment Workspace.dc.html" title="Alignment" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M4 21V10M4 6V3M12 21v-7M12 10V3M20 21V14M20 10V3M1 10h6M9 14h6M17 10h6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Alignment</span></sc-if>
+      </a>
+      <a href="Awards.dc.html" title="Awards" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><circle cx="12" cy="8" r="6"/><path d="M8.2 13.9 7 22l5-3 5 3-1.2-8.1"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Awards</span></sc-if>
+      </a>
+      <a href="Sign-off.dc.html" title="Sign-off" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#fff;font-weight:700;background:#13315a;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="flex:none"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Sign-off</span></sc-if>
+      </a>
+    </nav>
+    <div style="margin-top:auto;padding:10px">
+      <button onClick="{{ nav.toggle }}" title="Toggle navigation" style="width:100%;display:flex;align-items:center;justify-content:{{ nav.justify }};gap:10px;padding:{{ nav.pad }};border-radius:7px;border:none;background:#13294a;color:#9fb0cc;font-size:12.5px;font-weight:600">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none;transform:rotate({{ nav.chevron }});transition:transform .16s"><path d="M15 18l-6-6 6-6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span style="white-space:nowrap">Collapse</span></sc-if>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="height:56px;flex:none;background:#fff;border-bottom:1px solid #dde3ec;display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:20">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#64748b">
+        <a href="Dashboard.dc.html">Runs</a><span style="color:#c2ccd9">/</span>
+        <a href="Run Detail.dc.html">Field Tomatoes</a><span style="color:#c2ccd9">/</span>
+        <span style="color:#16243d;font-weight:700">Sign-off</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:30px;height:30px;border-radius:50%;background:#f2e7d6;color:#8a6516;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;font-family:'Montserrat'">MO</div>
+        <div style="line-height:1.15"><div style="font-size:12.5px;font-weight:700;color:#16243d">Marcus Okafor</div><div style="font-size:10.5px;color:#8a97a8">Category Director · approver</div></div>
+      </div>
+    </header>
+
+    <main style="flex:1;overflow:auto;padding:24px 30px 60px">
+      <!-- header -->
+      <div style="margin-bottom:16px">
+        <h1 style="font-family:'Montserrat';font-weight:800;font-size:24px;letter-spacing:-.4px;color:#102a4c">Sign-off queue</h1>
+        <div style="font-size:13.5px;color:#5b6b82;margin-top:3px;max-width:760px;line-height:1.5">An approver who is <b>not the author</b> makes a frozen award official. Distinct from the freeze assertion — a second set of eyes, recorded as a <span class="num">SIGNED_OFF</span> event.</div>
+      </div>
+
+      <!-- portfolio roll-up -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px">
+        <sc-for list="{{ portfolio }}" as="P" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #e3e8ef;border-radius:11px;padding:14px 16px">
+            <div style="font-size:11.5px;color:#8a97a8;font-weight:600;margin-bottom:6px">{{ P.label }}</div>
+            <div style="font-family:'Montserrat';font-weight:800;font-size:23px;color:{{ P.color }}" class="num">{{ P.value }}</div>
+            <div style="font-size:11.5px;color:#9aa7b6;font-weight:600">{{ P.sub }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- queue -->
+      <div style="background:#fff;border:1px solid #e3e8ef;border-radius:12px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef1f5">
+          <div style="display:flex;align-items:center;gap:10px"><h2 style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#102a4c">Awaiting your sign-off</h2><span style="padding:2px 8px;background:#fdf6e8;color:#8a6516;border-radius:5px;font-size:11.5px;font-weight:700" class="num">{{ pendingCount }}</span></div>
+          <span style="font-size:11.5px;color:#9aa7b6">Author ≠ approver enforced</span>
+        </div>
+        <sc-for list="{{ queue }}" as="Q" hint-placeholder-count="3">
+          <div style="border-bottom:1px solid #f0f3f7;background:{{ Q.rowBg }}">
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+              <span style="width:38px;height:38px;flex:none;border-radius:10px;background:{{ Q.swatchBg }};color:{{ Q.swatchFg }};display:flex;align-items:center;justify-content:center;font-family:'Montserrat';font-weight:800;font-size:15px">{{ Q.initial }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:9px"><span style="font-size:14px;font-weight:700;color:#16243d">{{ Q.commodity }}</span><span style="padding:1px 7px;background:#e7f3ea;color:#1a7a4f;border-radius:5px;font-size:9.5px;font-weight:800;letter-spacing:.3px">{{ Q.awardId }}</span></div>
+                <div style="font-size:12px;color:#7a8699">{{ Q.cells }} cells · {{ Q.suppliers }} suppliers · frozen by {{ Q.author }} · {{ Q.when }}</div>
+              </div>
+              <div style="flex:none;text-align:right;margin-right:6px">
+                <div style="font-family:'Montserrat';font-weight:800;font-size:16px;color:#102a4c" class="num">{{ Q.spend }}</div>
+                <div style="font-size:11.5px;color:#1a8a5a;font-weight:700" class="num">{{ Q.save }} saved</div>
+              </div>
+              <sc-if value="{{ Q.canSign }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ Q.open }}" style="flex:none;padding:9px 15px;background:#084999;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700">Review &amp; sign off</button>
+              </sc-if>
+              <sc-if value="{{ Q.isAuthor }}" hint-placeholder-val="{{ false }}">
+                <span style="flex:none;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;background:#f4f6f9;border:1px solid #e3e8ef;border-radius:8px;font-size:12px;font-weight:700;color:#9aa7b6" title="You authored this award — a different approver must sign off">Author · can't self-sign</span>
+              </sc-if>
+              <sc-if value="{{ Q.signed }}" hint-placeholder-val="{{ false }}">
+                <span style="flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#1a7a4f"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a7a4f" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg>Signed off</span>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ queueEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:40px;text-align:center"><div style="width:38px;height:38px;border-radius:10px;background:#e7f3ea;margin:0 auto 10px;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a7a4f" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg></div><div style="font-size:13.5px;font-weight:700;color:#16243d">Queue clear</div><div style="font-size:12.5px;color:#8a97a8;margin-top:2px">Nothing awaits your sign-off right now.</div></div>
+        </sc-if>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== SIGN-OFF ASSERT MODAL ===== -->
+  <sc-if value="{{ modal }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ close }}" style="position:fixed;inset:0;background:rgba(15,31,58,.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn .12s">
+      <div onClick="{{ stop }}" style="width:560px;max-height:90vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 64px rgba(16,42,76,.3);animation:slideIn .16s ease-out">
+        <div style="padding:18px 22px 14px;border-bottom:1px solid #eef1f5">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2.3"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <h3 style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c">Sign off — governed action</h3>
+          </div>
+          <div style="font-size:13px;color:#5b6b82">Approving <b style="color:#16243d">{{ modal.commodity }} · {{ modal.awardId }}</b> as official. Writes a <b style="color:#16243d">SIGNED_OFF</b> event under your name, distinct from the author's freeze.</div>
+        </div>
+        <div style="padding:16px 22px">
+          <!-- author vs approver -->
+          <div style="display:flex;gap:12px;margin-bottom:14px">
+            <div style="flex:1;background:#f7f9fc;border:1px solid #e7ecf3;border-radius:9px;padding:11px 13px">
+              <div style="font-size:10.5px;color:#8a97a8;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px">Author (froze)</div>
+              <div style="display:flex;align-items:center;gap:8px"><span style="width:26px;height:26px;border-radius:50%;background:#dbe5f3;color:#084999;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-family:'Montserrat'">DE</span><span style="font-size:13px;font-weight:700;color:#16243d">Dana Ellison</span></div>
+            </div>
+            <div style="flex:1;background:#eef4ff;border:1px solid #d6e3f8;border-radius:9px;padding:11px 13px">
+              <div style="font-size:10.5px;color:#2c4a78;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px">Approver (you)</div>
+              <div style="display:flex;align-items:center;gap:8px"><span style="width:26px;height:26px;border-radius:50%;background:#f2e7d6;color:#8a6516;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;font-family:'Montserrat'">MO</span><span style="font-size:13px;font-weight:700;color:#16243d">Marcus Okafor</span></div>
+            </div>
+          </div>
+          <!-- summary -->
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1;border:1px solid #e7ecf3;border-radius:9px;padding:10px 13px"><div style="font-size:11px;color:#8a97a8;font-weight:600">Spend</div><div style="font-family:'Montserrat';font-weight:800;font-size:17px;color:#102a4c" class="num">{{ modal.spend }}</div></div>
+            <div style="flex:1;border:1px solid #e7ecf3;border-radius:9px;padding:10px 13px"><div style="font-size:11px;color:#8a97a8;font-weight:600">Save vs incumbent</div><div style="font-family:'Montserrat';font-weight:800;font-size:17px;color:#1a8a5a" class="num">{{ modal.save }}</div></div>
+            <div style="flex:1;border:1px solid #e7ecf3;border-radius:9px;padding:10px 13px"><div style="font-size:11px;color:#8a97a8;font-weight:600">Cautions</div><div style="font-family:'Montserrat';font-weight:800;font-size:17px;color:#1a7a4f">None</div></div>
+          </div>
+          <div style="margin-bottom:14px">
+            <div style="font-size:11.5px;color:#5b6b82;font-weight:700;margin-bottom:6px">Approver note <span style="color:#9aa7b6;font-weight:600">(optional)</span></div>
+            <textarea value="{{ note }}" onInput="{{ setNote }}" placeholder="Any condition or context for the record…" style="width:100%;min-height:58px;resize:vertical;padding:10px 12px;border:1px solid #d4dce8;border-radius:9px;font-size:13px;color:#16243d;line-height:1.5;outline:none"></textarea>
+          </div>
+          <label style="display:flex;align-items:flex-start;gap:9px;padding:11px 13px;background:#f7f9fc;border:1.5px solid {{ assertBorder }};border-radius:9px;cursor:pointer">
+            <input type="checkbox" checked="{{ asserted }}" onChange="{{ toggleAssert }}" style="width:17px;height:17px;margin-top:1px;accent-color:#084999">
+            <span style="font-size:12.5px;color:#16243d;line-height:1.45">I, <b>Marcus Okafor</b>, approve and sign off this award as official. Recorded against my name as a SIGNED_OFF event, distinct from the freeze.</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 22px;border-top:1px solid #eef1f5;background:#fbfcfe">
+          <button onClick="{{ reject }}" style="padding:9px 16px;background:#fff;border:1px solid #f0cfca;border-radius:8px;font-size:13px;font-weight:700;color:#b3261e">Return to author</button>
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ close }}" style="padding:9px 16px;background:#fff;border:1px solid #d4dce8;border-radius:8px;font-size:13px;font-weight:700;color:#3a5170">Cancel</button>
+            <button onClick="{{ confirm }}" disabled="{{ disabled }}" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:{{ btnBg }};color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;opacity:{{ btnOpacity }}">Sign off</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:11px;padding:13px 20px;background:#0b1f3a;color:#fff;border-radius:11px;box-shadow:0 12px 32px rgba(16,42,76,.3);animation:slideIn .2s">
+      <span style="width:24px;height:24px;border-radius:50%;background:#1a8a5a;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span>
+      <div><div style="font-weight:700;font-size:13.5px">{{ toast.title }}</div><div style="font-size:11.5px;color:#9fb0cc">{{ toast.sub }}</div></div>
+      <button onClick="{{ dismiss }}" style="margin-left:8px;background:none;border:none;color:#9fb0cc;font-size:15px">✕</button>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { navCollapsed: false, openId: null, asserted: false, note: '', signed: {}, toast: null };
+
+  QUEUE() {
+    return [
+      { id:'q1', commodity:'Field Tomatoes', awardId:'AWD-2026-TOMATO-1', initial:'F', swatch:['#fdecea','#c5341f'], cells:4, suppliers:2, author:'Dana Ellison', authorIsMe:false, when:'Jun 21, 6:53 PM', spend:'$218,400', save:'$62,400' },
+      { id:'q2', commodity:'Navel Oranges', awardId:'AWD-2026-CITRUS-1', initial:'N', swatch:['#fdf0e0','#b06a12'], cells:6, suppliers:3, author:'Marcus Okafor', authorIsMe:true, when:'Jun 20, 2:10 PM', spend:'$402,900', save:'$31,100' },
+      { id:'q3', commodity:'Yellow Onions', awardId:'AWD-2026-ONION-1', initial:'Y', swatch:['#fbf6e3','#977514'], cells:3, suppliers:2, author:'Priya Nair', authorIsMe:false, when:'Jun 19, 11:02 AM', spend:'$96,500', save:'$8,400' },
+    ];
+  }
+
+  renderVals() {
+    const S = this.state;
+    const queue = this.QUEUE().map(q => {
+      const signed = !!S.signed[q.id];
+      return {
+        ...q, signed,
+        canSign: !signed && !q.authorIsMe, isAuthor: !signed && q.authorIsMe,
+        rowBg: signed ? '#f9fcfa' : '#fff',
+        swatchBg: q.swatch[0], swatchFg: q.swatch[1],
+        open: () => this.setState({ openId: q.id, asserted: false, note: '' }),
+      };
+    });
+    const pending = queue.filter(q => q.canSign).length;
+    const modalQ = S.openId ? this.QUEUE().find(q => q.id === S.openId) : null;
+
+    return {
+      queue, pendingCount: pending, queueEmpty: queue.length === 0,
+      portfolio: [
+        { label:'Awaiting sign-off', value:String(pending), sub:'in your queue', color:'#c98a1a' },
+        { label:'Signed off (you, MTD)', value:'7', sub:'this month', color:'#102a4c' },
+        { label:'Portfolio spend', value:'$717.8K', sub:'across queued awards', color:'#102a4c' },
+        { label:'Portfolio savings', value:'$101.9K', sub:'vs incumbent · E-22', color:'#1a7a4f' },
+      ],
+      modal: modalQ ? { commodity: modalQ.commodity, awardId: modalQ.awardId, spend: modalQ.spend, save: modalQ.save } : null,
+      asserted: S.asserted, note: S.note,
+      assertBorder: S.asserted ? '#084999' : '#e0e6ee',
+      disabled: !S.asserted, btnBg: S.asserted ? '#084999' : '#9fb6d6', btnOpacity: S.asserted ? '1' : '0.7',
+      toggleAssert: () => this.setState(st => ({ asserted: !st.asserted })),
+      setNote: (e) => this.setState({ note: e.target.value }),
+      close: () => this.setState({ openId: null }),
+      stop: (e) => e.stopPropagation(),
+      confirm: () => { const id = this.state.openId; if (this.state.asserted && id) this.setState(st => ({ signed: { ...st.signed, [id]: true }, openId: null, toast: { title:'Signed off · SIGNED_OFF event written', sub:'Marcus Okafor · award is now official' } })); },
+      reject: () => { const id = this.state.openId; this.setState({ openId: null, toast: { title:'Returned to author', sub:'Dana Ellison notified · award stays frozen, not official' } }); },
+      toast: S.toast, dismiss: () => this.setState({ toast: null }),
+      nav: {
+        expanded: !S.navCollapsed, w: S.navCollapsed ? '66px' : '228px',
+        justify: S.navCollapsed ? 'center' : 'flex-start',
+        pad: S.navCollapsed ? '10px 0' : '9px 10px',
+        chevron: S.navCollapsed ? '180deg' : '0deg',
+        toggle: () => this.setState(st => ({ navCollapsed: !st.navCollapsed })),
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

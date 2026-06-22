@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#16243d;-webkit-font-smoothing:antialiased}
+  a{text-decoration:none;color:inherit}
+  button{font-family:inherit;cursor:pointer}
+  input{font-family:inherit}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh">
+
+  <!-- ===== BRAND PANEL ===== -->
+  <div style="width:46%;flex:none;background:#0b1f3a;background-image:radial-gradient(900px 500px at 18% 12%,rgba(36,120,206,.30),transparent 60%),radial-gradient(700px 500px at 90% 100%,rgba(8,73,153,.40),transparent 55%);color:#fff;display:flex;flex-direction:column;justify-content:space-between;padding:48px 52px">
+    <div style="display:flex;align-items:center;gap:15px">
+      <img src="assets/kroger-wordmark-white.svg" alt="Kroger" style="height:27px;width:auto;display:block">
+      <div style="width:1px;height:22px;background:rgba(255,255,255,.22)"></div>
+      <div style="font-family:'Montserrat';font-weight:700;font-size:16px;letter-spacing:.2px;color:#fff">RFP Console</div>
+    </div>
+    <div>
+      <h1 style="font-family:'Montserrat';font-weight:800;font-size:34px;line-height:1.18;letter-spacing:-.6px;max-width:440px;text-wrap:balance">Produce sourcing, run end to end.</h1>
+      <p style="font-size:15px;color:#9fb4d4;line-height:1.6;max-width:430px;margin-top:16px;text-wrap:pretty">Set up cycles, intake bids, compare seven scenario lenses, and freeze governed awards — with every decision recommended by the engine and asserted by a human.</p>
+      <div style="display:flex;gap:10px;margin-top:26px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:center;gap:7px;padding:7px 12px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:12.5px;color:#cdd8ea;font-weight:600">Decision-support · not auto-decided</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;padding:7px 12px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:12.5px;color:#cdd8ea;font-weight:600">Audit-evented · hash-chained</span>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#5e7398">Enterprise RFP sourcing · Kroger</div>
+  </div>
+
+  <!-- ===== FORM PANEL ===== -->
+  <div style="flex:1;background:#eceff4;display:flex;align-items:center;justify-content:center;padding:40px">
+    <div style="width:380px">
+
+      <!-- credentials step -->
+      <sc-if value="{{ isCreds }}" hint-placeholder-val="{{ true }}">
+        <div style="background:#fff;border:1px solid #e3e8ef;border-radius:14px;box-shadow:0 4px 20px rgba(16,42,76,.07);padding:30px 30px 26px">
+          <h2 style="font-family:'Montserrat';font-weight:800;font-size:21px;color:#102a4c">Sign in</h2>
+          <p style="font-size:13.5px;color:#5b6b82;margin-top:4px;margin-bottom:22px">Access the enterprise produce-sourcing console.</p>
+
+          <label style="display:block;font-size:12.5px;font-weight:700;color:#3a5170;margin-bottom:6px">Username</label>
+          <input value="{{ username }}" onInput="{{ setUser }}" placeholder="dana.ellison" style="width:100%;padding:11px 13px;border:1.5px solid #d4dce8;border-radius:9px;font-size:14px;color:#16243d;margin-bottom:16px;outline:none">
+
+          <label style="display:block;font-size:12.5px;font-weight:700;color:#3a5170;margin-bottom:6px">Password</label>
+          <div style="position:relative;margin-bottom:22px">
+            <input type="password" value="{{ password }}" onInput="{{ setPass }}" placeholder="••••••••••" style="width:100%;padding:11px 13px;border:1.5px solid #d4dce8;border-radius:9px;font-size:14px;color:#16243d;outline:none">
+          </div>
+
+          <button onClick="{{ toCode }}" style="width:100%;padding:12px;background:#084999;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:700;box-shadow:0 1px 2px rgba(8,73,153,.3)">Continue</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:16px;font-size:11.5px;color:#8a97a8">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a97a8" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          Sessions are secured with httpOnly cookies.
+        </div>
+      </sc-if>
+
+      <!-- 2FA step -->
+      <sc-if value="{{ isCode }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #e3e8ef;border-radius:14px;box-shadow:0 4px 20px rgba(16,42,76,.07);padding:30px 30px 26px">
+          <button onClick="{{ back }}" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:#7a8699;font-size:12.5px;font-weight:700;margin-bottom:16px;padding:0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a8699" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>Back
+          </button>
+          <div style="width:44px;height:44px;border-radius:11px;background:#eef4ff;display:flex;align-items:center;justify-content:center;margin-bottom:14px"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <h2 style="font-family:'Montserrat';font-weight:800;font-size:21px;color:#102a4c">Two-factor code</h2>
+          <p style="font-size:13.5px;color:#5b6b82;margin-top:4px;margin-bottom:20px">Enter the 6-digit code from your authenticator app for <b style="color:#3a5170">{{ username }}</b>.</p>
+
+          <div style="display:flex;gap:9px;margin-bottom:22px">
+            <sc-for list="{{ codeBoxes }}" as="B" hint-placeholder-count="6">
+              <div style="flex:1;height:52px;border:1.5px solid {{ B.border }};border-radius:9px;background:{{ B.bg }};display:flex;align-items:center;justify-content:center;font-family:'Montserrat';font-weight:800;font-size:20px;color:#102a4c">{{ B.ch }}</div>
+            </sc-for>
+          </div>
+
+          <button onClick="{{ verify }}" style="width:100%;padding:12px;background:#084999;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:700;box-shadow:0 1px 2px rgba(8,73,153,.3)">Verify &amp; sign in</button>
+          <div style="text-align:center;margin-top:14px;font-size:12.5px;color:#7a8699">Didn't get a code? <span style="color:#2478CE;font-weight:700">Resend</span></div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { step: 'creds', username: 'dana.ellison', password: 'demo-pass-123', code: '418293' };
+
+  renderVals() {
+    const S = this.state;
+    const codeBoxes = '418293'.split('').map((ch,i) => ({
+      ch, bg: '#f7f9fc', border: i === 0 ? '#084999' : '#e3e8ef',
+    }));
+    return {
+      isCreds: S.step === 'creds', isCode: S.step === 'code',
+      username: S.username, password: S.password, codeBoxes,
+      setUser: (e) => this.setState({ username: e.target.value }),
+      setPass: (e) => this.setState({ password: e.target.value }),
+      toCode: () => this.setState({ step: 'code' }),
+      back: () => this.setState({ step: 'creds' }),
+      verify: () => { window.location.href = 'Dashboard.dc.html'; },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Nunito',sans-serif;color:#16243d;background:#eceff4;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  .num{font-variant-numeric:tabular-nums}
+  a{text-decoration:none;color:inherit}
+  button{font-family:inherit;cursor:pointer}
+  input,select{font-family:inherit}
+  input[type=range]{accent-color:#084999}
+  .rs-min{display:none}
+  @media (max-width:1240px){ .rs-full{display:none} .rs-min{display:inline} }
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#c2ccd9;border-radius:6px;border:2px solid #eceff4}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes slideIn{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#eceff4">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside style="width:{{ nav.w }};flex:none;background:#0b1f3a;color:#cdd8ea;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .16s ease;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 16px 16px;justify-content:{{ nav.justify }}">
+      <div style="width:30px;height:30px;flex:none;border-radius:7px;background:#084999;display:flex;align-items:center;justify-content:center"><img src="assets/kroger-k-white.svg" alt="Kroger" style="width:17px;height:auto;display:block"></div>
+      <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="font-family:'Montserrat';font-weight:700;font-size:14px;color:#fff;letter-spacing:.2px;white-space:nowrap">RFP Console</div></sc-if>
+    </div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:6px 18px 4px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Sourcing</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <a href="Dashboard.dc.html" title="Runs" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Runs</span></sc-if>
+      </a>
+    </nav>
+    <div style="margin:10px 14px;height:1px;background:#1c3454"></div>
+    <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><div style="padding:2px 18px 6px;font-size:10px;letter-spacing:1.2px;color:#5e7398;font-weight:700;text-transform:uppercase;white-space:nowrap">Field Tomatoes</div></sc-if>
+    <nav style="display:flex;flex-direction:column;gap:1px;padding:2px 10px">
+      <a href="Cycle Setup.dc.html" title="Setup" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#fff;font-weight:700;background:#13315a;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" style="flex:none"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="3"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Setup</span></sc-if>
+      </a>
+      <a href="Run Detail.dc.html" title="Overview" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Overview</span></sc-if>
+      </a>
+      <a href="Bid Intake.dc.html" title="Intake" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Intake</span></sc-if>
+      </a>
+      <a href="Alignment Workspace.dc.html" title="Alignment" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><path d="M4 21V10M4 6V3M12 21v-7M12 10V3M20 21V14M20 10V3M1 10h6M9 14h6M17 10h6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Alignment</span></sc-if>
+      </a>
+      <a href="Awards.dc.html" title="Awards" style="display:flex;align-items:center;gap:11px;justify-content:{{ nav.justify }};padding:{{ nav.pad }};border-radius:7px;font-size:13.5px;color:#9fb0cc;font-weight:600;white-space:nowrap">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none"><circle cx="12" cy="8" r="6"/><path d="M8.2 13.9 7 22l5-3 5 3-1.2-8.1"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span>Awards</span></sc-if>
+      </a>
+    </nav>
+    <div style="margin-top:auto;padding:10px">
+      <button onClick="{{ nav.toggle }}" title="Toggle navigation" style="width:100%;display:flex;align-items:center;justify-content:{{ nav.justify }};gap:10px;padding:{{ nav.pad }};border-radius:7px;border:none;background:#13294a;color:#9fb0cc;font-size:12.5px;font-weight:600">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fb0cc" stroke-width="2" style="flex:none;transform:rotate({{ nav.chevron }});transition:transform .16s"><path d="M15 18l-6-6 6-6"/></svg>
+        <sc-if value="{{ nav.expanded }}" hint-placeholder-val="{{ true }}"><span style="white-space:nowrap">Collapse</span></sc-if>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="height:56px;flex:none;background:#fff;border-bottom:1px solid #dde3ec;display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:20">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#64748b">
+        <a href="Dashboard.dc.html">Runs</a><span style="color:#c2ccd9">/</span>
+        <a href="Run Detail.dc.html">Field Tomatoes</a><span style="color:#c2ccd9">/</span>
+        <span style="color:#16243d;font-weight:700">Setup</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <!-- demo state switcher -->
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-size:10.5px;color:#a4afbf;font-weight:700;letter-spacing:.4px;text-transform:uppercase">State</span>
+          <div style="display:flex;background:#f1f4f8;border:1px solid #e3e8ef;border-radius:7px;padding:2px">
+            <sc-for list="{{ stateTabs }}" as="St" hint-placeholder-count="3">
+              <button onClick="{{ St.select }}" style="padding:5px 10px;border:none;border-radius:5px;background:{{ St.bg }};color:{{ St.fg }};font-size:11.5px;font-weight:700">{{ St.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px">
+          <div style="width:30px;height:30px;border-radius:50%;background:#dbe5f3;color:#084999;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;font-family:'Montserrat'">DE</div>
+          <div style="line-height:1.15"><div style="font-size:12.5px;font-weight:700;color:#16243d">Dana Ellison</div><div style="font-size:10.5px;color:#8a97a8">Sr. Sourcing Mgr</div></div>
+        </div>
+      </div>
+    </header>
+
+    <main style="flex:1;overflow:auto;padding:24px 30px 60px">
+
+      <!-- run-status strip -->
+      <div style="display:flex;align-items:center;background:#fff;border:1px solid #e3e8ef;border-radius:10px;overflow:hidden;margin-bottom:18px">
+        <div style="flex:1;display:flex;align-items:center;gap:9px;padding:10px 16px">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{ strip.runDot }}"></span>
+          <div><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Run state</div><div style="font-size:12.5px;font-weight:700;color:#16243d"><span class="rs-full">{{ strip.run }}</span><span class="rs-min">{{ strip.runShort }}</span></div></div>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;gap:9px;padding:10px 16px;border-left:1px solid #eef1f5">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#c2ccd9"></span>
+          <div><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Analysis</div><div style="font-size:12.5px;font-weight:700;color:#8a97a8"><span class="rs-full">Not yet sealed</span><span class="rs-min">Unsealed</span></div></div>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;gap:9px;padding:10px 16px;border-left:1px solid #eef1f5">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#c2ccd9"></span>
+          <div><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Award</div><div style="font-size:12.5px;font-weight:700;color:#8a97a8"><span class="rs-full">Not yet frozen</span><span class="rs-min">Not frozen</span></div></div>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;gap:9px;padding:10px 16px;border-left:1px solid #eef1f5">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{ strip.auditDot }}"></span>
+          <div><div style="font-size:9.5px;letter-spacing:.5px;color:#a4afbf;font-weight:700;text-transform:uppercase">Audit</div><div style="font-size:12.5px;font-weight:700;color:#16243d"><span class="rs-full">{{ strip.audit }}</span><span class="rs-min">{{ strip.auditShort }}</span></div></div>
+        </div>
+      </div>
+
+      <!-- page header -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px">
+        <div>
+          <h1 style="font-family:'Montserrat';font-weight:800;font-size:24px;letter-spacing:-.4px;color:#102a4c">Cycle setup</h1>
+          <div style="font-size:13.5px;color:#5b6b82;margin-top:3px">Review the ingested scope, then set the strategy the engine will run. Nothing is sealed here — generating templates is the first governed step.</div>
+        </div>
+      </div>
+
+      <!-- ===== PRE-INGEST EMPTY STATE ===== -->
+      <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #e3e8ef;border-radius:12px;padding:48px;display:flex;flex-direction:column;align-items:center;text-align:center">
+          <span style="width:52px;height:52px;border-radius:13px;background:#eef4ff;display:flex;align-items:center;justify-content:center;margin-bottom:14px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#084999" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></span>
+          <div style="font-family:'Montserrat';font-weight:800;font-size:18px;color:#102a4c">No cycle ingested yet</div>
+          <div style="font-size:13.5px;color:#7a8699;margin-top:5px;max-width:420px;line-height:1.5">Upload the filled kickoff workbook to load scope — DCs, lots, items, timeframes, invited suppliers and projected volumes. Strategy config unlocks once scope is in.</div>
+          <button style="margin-top:18px;display:flex;align-items:center;gap:8px;padding:10px 18px;background:#084999;color:#fff;border:none;border-radius:9px;font-size:13.5px;font-weight:700">Upload kickoff workbook</button>
+        </div>
+      </sc-if>
+
+      <!-- ===== INGESTED: REVIEW + STRATEGY ===== -->
+      <sc-if value="{{ isIngested }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+
+        <!-- LEFT: scope read-back -->
+        <div style="flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:16px">
+
+          <!-- quarantine notice (only if rows need attention) -->
+          <sc-if value="{{ hasQuarantine }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:11px;padding:12px 15px;background:#fdf7f6;border:1px solid #f0cfca;border-radius:11px">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#b3261e" stroke-width="2.2" style="flex:none"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:#8a2a20">2 setup rows quarantined</div><div style="font-size:11.5px;color:#9a7a76">A lot with no projected volume and a supplier name that didn't resolve. Nothing guessed.</div></div>
+              <a href="Bid Intake.dc.html" style="flex:none;padding:6px 12px;background:#fff;border:1px solid #e0c4bf;border-radius:7px;font-size:12px;font-weight:700;color:#084999">Resolve</a>
+            </div>
+          </sc-if>
+
+          <div style="background:#fff;border:1px solid #e3e8ef;border-radius:12px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef1f5">
+              <div style="display:flex;align-items:center;gap:9px"><h2 style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#102a4c">Ingested scope</h2><span style="padding:2px 8px;background:#eef4ff;border:1px solid #d6e3f8;border-radius:5px;font-size:10.5px;font-weight:800;color:#2c4a78;letter-spacing:.3px">READ-BACK</span></div>
+              <span style="font-size:11.5px;color:#9aa7b6">from 01_setup_kickoff.xlsx</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr)">
+              <sc-for list="{{ scopeStats }}" as="Sc" hint-placeholder-count="6">
+                <div style="padding:13px 16px;border-right:1px solid #f0f3f7;border-bottom:1px solid #f0f3f7">
+                  <div style="font-size:11px;color:#8a97a8;font-weight:600;margin-bottom:2px">{{ Sc.k }}</div>
+                  <div style="font-family:'Montserrat';font-weight:800;font-size:19px;color:#102a4c" class="num">{{ Sc.v }}</div>
+                  <div style="font-size:11px;color:#9aa7b6;margin-top:1px">{{ Sc.sub }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <!-- scope detail rows -->
+            <div style="padding:6px 18px 14px">
+              <sc-for list="{{ scopeRows }}" as="Sr" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;gap:14px;padding:9px 0;border-bottom:1px solid #f4f6f9">
+                  <span style="width:96px;flex:none;font-size:11.5px;color:#8a97a8;font-weight:700;padding-top:2px">{{ Sr.k }}</span>
+                  <div style="flex:1;display:flex;flex-wrap:wrap;gap:6px">
+                    <sc-for list="{{ Sr.chips }}" as="Cp" hint-placeholder-count="3">
+                      <span style="padding:3px 10px;background:#f5f7fa;border:1px solid #e3e8ef;border-radius:7px;font-size:12px;font-weight:600;color:#3a5170">{{ Cp }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- M6 · date → timeframe confirm -->
+          <div style="background:#fff;border:1px solid #f0dfb6;border-radius:12px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid #f3e6c4;background:#fffdf7">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c98a1a" stroke-width="2.2" style="flex:none"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <div style="flex:1"><span style="font-size:13px;font-weight:700;color:#8a6516">Confirm timeframe dates</span> <span style="font-size:11.5px;color:#a98a4e">· M6 — dates are inferred until you confirm (no silent month-13 fallback)</span></div>
+              <sc-if value="{{ tfConfirmed }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:#1a7a4f"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a7a4f" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg>Confirmed</span></sc-if>
+            </div>
+            <div style="padding:12px 16px">
+              <sc-for list="{{ timeframes }}" as="Tf" hint-placeholder-count="1">
+                <div style="display:flex;align-items:center;gap:12px;padding:8px 0">
+                  <span style="font-size:13px;font-weight:700;color:#16243d;width:120px;flex:none">{{ Tf.name }}</span>
+                  <input value="{{ Tf.start }}" onInput="{{ Tf.setStart }}" style="width:130px;padding:7px 10px;border:1px solid #d4dce8;border-radius:7px;font-size:12.5px;color:#16243d">
+                  <span style="color:#9aa7b6">→</span>
+                  <input value="{{ Tf.end }}" onInput="{{ Tf.setEnd }}" style="width:130px;padding:7px 10px;border:1px solid #d4dce8;border-radius:7px;font-size:12.5px;color:#16243d">
+                  <span style="font-size:11.5px;color:{{ Tf.tagColor }};font-weight:700">{{ Tf.tag }}</span>
+                </div>
+              </sc-for>
+              <button onClick="{{ confirmTf }}" style="margin-top:8px;padding:8px 14px;background:{{ tfBtnBg }};color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700">{{ tfBtnLabel }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: strategy config -->
+        <div style="flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:16px">
+          <div style="background:#fff;border:1px solid #e3e8ef;border-radius:12px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eef1f5">
+              <h2 style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#102a4c">Strategy</h2>
+              <span style="font-size:11.5px;color:#9aa7b6">EngineConfig · strategy-agnostic</span>
+            </div>
+            <div style="padding:15px 18px">
+              <!-- weight preset -->
+              <div style="font-size:11px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:8px">Weight preset</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+                <sc-for list="{{ presets }}" as="P" hint-placeholder-count="5">
+                  <button onClick="{{ P.select }}" style="padding:6px 12px;border:1px solid {{ P.border }};border-radius:7px;background:{{ P.bg }};color:{{ P.fg }};font-size:12.5px;font-weight:700">{{ P.name }}</button>
+                </sc-for>
+              </div>
+              <!-- 5 weights (live) -->
+              <div style="background:#fafbfd;border:1px solid #eef1f5;border-radius:10px;padding:13px 14px;margin-bottom:16px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">
+                  <span style="font-size:11.5px;color:#5b6b82;font-weight:700">Factor weights</span>
+                  <span style="font-size:11.5px;font-weight:800;color:{{ sumColor }}" class="num">Σ {{ weightSum }}</span>
+                </div>
+                <sc-for list="{{ weights }}" as="W" hint-placeholder-count="5">
+                  <div style="display:flex;align-items:center;gap:11px;margin-bottom:9px">
+                    <span style="width:78px;flex:none;font-size:12px;color:#3a5170;font-weight:600">{{ W.name }}</span>
+                    <input type="range" min="0" max="50" value="{{ W.val }}" onInput="{{ W.set }}" style="flex:1">
+                    <span style="width:38px;text-align:right;font-size:12.5px;font-weight:700;color:#102a4c" class="num">{{ W.pct }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <!-- 4 safeties -->
+              <div style="font-size:11px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:9px">Safeties</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+                <sc-for list="{{ safeties }}" as="Sf" hint-placeholder-count="4">
+                  <div style="border:1px solid #e3e8ef;border-radius:9px;padding:10px 12px">
+                    <div style="font-size:11px;color:#7a8699;font-weight:600;margin-bottom:5px">{{ Sf.label }}</div>
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <input value="{{ Sf.val }}" onInput="{{ Sf.set }}" style="width:54px;padding:6px 8px;border:1px solid #d4dce8;border-radius:7px;font-size:13px;font-weight:700;color:#16243d;text-align:right">
+                      <span style="font-size:12px;color:#9aa7b6;font-weight:600">{{ Sf.unit }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <!-- exclusions / preferred -->
+              <div style="font-size:11px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:9px">Supplier treatment</div>
+              <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:16px">
+                <sc-for list="{{ suppliers }}" as="Su" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border:1px solid #e3e8ef;border-radius:9px">
+                    <div style="display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:{{ Su.dot }}"></span><span style="font-size:13px;font-weight:700;color:#16243d">{{ Su.name }}</span><span style="font-size:11px;color:#9aa7b6">{{ Su.role }}</span></div>
+                    <div style="display:flex;background:#f1f4f8;border:1px solid #e3e8ef;border-radius:7px;padding:2px">
+                      <sc-for list="{{ Su.opts }}" as="Op" hint-placeholder-count="3">
+                        <button onClick="{{ Op.select }}" style="padding:5px 10px;border:none;border-radius:5px;background:{{ Op.bg }};color:{{ Op.fg }};font-size:11.5px;font-weight:700">{{ Op.label }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <!-- lenses to run -->
+              <div style="font-size:11px;letter-spacing:.4px;color:#8a97a8;font-weight:700;text-transform:uppercase;margin-bottom:9px">Lenses to run</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ lensToggles }}" as="L" hint-placeholder-count="7">
+                  <button onClick="{{ L.toggle }}" title="{{ L.title }}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid {{ L.border }};border-radius:7px;background:{{ L.bg }};color:{{ L.fg }};font-size:12px;font-weight:700">
+                    <span style="width:13px;height:13px;border-radius:3px;border:1.5px solid {{ L.boxBorder }};background:{{ L.boxBg }};display:flex;align-items:center;justify-content:center"><sc-if value="{{ L.on }}" hint-placeholder-val="{{ true }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></sc-if></span>
+                    {{ L.code }} · {{ L.name }}
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- generate templates (governed entry) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding:15px 20px;background:#fff;border:1px solid #cdd8e8;border-radius:12px;box-shadow:0 2px 10px rgba(8,73,153,.06);flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:11px">
+          <span style="width:32px;height:32px;flex:none;border-radius:8px;background:{{ genReady.iconBg }};display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ genReady.iconColor }}" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+          <div>
+            <div style="font-family:'Montserrat';font-weight:700;font-size:15px;color:#102a4c">Generate bid templates</div>
+            <div style="font-size:12.5px;color:#7a8699">{{ genReady.note }}</div>
+          </div>
+        </div>
+        <button disabled="{{ genReady.disabled }}" style="display:flex;align-items:center;gap:7px;padding:10px 18px;background:{{ genReady.btnBg }};color:#fff;border:none;border-radius:9px;font-size:13.5px;font-weight:700;opacity:{{ genReady.btnOpacity }}">Generate templates →</button>
+      </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    navCollapsed: false, view: 'ingested',
+    preset: 'Balanced',
+    w: { price:31, cov:22, hist:18, zr:9, cont:20 },
+    safeties: { ceiling:'12', floor:'1.0', conc:'60', maxsup:'2' },
+    supplier: { 'Green Valley Farms':'normal', 'Sunbelt Produce':'normal' },
+    lenses: { A:true, B:true, C:true, D:true, E:true, F:true, G:true },
+    tfConfirmed: false,
+    tf: { start:'2026-03-01', end:'2026-05-31' },
+  };
+
+  PRESETS = {
+    'Balanced':{ price:31, cov:22, hist:18, zr:9, cont:20 },
+    'Price':{ price:45, cov:18, hist:13, zr:9, cont:15 },
+    'Coverage':{ price:22, cov:34, hist:16, zr:10, cont:18 },
+    'Risk-averse':{ price:22, cov:20, hist:18, zr:22, cont:18 },
+  };
+  WNAMES = { price:'Price', cov:'Coverage', hist:'Historical', zr:'Z-Risk', cont:'Continuity' };
+  LENS_NAMES = { A:'Lowest-cost', B:'Risk-adjusted', C:'Incumbent defense', D:'Max-N per DC', E:'Exclusion', F:'Custom', G:'Preferred' };
+
+  renderVals() {
+    const S = this.state;
+    const sum = S.w.price + S.w.cov + S.w.hist + S.w.zr + S.w.cont;
+
+    const stateTabs = [
+      ['empty','Pre-ingest'], ['ingested','Ingested'], ['quarantine','+ Quarantine'],
+    ].map(([k,label]) => ({
+      label, select: () => this.setState({ view: k }),
+      bg: S.view===k ? '#fff' : 'transparent', fg: S.view===k ? '#084999' : '#7a8699',
+    }));
+
+    const presets = Object.keys(this.PRESETS).concat(['Custom']).map(name => {
+      const on = S.preset === name;
+      return { name, select: () => { if (name==='Custom') this.setState({ preset:'Custom' }); else this.setState({ preset:name, w:{...this.PRESETS[name]} }); },
+        bg: on?'#084999':'#fff', fg: on?'#fff':'#3a5170', border: on?'#084999':'#d4dce8' };
+    });
+
+    const weights = Object.keys(this.WNAMES).map(key => ({
+      name: this.WNAMES[key], val: S.w[key], pct: (sum>0 ? Math.round(S.w[key]/sum*100) : 0) + '%',
+      set: (e) => { const v = parseInt(e.target.value)||0; this.setState(st => ({ preset:'Custom', w: { ...st.w, [key]: v } })); },
+    }));
+
+    const SF = [
+      ['ceiling','Premium ceiling','%'], ['floor','Coverage floor','×'],
+      ['conc','Concentration cap','%'], ['maxsup','Max suppliers / DC',''],
+    ];
+    const safeties = SF.map(([key,label,unit]) => ({
+      label, unit, val: S.safeties[key],
+      set: (e) => { const v = e.target.value; this.setState(st => ({ safeties: { ...st.safeties, [key]: v } })); },
+    }));
+
+    const suppliers = ['Green Valley Farms','Sunbelt Produce'].map(name => {
+      const cur = S.supplier[name];
+      const opts = [['exclude','Exclude'],['normal','Normal'],['prefer','Prefer']].map(([k,label]) => ({
+        label, select: () => this.setState(st => ({ supplier: { ...st.supplier, [name]: k } })),
+        bg: cur===k ? (k==='exclude'?'#fff' : '#fff') : 'transparent',
+        fg: cur===k ? (k==='exclude'?'#b3261e' : k==='prefer'?'#1a7a4f' : '#084999') : '#7a8699',
+      }));
+      return { name, dot: name==='Green Valley Farms'?'#2f8f5e':'#7a5ba8', role: name==='Green Valley Farms'?'incumbent':'challenger', opts };
+    });
+
+    const lensToggles = ['A','B','C','D','E','F','G'].map(code => {
+      const on = S.lenses[code];
+      return { code, name: this.LENS_NAMES[code], on, title: this.LENS_NAMES[code],
+        toggle: () => this.setState(st => ({ lenses: { ...st.lenses, [code]: !st.lenses[code] } })),
+        bg: on?'#eef4ff':'#fff', fg: on?'#2c4a78':'#7a8699', border: on?'#d6e3f8':'#e3e8ef',
+        boxBorder: on?'#084999':'#cdd5de', boxBg: on?'#084999':'#fff' };
+    });
+
+    const lensCount = Object.values(S.lenses).filter(Boolean).length;
+    const genDisabled = !S.tfConfirmed || sum===0 || lensCount===0;
+
+    const timeframes = [{
+      name:'Spring 2026', start:S.tf.start, end:S.tf.end,
+      tag: S.tfConfirmed ? 'Confirmed' : 'Inferred from kickoff',
+      tagColor: S.tfConfirmed ? '#1a7a4f' : '#c98a1a',
+      setStart:(e)=>{const v=e.target.value; this.setState(st=>({tf:{...st.tf,start:v},tfConfirmed:false}));},
+      setEnd:(e)=>{const v=e.target.value; this.setState(st=>({tf:{...st.tf,end:v},tfConfirmed:false}));},
+    }];
+
+    return {
+      isEmpty: S.view==='empty', isIngested: S.view!=='empty', hasQuarantine: S.view==='quarantine',
+      stateTabs,
+      strip: {
+        run: S.view==='empty' ? 'Awaiting setup' : 'Setup · in progress',
+        runShort: S.view==='empty' ? 'Setup' : 'Setup',
+        runDot: '#c98a1a',
+        audit: S.view==='empty' ? 'Run created' : 'Setup ingested',
+        auditShort: 'Current', auditDot:'#1a8a5a',
+      },
+      scopeStats: [
+        { k:'Distribution centers', v:'2', sub:'Atlanta · Dallas' },
+        { k:'Lots', v:'2', sub:'Grape · Roma' },
+        { k:'Award cells', v:'4', sub:'2 DC × 2 lot × 1 TF' },
+        { k:'Invited suppliers', v:'2', sub:'1 incumbent · 1 challenger' },
+        { k:'Projected volume', v:'20,800', sub:'cases · 13-week horizon' },
+        { k:'Timeframes', v:'1', sub:'Spring 2026' },
+      ],
+      scopeRows: [
+        { k:'DCs', chips:['Atlanta DC','Dallas DC'] },
+        { k:'Lots / items', chips:['Lot 1 · Premium Grape Tomato','Lot 2 · Roma Tomato 25lb'] },
+        { k:'Suppliers', chips:['Green Valley Farms (incumbent)','Sunbelt Produce (challenger)'] },
+      ],
+      timeframes, tfConfirmed: S.tfConfirmed,
+      confirmTf: () => this.setState({ tfConfirmed: true }),
+      tfBtnBg: S.tfConfirmed ? '#1a7a4f' : '#084999',
+      tfBtnLabel: S.tfConfirmed ? 'Dates confirmed ✓' : 'Confirm dates → timeframe',
+      presets, weights, weightSum: (sum>0?Math.round(weights.reduce((a,w)=>a+parseInt(w.pct),0)):0)+'%',
+      sumColor: '#1a7a4f',
+      safeties, suppliers, lensToggles,
+      genReady: {
+        disabled: genDisabled,
+        note: genDisabled ? (!S.tfConfirmed ? 'Confirm timeframe dates first.' : 'Set at least one lens and non-zero weights.') : (lensCount + ' lenses · ' + Object.values(S.supplier).filter(v=>v!=='exclude').length + ' suppliers · ready'),
+        btnBg: genDisabled ? '#9fb6d6' : '#084999', btnOpacity: genDisabled ? '0.7' : '1',
+        iconBg: genDisabled ? '#eef1f5' : '#eef4ff', iconColor: genDisabled ? '#9aa7b6' : '#084999',
+      },
+      nav: {
+        expanded: !S.navCollapsed, w: S.navCollapsed ? '66px' : '228px',
+        justify: S.navCollapsed ? 'center' : 'flex-start',
+        pad: S.navCollapsed ? '10px 0' : '9px 10px',
+        chevron: S.navCollapsed ? '180deg' : '0deg',
+        toggle: () => this.setState(st => ({ navCollapsed: !st.navCollapsed })),
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>
