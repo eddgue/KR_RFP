@@ -56,6 +56,23 @@ itself is built) · A3/M1 editable mapper · A4 comms **send** (drafts render fi
 · M2–M6 reconciliation midpoints · the 3 design corrections (status-strip labels, hash-chain
 drill-through, refresh Awards screenshot) · GCP deployment.
 
+## Dry run log
+
+- **2026-06-22 — TOMATO dry run: ✅ PASS** (full lifecycle on the live app via the in-process API,
+  real committed DB). login → create run → setup (cycle) → **strategy** default `balanced` then set
+  `price_focus` → template → **strict bid import (8 ingested, 0 quarantined)** → analysis v1 (7 lenses)
+  → **savepoint** "Price-focused baseline" (no freeze) → tune `coverage_focus` → analysis v2 → **compare
+  v1 vs v2** → freeze lens B → **finalize (closed, won 2 / not-won 2)** → 9 deliverables render-on-request
+  (downloaded the alignment workbook from the DB). All three new features (strategy, savepoint, compare)
+  exercised. Note: v1/v2 lens-B spend identical (Δ 0) — expected: the synthetic 2-supplier data has
+  unambiguous per-cell winners the weight change doesn't flip; real contested data would move it. Left a
+  closed run `field-tomatoes-20260622-…` in the DB.
+- **POTATO dry run: BLOCKED (needs a decision).** The real `potato_2026_rfp_input.xlsx` is the legacy
+  standalone-engine `CONFIG/IN_/DIM_` format (not ingestible by our pipeline), and there is **no potato
+  synthetic builder**. Options: a small **synthetic potato builder** (commodity-agnostic validation,
+  quick) vs a **legacy→owned converter** to run the real data + compare to the `potato_…_analysis_output`
+  golden (larger; relates to the live-test fan-in/fan-out granulation).
+
 ## Verdict
 
 **Pre-test build scope is COMPLETE** (sponsor's three calls: A — minimal strategy panel BUILT · B —
