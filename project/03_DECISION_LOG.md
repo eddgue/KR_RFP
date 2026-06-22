@@ -332,6 +332,18 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D44 — Live-test SPEC FREEZE + change-control gate · **RATIFIED 2026-06-22**
+**Why.** Requirement capture moved fast (D42/D43/E-44 et al.). To make the live test actually happen, the sponsor froze the live-test scope: *"No more requirements. Anything we discuss from now on, if not vital to test runs, gets backlogged. No more spec drift for live tests."*
+**Decision.**
+- **The live-test scope is FROZEN.** No new requirements enter the live path. Items already RATIFIED + scoped stay as-is.
+- **Triage rule (default = BACKLOG).** Anything discussed from now on is triaged against one question — *is it VITAL to executing the live test runs?* If **no → a one-line backlog entry** (logged, not spec'd/built into live). If **yes →** it enters live scope **only via an explicit sponsor OK** (this is a change-control gate, not an open door).
+- **Litmus for "vital to test runs":** it is required to **(a)** run a live RFP end-to-end on the new design (E-26), **(b)** produce correct + governed + reproducible analysis (engine/formulas/audit/seal integrity), or **(c)** avoid a data-integrity / audit failure during the test. Anything else (new features, configurability, polish) → backlog.
+- **Operating change (me):** I stop deep-spec'ing new ideas; I capture them as a single backlog line and keep moving, and I flag if something looks vital so the sponsor can rule.
+**Scope note.** What is IN the live-test scope is, by the litmus, essentially **E-26 (rebuilt design) + the existing working pipeline** (the current fixed price model already matches the manual's potato cost lines — verified, `MANUAL_MODEL_FINDINGS.md`). **E-44** (configurable modality/cost/grain) and the rest are **enhancements → not in the first live test** unless the sponsor says a specific piece is vital.
+**Linked:** D39 (As-Built governance), the backlog (live-test critical path note), E-26 (rebuilt design = the live surface).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
