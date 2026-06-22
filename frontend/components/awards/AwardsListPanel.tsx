@@ -29,11 +29,15 @@ export function AwardsListPanel({
   return (
     <Panel>
       <PanelHeader
-        title="Frozen awards"
+        title={
+          <span className="font-display text-base font-bold text-text-strong">
+            Frozen awards
+          </span>
+        }
         description="Each award is an immutable baseline; post-award price moves are append-only, versioned layers."
       />
       {awards.length === 0 ? (
-        <div className="px-5 py-10 text-center text-sm text-ink-muted">
+        <div className="px-5 py-10 text-center text-sm text-text-muted">
           No frozen award yet — freeze a scenario on the alignment screen to create
           one.
         </div>
@@ -57,24 +61,23 @@ export function AwardsListPanel({
                   onClick={() => onSelect(a.award_id)}
                   className={selected ? "bg-accent-soft" : undefined}
                 >
-                  <TD className="font-medium text-ink">
-                    {a.award_code}
-                    {selected && (
-                      <StatusChip tone="accent" className="ml-2">
-                        Selected
-                      </StatusChip>
-                    )}
+                  <TD className="font-semibold text-text-strong">
+                    <span className="inline-flex items-center gap-2">
+                      {a.award_code}
+                      <StatusChip tone="frozen">Frozen</StatusChip>
+                      {selected && <StatusChip tone="accent">Selected</StatusChip>}
+                    </span>
                   </TD>
-                  <TD>Lens {a.scenario_code}</TD>
-                  <TD className="text-right tabular-nums">{a.line_count}</TD>
+                  <TD className="text-text">Lens {a.scenario_code}</TD>
+                  <TD className="text-right tabular-nums text-text">{a.line_count}</TD>
                   <TD>
                     {a.latest_version === 0 ? (
-                      <span className="text-ink-muted">baseline</span>
+                      <span className="text-text-muted">baseline</span>
                     ) : (
                       <StatusChip tone="amber">v{a.latest_version}</StatusChip>
                     )}
                   </TD>
-                  <TD className="text-ink-muted">{formatTimestamp(a.frozen_at)}</TD>
+                  <TD className="text-text-muted">{formatTimestamp(a.frozen_at)}</TD>
                 </TR>
               );
             })}

@@ -22,7 +22,7 @@ export function RunAnalysisControl({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="analysis-round"
-          className="text-2xs uppercase tracking-wide text-ink-subtle"
+          className="text-2xs font-bold uppercase tracking-wide text-text-subtle"
         >
           Round
         </label>

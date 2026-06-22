@@ -18,17 +18,26 @@ import { formatCount, formatMoney, formatPercent, formatPrice } from "@/lib/form
 import type { ScenarioDetailCell } from "@/lib/api";
 import type { ScenarioDetail } from "@/lib/api";
 
-// One lens inspected cell-by-cell: the savings headline, the governed freeze
-// action, and the per-(DC × lot × item × TF) competitive grid. Each cell row
-// expands to the full supplier picture (price, RecScore, awarded share, flags).
+// One lens inspected cell-by-cell — the workbench matrix. DC is the locked primary
+// grouping; the matrix scrolls horizontally below ~1100px and never reflows to
+// cards. Headline savings, a scenario-level capacity-feasibility indicator, and the
+// governed freeze action sit above the per-(DC × lot × item × TF) competitive grid.
+// Each cell row expands to the full supplier picture (price, RecScore, share, flags).
 export function ScenarioDetailPanel({
   detail,
   frozenAwardId,
   onFreeze,
+  readOnly = false,
+  capBreachCount = null,
 }: {
   detail: ScenarioDetail;
   frozenAwardId: string | null;
   onFreeze: () => void;
+  /** Viewing a sealed/historic analysis — governed freeze is disabled. */
+  readOnly?: boolean;
+  /** Stated-capacity breach count for this lens (from the comparison rollup, E-38).
+   *  null when the analysis doesn't expose it; the indicator is then hidden. */
+  capBreachCount?: number | null;
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const toggle = (i: number) =>
@@ -41,30 +50,47 @@ export function ScenarioDetailPanel({
 
   const s = detail.savings;
 
+  // Scenario-level capacity feasibility (stated-capacity, E-38 — distinct from
+  // concentration). Sourced from the comparison rollup for THIS lens, so it can never
+  // disagree with the per-lens row above it (§B5).
+  const showCap = capBreachCount != null;
+  const capFeasible = (capBreachCount ?? 0) === 0;
+
   return (
     <Panel>
       <PanelHeader
         title={
-          <span className="flex items-center gap-2">
-            <span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-display text-base font-bold text-text-strong">
               Lens {detail.code} — {detail.label}
             </span>
             {detail.is_recommended && <StatusChip tone="green">Recommended</StatusChip>}
+            {showCap && (
+              <StatusChip tone={capFeasible ? "green" : "gated"}>
+                {capFeasible
+                  ? "Feasible vs stated capacity"
+                  : `Over stated capacity · ${capBreachCount} ${capBreachCount === 1 ? "cell" : "cells"}`}
+              </StatusChip>
+            )}
           </span>
         }
         description={detail.description}
         actions={
           frozenAwardId ? (
-            <StatusChip tone="green">Frozen · {frozenAwardId.slice(0, 8)}</StatusChip>
+            <StatusChip tone="frozen">Frozen · {frozenAwardId.slice(0, 8)}</StatusChip>
           ) : (
-            <Button size="sm" onClick={onFreeze}>
-              Freeze this lens
+            <Button size="sm" onClick={onFreeze} disabled={readOnly}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+                <rect x="5" y="11" width="14" height="9" rx="2" />
+                <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
+              Freeze award
             </Button>
           )
         }
       />
 
-      <div className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px bg-border-hairline sm:grid-cols-4">
         <Stat label="Total spend" value={formatMoney(s.total_spend)} />
         <Stat
           label="Save vs incumbent"
@@ -76,22 +102,22 @@ export function ScenarioDetailPanel({
           label="Save vs STLY"
           value={formatMoney(s.savings_vs_stly)}
           sub={formatPercent(s.savings_vs_stly_pct)}
-          positive
+          modeled
         />
-        <Stat label="Cells" value={String(detail.cells.length)} />
+        <Stat label="Award cells" value={String(detail.cells.length)} />
       </div>
 
-      <Table>
+      <Table className="min-w-[1100px]">
         <THead>
           <TR>
             <TH className="w-8">
               <span className="sr-only">Expand</span>
             </TH>
-            <TH>Cell · DC / Lot / Item / TF</TH>
-            <TH className="text-right">Volume</TH>
+            <TH>Award cell · DC / Lot / Item / TF</TH>
+            <TH className="text-right">Demand</TH>
             <TH className="text-right">Baseline</TH>
             <TH className="text-right">Min bid</TH>
-            <TH>Awarded</TH>
+            <TH>Recommended</TH>
           </TR>
         </THead>
         <TBody>
@@ -105,6 +131,14 @@ export function ScenarioDetailPanel({
           ))}
         </TBody>
       </Table>
+      <div className="flex items-center gap-2 border-t border-border-hairline bg-surface-subtle px-5 py-3 text-xs text-text-muted">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" aria-hidden>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        Engine output — decision support only. A human asserts the freeze; each
+        assertion is audit-evented. DC is the locked primary grouping.
+      </div>
     </Panel>
   );
 }
@@ -114,21 +148,28 @@ function Stat({
   value,
   sub,
   positive,
+  modeled,
 }: {
   label: string;
   value: string;
   sub?: string;
   positive?: boolean;
+  modeled?: boolean;
 }) {
   return (
-    <div className="bg-surface px-5 py-3">
-      <div className="text-2xs uppercase tracking-wide text-ink-subtle">{label}</div>
-      <div className="mt-0.5 text-base font-semibold tabular-nums text-ink">{value}</div>
+    <div className="bg-surface-card px-5 py-3">
+      <div className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wide text-text-subtle">
+        {label}
+        {modeled && <StatusChip tone="modeled">modeled</StatusChip>}
+      </div>
+      <div className="mt-0.5 font-display text-base font-bold tabular-nums text-text-strong">
+        {value}
+      </div>
       {sub && (
         <div
           className={cn(
-            "text-xs tabular-nums",
-            positive ? "text-emerald-700" : "text-ink-muted",
+            "text-xs font-semibold tabular-nums",
+            positive ? "text-success" : "text-text-muted",
           )}
         >
           {sub}
@@ -150,24 +191,26 @@ function CellRows({
   return (
     <>
       <TR onClick={onToggle}>
-        <TD className="text-ink-subtle">{expanded ? "▾" : "▸"}</TD>
+        <TD className="text-text-subtle">{expanded ? "▾" : "▸"}</TD>
         <TD>
-          <span className="font-medium text-ink">{cell.dc}</span>
-          <span className="text-ink-subtle"> · </span>
-          <span className="text-ink-muted">
+          <span className="font-semibold text-text-strong">{cell.dc}</span>
+          <span className="text-text-subtle"> · </span>
+          <span className="text-text-muted">
             {cell.lot} / {cell.item} / {cell.tf}
           </span>
         </TD>
-        <TD className="text-right tabular-nums">{formatCount(cell.volume)}</TD>
-        <TD className="text-right tabular-nums text-ink-muted">
+        <TD className="text-right tabular-nums text-text">{formatCount(cell.volume)}</TD>
+        <TD className="text-right tabular-nums text-text-faint">
           {formatPrice(cell.baseline_price)}
         </TD>
-        <TD className="text-right tabular-nums">{formatPrice(cell.min_price)}</TD>
+        <TD className="text-right tabular-nums text-text">{formatPrice(cell.min_price)}</TD>
         <TD>
           {cell.recommended ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-ink">{cell.recommended.supplier}</span>
-              <span className="tabular-nums text-ink-muted">
+              <span className="font-semibold text-text-strong">
+                {cell.recommended.supplier}
+              </span>
+              <span className="font-display tabular-nums text-text-muted">
                 {formatPrice(cell.recommended.price)}
               </span>
               {cell.recommended.rec_type && (
@@ -175,7 +218,7 @@ function CellRows({
               )}
             </div>
           ) : (
-            <span className="text-ink-subtle">—</span>
+            <span className="text-text-subtle">—</span>
           )}
         </TD>
       </TR>
@@ -196,32 +239,32 @@ function SupplierGrid({ cell }: { cell: ScenarioDetailCell }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-2xs uppercase tracking-wide text-ink-subtle">
-          <th className="py-1 text-left font-semibold">Supplier</th>
-          <th className="py-1 text-right font-semibold">$/case</th>
-          <th className="py-1 text-right font-semibold">RecScore</th>
-          <th className="py-1 text-right font-semibold">Share</th>
-          <th className="py-1 pl-4 text-left font-semibold">Flags</th>
+        <tr className="text-2xs font-bold uppercase tracking-wide text-text-subtle">
+          <th className="py-1 text-left">Supplier</th>
+          <th className="py-1 text-right">$/case</th>
+          <th className="py-1 text-right">RecScore</th>
+          <th className="py-1 text-right">Share</th>
+          <th className="py-1 pl-4 text-left">Flags</th>
         </tr>
       </thead>
       <tbody>
         {cell.suppliers.length === 0 ? (
           <tr>
-            <td colSpan={5} className="py-2 text-ink-subtle">
+            <td colSpan={5} className="py-2 text-text-subtle">
               No eligible bids in this cell.
             </td>
           </tr>
         ) : (
           cell.suppliers.map((sup) => (
-            <tr key={sup.name} className="border-t border-line">
-              <td className="py-1.5 text-ink">{sup.name}</td>
-              <td className="py-1.5 text-right tabular-nums">
+            <tr key={sup.name} className="border-t border-border-hairline">
+              <td className="py-1.5 text-text-strong">{sup.name}</td>
+              <td className="py-1.5 text-right font-display tabular-nums text-text">
                 {formatPrice(sup.price_per_case)}
               </td>
-              <td className="py-1.5 text-right tabular-nums text-ink-muted">
+              <td className="py-1.5 text-right tabular-nums text-text-muted">
                 {sup.rec_score == null ? "—" : sup.rec_score.toFixed(1)}
               </td>
-              <td className="py-1.5 text-right tabular-nums">
+              <td className="py-1.5 text-right tabular-nums text-text">
                 {sup.volume_share > 0 ? formatPercent(sup.volume_share) : "—"}
               </td>
               <td className="py-1.5 pl-4">

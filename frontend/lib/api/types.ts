@@ -321,6 +321,17 @@ export interface AwardDetail {
   versions: AwardVersionView[];
 }
 
+// POST /runs/{slug}/finalize — terminal governed close-out. Locks the run CLOSED
+// (a CLOSED audit event lands) and surfaces the closing deliverables: award notices
+// (won suppliers) + rejection notices (not-won suppliers). Ids + counts only; the
+// notices render on request (nothing persisted). Idempotent; requires a FROZEN award.
+export interface FinalizeRunResponse {
+  closed: boolean;
+  award_id: string;
+  won_suppliers: number;
+  not_won_suppliers: number;
+}
+
 // A scored/aligned bid line. GET /bids?run=&round= -> BidLineView[].
 export interface BidLineView {
   bid_line_id: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ApiError,
@@ -17,7 +17,8 @@ import type {
   ScenarioComparisonRow,
   ScenarioDetail,
 } from "@/lib/api";
-import { Button, Panel } from "@/components/ui";
+import { Button, Panel, StatusChip } from "@/components/ui";
+import { RunStatusStrip } from "@/components/shell/RunStatusStrip";
 import { Alert } from "@/components/intake/Alert";
 import { AnalysisRunsPanel } from "@/components/alignment/AnalysisRunsPanel";
 import { ScenarioComparisonTable } from "@/components/alignment/ScenarioComparisonTable";
@@ -239,24 +240,71 @@ export default function AlignmentPage({
     : "";
   const suggestedAwardCode = `AWD-${commoditySlug ? `${commoditySlug}-` : ""}${selectedCode ?? "B"}`;
 
+  // The live seal is the most recently sealed (highest version); selecting any earlier
+  // one is a read-only, historic view where governed actions are disabled.
+  const liveAnalysis = useMemo(
+    () =>
+      analyses.length
+        ? analyses.reduce((a, b) => (b.version > a.version ? b : a))
+        : null,
+    [analyses],
+  );
+  const selectedAnalysis = useMemo(
+    () => analyses.find((a) => a.analysis_run_id === selectedAnalysisId) ?? null,
+    [analyses, selectedAnalysisId],
+  );
+  const readOnly =
+    !!selectedAnalysis && !!liveAnalysis && selectedAnalysis.version !== liveAnalysis.version;
+
+  const anyFrozen = Object.keys(frozen).length > 0;
+  const selectedComparisonRow = useMemo(
+    () => comparison.find((r) => r.code === selectedCode) ?? null,
+    [comparison, selectedCode],
+  );
+
+  // Decision-header commodity chips (DCs · lots · suppliers · award cells · horizon),
+  // computed from the selected lens detail so they reflect the lens actually shown.
+  const headerChips = useMemo(() => {
+    if (!detail || detail.code !== selectedCode) return [];
+    const dcs = new Set(detail.cells.map((c) => c.dc));
+    const lots = new Set(detail.cells.map((c) => c.lot));
+    const suppliers = new Set<string>();
+    for (const c of detail.cells) for (const s of c.suppliers) suppliers.add(s.name);
+    const tfs = new Set(detail.cells.map((c) => c.tf));
+    const chips: { label: string; value: string }[] = [
+      { value: String(dcs.size), label: dcs.size === 1 ? "DC" : "DCs" },
+      { value: String(lots.size), label: lots.size === 1 ? "lot" : "lots" },
+      {
+        value: String(suppliers.size),
+        label: suppliers.size === 1 ? "supplier" : "suppliers",
+      },
+      {
+        value: String(detail.cells.length),
+        label: detail.cells.length === 1 ? "award cell" : "award cells",
+      },
+    ];
+    if (tfs.size) chips.push({ value: "", label: [...tfs].join(" · ") });
+    return chips;
+  }, [detail, selectedCode]);
+
   return (
     <div className="flex flex-col gap-5">
-      <nav className="text-sm text-ink-muted">
-        <Link href="/" className="hover:text-accent">
+      <nav className="text-sm text-text-muted">
+        <Link href="/" className="hover:text-brand-primary">
           Runs
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <Link href={`/runs/${slug}`} className="hover:text-accent">
+        <span className="px-1.5 text-text-subtle">/</span>
+        <Link href={`/runs/${slug}`} className="hover:text-brand-primary">
           {run?.commodity ?? slug}
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <span className="text-ink">Alignment</span>
+        <span className="px-1.5 text-text-subtle">/</span>
+        <span className="font-semibold text-text-strong">Alignment</span>
       </nav>
 
       {runLoading && (
         <Panel>
-          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-ink-muted">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-text-muted">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
             Loading run…
           </div>
         </Panel>
@@ -265,10 +313,10 @@ export default function AlignmentPage({
       {!runLoading && runErr && (
         <Panel>
           <div className="px-5 py-16 text-center">
-            <p className="text-sm font-medium text-ink">
+            <p className="text-sm font-semibold text-text-strong">
               {runErr.notFound ? "Run not found" : "Something went wrong"}
             </p>
-            <p className="mt-1 text-sm text-ink-muted">{runErr.message}</p>
+            <p className="mt-1 text-sm text-text-muted">{runErr.message}</p>
             <div className="mt-4 flex justify-center gap-2">
               {!runErr.notFound && (
                 <Button variant="secondary" size="sm" onClick={() => void loadRun()}>
@@ -287,13 +335,89 @@ export default function AlignmentPage({
 
       {!runLoading && !runErr && run && (
         <>
+          {/* persistent run-status strip */}
+          <RunStatusStrip
+            cells={[
+              {
+                label: "Run state",
+                value: readOnly ? "Historic view" : "Live · Alignment",
+                tone: readOnly ? "idle" : "live",
+              },
+              {
+                label: "Analysis",
+                value: selectedAnalysis
+                  ? `Sealed · v${selectedAnalysis.version}`
+                  : "Not sealed",
+                tone: selectedAnalysis ? "sealed" : "idle",
+              },
+              {
+                label: "Award",
+                value: anyFrozen ? "Frozen" : "Not yet frozen",
+                tone: anyFrozen ? "frozen" : "idle",
+              },
+              { label: "Audit", value: "Hash-chain current", tone: "live" },
+            ]}
+          />
+
+          {/* read-only banner for a sealed, historic version */}
+          {readOnly && liveAnalysis && (
+            <div className="flex flex-wrap items-center gap-3 rounded-card border border-warning/40 bg-warning-bg px-4 py-3">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="shrink-0 text-warning" aria-hidden>
+                <rect x="5" y="11" width="14" height="9" rx="2" />
+                <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
+              <span className="text-sm font-semibold text-text">
+                You&rsquo;re viewing a sealed, read-only analysis (v
+                {selectedAnalysis?.version}). Governed actions are disabled — switch to
+                the live version to build or freeze.
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="ml-auto"
+                onClick={() => handleSelectAnalysis(liveAnalysis.analysis_run_id)}
+              >
+                View live version
+              </Button>
+            </div>
+          )}
+
+          {/* decision header */}
           <Panel className="p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-ink">Alignment</h1>
-                <p className="mt-1 text-sm text-ink-muted">
+                <h1 className="font-display text-2xl font-extrabold tracking-tight text-text-strong">
+                  Alignment workbench
+                </h1>
+                <p className="mt-1 text-sm text-text-muted">
                   {run.commodity} · {run.label}
                 </p>
+                {headerChips.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {headerChips.map((chip, i) => (
+                      <span
+                        key={`${chip.label}-${i}`}
+                        className="rounded-control border border-border bg-surface-card px-2.5 py-1 text-xs font-semibold text-text-muted"
+                      >
+                        {chip.value && (
+                          <b className="text-text-strong">{chip.value}</b>
+                        )}{" "}
+                        {chip.label}
+                      </span>
+                    ))}
+                    {selectedCode && (
+                      <span className="inline-flex items-center gap-1.5 rounded-control border border-border bg-surface-card px-2.5 py-1 text-xs font-semibold text-text-muted">
+                        Lens
+                        <StatusChip
+                          tone={selectedComparisonRow?.is_recommended ? "green" : "sealed"}
+                        >
+                          {selectedCode}
+                          {selectedComparisonRow?.is_recommended && " · REC"}
+                        </StatusChip>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <Link href={`/runs/${slug}`}>
                 <Button variant="secondary" size="sm">
@@ -317,8 +441,8 @@ export default function AlignmentPage({
             <>
               {comparisonLoading && (
                 <Panel>
-                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-ink-muted">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-text-muted">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
                     Loading scenarios…
                   </div>
                 </Panel>
@@ -340,8 +464,8 @@ export default function AlignmentPage({
             <>
               {detailLoading && (
                 <Panel>
-                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-ink-muted">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-text-muted">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
                     Loading scenario {selectedCode}…
                   </div>
                 </Panel>
@@ -353,6 +477,8 @@ export default function AlignmentPage({
                 <ScenarioDetailPanel
                   detail={detail}
                   frozenAwardId={frozenAwardId}
+                  readOnly={readOnly}
+                  capBreachCount={selectedComparisonRow?.cap_breach_count ?? null}
                   onFreeze={() => {
                     setFreezeError(null);
                     setFreezeOpen(true);

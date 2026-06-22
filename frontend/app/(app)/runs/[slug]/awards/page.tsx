@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ApiError,
   downloadRunFile,
+  finalizeRun,
   getAward,
   getRun,
   listAwards,
@@ -13,10 +14,13 @@ import {
 import type {
   AwardDetail,
   AwardSummary,
+  FinalizeRunResponse,
   RecordAdjustmentBody,
   RunDetail,
 } from "@/lib/api";
-import { Button, Panel } from "@/components/ui";
+import { AssertModal, Button, Panel, StatusChip } from "@/components/ui";
+import { RunStatusStrip } from "@/components/shell/RunStatusStrip";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Alert } from "@/components/intake/Alert";
 import { AwardsListPanel } from "@/components/awards/AwardsListPanel";
 import { AwardDetailPanel } from "@/components/awards/AwardDetailPanel";
@@ -24,13 +28,15 @@ import { RecordAdjustmentModal } from "@/components/awards/RecordAdjustmentModal
 
 // The post-award screen — view a run's frozen awards and inspect one: its awarded
 // lines (frozen baseline → current effective price) and the versioned layer history.
-// Read-only; the governed freeze lives on the alignment screen.
+// The governed freeze lives on the alignment screen; close-out (Finalize & close run)
+// lives here, gated on a FROZEN award.
 export default function AwardsPage({
   params,
 }: {
   params: { slug: string };
 }) {
   const { slug } = params;
+  const { user } = useAuth();
 
   const [run, setRun] = useState<RunDetail | null>(null);
   const [runErr, setRunErr] = useState<{ message: string; notFound: boolean } | null>(null);
@@ -53,6 +59,12 @@ export default function AwardsPage({
     version: number;
     filename: string;
   } | null>(null);
+
+  // Finalize / close-run flow.
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [finalizeNotice, setFinalizeNotice] = useState<FinalizeRunResponse | null>(null);
 
   const loadRun = useCallback(async () => {
     setRunLoading(true);
@@ -153,24 +165,44 @@ export default function AwardsPage({
     [slug, selectedId, loadAwards],
   );
 
+  const handleFinalizeConfirm = useCallback(async () => {
+    setFinalizing(true);
+    setFinalizeError(null);
+    try {
+      const res = await finalizeRun(slug);
+      setFinalizeNotice(res);
+      setFinalizeOpen(false);
+    } catch (err) {
+      setFinalizeError(
+        err instanceof ApiError ? err.detail : "Could not finalize the run.",
+      );
+    } finally {
+      setFinalizing(false);
+    }
+  }, [slug]);
+
+  // A FROZEN award exists iff the run has at least one award; close-out is gated on it.
+  const hasFrozenAward = awards.length > 0;
+  const closed = !!finalizeNotice?.closed;
+
   return (
     <div className="flex flex-col gap-5">
-      <nav className="text-sm text-ink-muted">
-        <Link href="/" className="hover:text-accent">
+      <nav className="text-sm text-text-muted">
+        <Link href="/" className="hover:text-brand-primary">
           Runs
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <Link href={`/runs/${slug}`} className="hover:text-accent">
+        <span className="px-1.5 text-text-subtle">/</span>
+        <Link href={`/runs/${slug}`} className="hover:text-brand-primary">
           {run?.commodity ?? slug}
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <span className="text-ink">Awards</span>
+        <span className="px-1.5 text-text-subtle">/</span>
+        <span className="font-semibold text-text-strong">Awards</span>
       </nav>
 
       {runLoading && (
         <Panel>
-          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-ink-muted">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-text-muted">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
             Loading run…
           </div>
         </Panel>
@@ -179,10 +211,10 @@ export default function AwardsPage({
       {!runLoading && runErr && (
         <Panel>
           <div className="px-5 py-16 text-center">
-            <p className="text-sm font-medium text-ink">
+            <p className="text-sm font-semibold text-text-strong">
               {runErr.notFound ? "Run not found" : "Something went wrong"}
             </p>
-            <p className="mt-1 text-sm text-ink-muted">{runErr.message}</p>
+            <p className="mt-1 text-sm text-text-muted">{runErr.message}</p>
             <div className="mt-4 flex justify-center gap-2">
               {!runErr.notFound && (
                 <Button variant="secondary" size="sm" onClick={() => void loadRun()}>
@@ -201,12 +233,36 @@ export default function AwardsPage({
 
       {!runLoading && !runErr && run && (
         <>
+          {/* persistent run-status strip */}
+          <RunStatusStrip
+            cells={[
+              {
+                label: "Run state",
+                value: closed ? "Closed · Finalized" : "Live · Post-award",
+                tone: closed ? "frozen" : "live",
+              },
+              { label: "Analysis", value: "Sealed", tone: "sealed" },
+              {
+                label: "Award",
+                value: hasFrozenAward
+                  ? `Frozen${detail ? ` · Lens ${detail.scenario_code}` : ""}`
+                  : "Not yet frozen",
+                tone: hasFrozenAward ? "frozen" : "idle",
+              },
+              { label: "Audit", value: "Hash-chain current", tone: "live" },
+            ]}
+          />
+
+          {/* header */}
           <Panel className="p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-ink">Awards</h1>
-                <p className="mt-1 text-sm text-ink-muted">
-                  {run.commodity} · {run.label}
+                <h1 className="font-display text-2xl font-extrabold tracking-tight text-text-strong">
+                  Awards
+                </h1>
+                <p className="mt-1 text-sm text-text-muted">
+                  {run.commodity} · {run.label} — the frozen award and its append-only
+                  post-award layers.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -224,14 +280,23 @@ export default function AwardsPage({
             </div>
           </Panel>
 
+          {closed && finalizeNotice && (
+            <Alert tone="success">
+              Run closed · {finalizeNotice.won_suppliers} award +{" "}
+              {finalizeNotice.not_won_suppliers} rejection{" "}
+              {finalizeNotice.not_won_suppliers === 1 ? "notice" : "notices"} drafted ·
+              CLOSED event recorded.
+            </Alert>
+          )}
+
           <AwardsListPanel awards={awards} selectedId={selectedId} onSelect={handleSelect} />
 
           {selectedId && (
             <>
               {detailLoading && (
                 <Panel>
-                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-ink-muted">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+                  <div className="flex items-center justify-center gap-3 px-5 py-12 text-sm text-text-muted">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
                     Loading award…
                   </div>
                 </Panel>
@@ -254,10 +319,15 @@ export default function AwardsPage({
                   )}
                   <AwardDetailPanel
                     detail={detail}
+                    canFinalize={hasFrozenAward && !closed}
                     onAdjust={() => {
                       setAdjustError(null);
                       setAdjustNotice(null);
                       setAdjustOpen(true);
+                    }}
+                    onFinalize={() => {
+                      setFinalizeError(null);
+                      setFinalizeOpen(true);
                     }}
                   />
                   <RecordAdjustmentModal
@@ -268,6 +338,41 @@ export default function AwardsPage({
                     error={adjustError}
                     awardCode={detail.award_code}
                     lines={detail.lines}
+                  />
+                  <AssertModal
+                    open={finalizeOpen}
+                    onClose={() => setFinalizeOpen(false)}
+                    title="Finalize & close run"
+                    description="Governed terminal action — generates supplier notices and marks the cycle complete."
+                    eventType="CLOSED"
+                    actorName={user?.username ?? "you"}
+                    confirmLabel="Close run"
+                    loading={finalizing}
+                    error={finalizeError}
+                    onConfirm={() => void handleFinalizeConfirm()}
+                    summary={
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusChip tone="frozen">
+                            Frozen · {detail.award_code}
+                          </StatusChip>
+                          <StatusChip tone="sealed">Lens {detail.scenario_code}</StatusChip>
+                        </div>
+                        <p className="text-sm text-text-muted">
+                          This generates award notices (won suppliers) and rejection
+                          notices (not-won suppliers) from the frozen award, then marks
+                          the run complete. Notices are created as drafts — sending stays
+                          a separate governed step.
+                        </p>
+                      </div>
+                    }
+                    cautions={
+                      <span>
+                        This <b className="text-text-strong">locks the run</b> — no
+                        further freezes or adjustments after close-out. It also surfaces
+                        the award &amp; rejection notices.
+                      </span>
+                    }
                   />
                 </>
               )}
