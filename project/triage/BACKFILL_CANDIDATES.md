@@ -65,7 +65,17 @@ actioning · least margin for error · full functionality with least margin for 
 constrained, targeted agents (the harness loop) · MCP harness = verification oracle.** → **Home:**
 `02_WAYS_OF_WORKING`. **Verify:** check what 02 already states before adding.
 
-## Promotion log (fill in as items are triaged)
-| Candidate | Decision (promote→home / discard) | Date |
+## Promotion log
+
+Sponsor triage 2026-06-22 — filter: *does it affect the user process or analysis process?* If yes,
+decided in layman terms; if not (internal / already covered), dropped.
+
+| Candidate | Decision | Date |
 |---|---|---|
-| — | — | — |
+| C1 — auditor verdicts | **Dropped** — internal record, no user/analysis impact | 2026-06-22 |
+| C2 — input fingerprint completeness | **Pending** — re-explained in plain terms; awaiting sponsor yes/no on tightening the tamper-seal to cover exclusions/thresholds | 2026-06-22 |
+| C3 — CI hardening | **Dropped** — dev/infra, no user/analysis impact | 2026-06-22 |
+| C4 — "Breaches" label | **DONE** — renamed to "Over capacity" on the current comparison screen (`ScenarioComparisonTable.tsx`) | 2026-06-22 |
+| C5 — in-app close-out | **APPROVED → build** — finalize/close-out action + route (governed close event, award/rejection notices render on request, gated on a frozen award); pairs with E-22/E-43 + the design's finalize step. Promote to backlog on build. | 2026-06-22 |
+| C6 — `all_lot_discount` dead code | **Dropped** — internal, no user/analysis impact | 2026-06-22 |
+| C7 — working-practice principles | **Dropped** — meta/process, no user/analysis impact | 2026-06-22 |

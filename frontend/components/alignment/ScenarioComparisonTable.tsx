@@ -42,7 +42,7 @@ export function ScenarioComparisonTable({
             <TH className="text-right">Save vs STLY</TH>
             <TH className="text-right">Suppliers</TH>
             <TH className="text-right">Cells</TH>
-            <TH className="text-right">Breaches</TH>
+            <TH className="text-right">Over capacity</TH>
           </TR>
         </THead>
         <TBody>
