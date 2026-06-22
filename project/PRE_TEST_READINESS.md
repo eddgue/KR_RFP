@@ -75,11 +75,14 @@ drill-through, refresh Awards screenshot) · GCP deployment.
   bids ingested, 0 quarantined; 7 lenses sealed.** **Lens ORDERING matches the golden exactly** (A < B=C=E=F,
   D higher, G distinct) and per-cell prices agree. **But total spend is ~+27% (uniform):** OUR engine books
   **all 271 demand cells**; the legacy books only **183** — it leaves **88 demand cells (~207k cases)
-  unawarded** (its premium-0.15 / coverage-0.8 gates drop them → unmet demand). **This is a coverage/gating
-  SEMANTIC difference between our V3 engine and the legacy, not a conversion bug** — a real finding for a
-  domain decision (does unmet demand stay unbooked, or get force-filled?). The converter only loaded the
-  Delivered (R2) round (single-round basis); the FOB-by-period legacy data ties to the live-test
-  fan-in/fan-out granulation.
+  unawarded**. **RESOLVED — not a bug, not an engine semantic to fix (sponsor, 2026-06-22):** those
+  coverage gaps are **human decisions made LIVE during alignment** — the buyer **leaves a cell with no
+  assignee** or **pulls lots from a DC**. So our **full-coverage engine output is the correct PRE-alignment
+  baseline**; the golden is **POST-alignment** (after those human edits), which is why it's lower — the two
+  are consistent. **Implication for LIVE:** alignment needs the edit actions to **leave a cell unassigned**
+  and **pull lots from a DC** (E-41 per-cell editing / E-36 partial-split award), pairing with the
+  version-save/compare just built. The converter loaded only the Delivered (R2) round; the FOB-by-period
+  legacy data ties to the live-test fan-in/fan-out granulation.
 
 ## Verdict
 
