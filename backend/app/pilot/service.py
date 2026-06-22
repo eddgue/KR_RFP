@@ -186,6 +186,23 @@ class BidIngestResult:
     quarantined_capacity: int
 
 
+@dataclass(frozen=True)
+class FinalizeSummary:
+    """The outcome of the console close-out (`finalize_run`) — the closing deliverables snapshot.
+
+    `closed` is always True once finalize has run (the CLOSED event exists for the cycle);
+    `award_id` is the FROZEN award this run is closed against; `won_suppliers` counts the awarded
+    suppliers (the award notices available) and `not_won_suppliers` counts the participants with a
+    lost lot (the rejection notices available). Ids + counts only — no commercial values (the
+    notices render on request from the existing generators; nothing is persisted, ADR-0018/E-42).
+    """
+
+    closed: bool
+    award_id: str
+    won_suppliers: int
+    not_won_suppliers: int
+
+
 class PilotService:
     """Orchestrates the per-RFP run vault + the governed cycle store for the pilot loop."""
 
@@ -1316,6 +1333,123 @@ class PilotService:
         """
 
         delete_run_record(session, slug)
+
+    def finalize_run(
+        self,
+        session: Session,
+        runpaths: RunPaths,
+        *,
+        actor: str,
+    ) -> FinalizeSummary:
+        """Terminal governed close-out of a console run — lock it CLOSED + surface the notices.
+
+        After an award is FROZEN the buyer finalizes the run: this emits a governed `CLOSED`
+        `DomainEvent` (entity = the cycle) in the caller's transaction, marking the run complete,
+        and returns the closing deliverables — the FROZEN award id + the counts of awarded (won)
+        and not-awarded (not-won) suppliers whose award/rejection notices are now available. The
+        notices are render-on-request (the existing `award_email_drafts` / `rejection_email_drafts`
+        generators); finalize does NOT persist any file (the console is no-file-storage,
+        ADR-0018/E-42) and does NOT delete the run (the harness-only `close_run`/`purge_run`
+        deletes; this is the governed close-out, NOT a teardown).
+
+        GATE: a FROZEN award for the run's cycle is required — an un-awarded run cannot be finalized
+        (raises `AppError(CONFLICT, 409)`). IDEMPOTENT: finalizing an already-closed run is a clean
+        no-op (the same summary is returned and no second CLOSED event is emitted), so a
+        double-click or a retry never forks the audit chain.
+        """
+
+        # GATE: a run with no cycle yet can't have a frozen award — refuse with the same 409 as a
+        # cycle that simply hasn't frozen one (an un-awarded run is never finalized).
+        cycle_id = self._run_cycle_id(session, runpaths)
+        if cycle_id is None:
+            raise AppError(
+                code=ErrorCode.CONFLICT,
+                message=(
+                    "This run has no frozen award yet — freeze an award before closing out the run."
+                ),
+                status_code=409,
+            )
+        cycle = self._load_cycle(session, runpaths)
+
+        # GATE: the run must have a FROZEN award before it can be closed out. Pick the cycle's
+        # earliest frozen award (the same one the notices are keyed on) — refuse if there is none.
+        award = (
+            session.execute(
+                select(Award)
+                .where(Award.cycle_id == cycle.cycle_id, Award.status == "FROZEN")
+                .order_by(Award.frozen_at)
+            )
+            .scalars()
+            .first()
+        )
+        if award is None:
+            raise AppError(
+                code=ErrorCode.CONFLICT,
+                message=(
+                    "This run has no frozen award yet — freeze an award before closing out the run."
+                ),
+                status_code=409,
+            )
+
+        # The closing deliverables: how many suppliers' award (won) + rejection (not-won) notices
+        # are available. Reuse the SAME render-on-request generators the console serves, so the
+        # counts can never diverge from the notices the buyer can actually pull.
+        won = len(self.award_email_drafts(session, runpaths, award.award_id))
+        not_won = len(self.rejection_email_drafts(session, runpaths, award.award_id))
+        summary = FinalizeSummary(
+            closed=True,
+            award_id=award.award_id,
+            won_suppliers=won,
+            not_won_suppliers=not_won,
+        )
+
+        # IDEMPOTENT: if the cycle already carries a CLOSED event, the run is already closed —
+        # return the same summary and emit NOTHING (no second CLOSED, no forked chain).
+        if self._is_closed(session, cycle.cycle_id):
+            return summary
+
+        # Governed decision: the run is closed. Land its tamper-evident CLOSED event in the same
+        # transaction (entity = the cycle) — ids + counts only, no commercial values (E-42).
+        AuditWriter(session).append(
+            DomainEvent(
+                event_type=EventType.CLOSED,
+                client_id=client_id_for_cycle(session, cycle.cycle_id),
+                entity_type="cyc.cycle",
+                entity_id=uuid.UUID(cycle.cycle_id),
+                cycle_id=uuid.UUID(cycle.cycle_id),
+                actor=actor,
+                source="api",
+                after={"award_id": award.award_id},
+            )
+        )
+        return summary
+
+    def is_closed(self, session: Session, runpaths: RunPaths) -> bool:
+        """Whether the run is CLOSED — derived from the cycle's CLOSED audit event (no column).
+
+        The closed state is DERIVED, not stored: a run is closed iff its cycle carries a `CLOSED`
+        event in the tamper-evident log (the same governed signal `finalize_run` writes). A run with
+        no cycle yet is never closed.
+        """
+
+        cycle_id = self._run_cycle_id(session, runpaths)
+        if cycle_id is None:
+            return False
+        return self._is_closed(session, cycle_id)
+
+    @staticmethod
+    def _is_closed(session: Session, cycle_id: str) -> bool:
+        """True iff a CLOSED audit event exists for the cycle (the derived close-out state)."""
+
+        return bool(
+            session.execute(
+                text(
+                    "SELECT 1 FROM audit.event_log "
+                    "WHERE event_type = 'CLOSED' AND cycle_id = :cyc LIMIT 1"
+                ),
+                {"cyc": cycle_id},
+            ).first()
+        )
 
     # ------------------------------------------------------------------ #
     # vault-carried DB persistence (resume across ephemeral containers)

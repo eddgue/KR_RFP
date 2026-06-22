@@ -50,10 +50,16 @@ error-vs-empty states. **Applies only if the CURRENT frontend runs the live cycl
 isn't built yet). → **Home:** E-26 (rebuild) or a "current-frontend fixes" note. **Verify:** are we
 running the current frontend for the live RFPs?
 
-### C5 — `delete_run` has no console close-out route
-`PilotService.delete_run` exists (service.py:1309, added in the no-file-storage refactor) but **no HTTP
-route calls it** (none existed). → **Home:** the finalize / close-out step (E-22 / E-43) or the screen
-coverage audit. **Verify:** confirm route absence; decide where close-out lives.
+### C5 — in-app close-out — **DONE (2026-06-22, As-Built v1.26)**
+~~`PilotService.delete_run` exists (service.py:1309) but no HTTP route calls it.~~ **BUILT** as a
+governed *finalize / close-out* (not a delete): `PilotService.finalize_run` (service.py:1321) +
+`POST /runs/{slug}/finalize` (runs.py:619). After an award is FROZEN the buyer locks the run **CLOSED**
+(new `EventType.CLOSED`, entity = `cyc.cycle`, in-txn via `AuditWriter`) and the **award (won) +
+rejection (not-won) notices** become available (reusing the existing render-on-request generators —
+no file persisted, E-42). Gated on a frozen award (else 409), idempotent (no 2nd CLOSED), closed
+state **derived** from the CLOSED event (no migration). The harness-only `close_run`/`purge_run`
+teardown is untouched. 6 tests (`tests/api/test_finalize.py`); 257 pass. Partially addresses the
+design's finalize step (notices stay draft-only — send is G-D/E-24) and is adjacent to G-D sign-off.
 
 ### C6 — `all_lot_discount` dead code (auditor #3, TRUE-harmless)
 A dead-code path; harmless but tech-debt. → **Home:** As-Built §20.2 tech-debt / backlog. **Verify:**
@@ -76,6 +82,6 @@ decided in layman terms; if not (internal / already covered), dropped.
 | C2 — input fingerprint completeness | **DONE** — sponsor approved; `_inputs_manifest` now seals the full `EngineConfig` (`model_dump`), tamper-evident over all inputs. 4 tests; As-Built v1.25 | 2026-06-22 |
 | C3 — CI hardening | **Dropped** — dev/infra, no user/analysis impact | 2026-06-22 |
 | C4 — "Breaches" label | **DONE** — renamed to "Over capacity" on the current comparison screen (`ScenarioComparisonTable.tsx`) | 2026-06-22 |
-| C5 — in-app close-out | **APPROVED → build** — finalize/close-out action + route (governed close event, award/rejection notices render on request, gated on a frozen award); pairs with E-22/E-43 + the design's finalize step. Promote to backlog on build. | 2026-06-22 |
+| C5 — in-app close-out | **DONE** — `finalize_run` + `POST /runs/{slug}/finalize`; governed `CLOSED` event (new EventType), award/rejection notices render on request, gated on a frozen award, idempotent, derived closed-state (no migration); harness teardown untouched. 6 tests; As-Built v1.26 | 2026-06-22 |
 | C6 — `all_lot_discount` dead code | **Dropped** — internal, no user/analysis impact | 2026-06-22 |
 | C7 — working-practice principles | **Dropped** — meta/process, no user/analysis impact | 2026-06-22 |

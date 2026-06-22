@@ -25,6 +25,7 @@ class EventType(StrEnum):
     SENT = "SENT"
     GATE_APPROVED = "GATE_APPROVED"
     IMPORTED = "IMPORTED"
+    CLOSED = "CLOSED"  # the run's terminal governed close-out (finalize, design "Finalize & close")
 
 
 @dataclass(frozen=True, slots=True)

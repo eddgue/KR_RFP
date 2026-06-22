@@ -130,6 +130,22 @@ class FreezeAwardResponse(BaseModel):
     scenario_code: str
 
 
+class FinalizeRunResponse(BaseModel):
+    """The result of finalizing (closing out) a run — closed flag + the closing deliverables.
+
+    `closed` is True once the governed CLOSED event has landed; `award_id` is the FROZEN award the
+    run is closed against; `won_suppliers` / `not_won_suppliers` count the award (won) + rejection
+    (not-won) notices now available (render-on-request, nothing persisted).
+    """
+
+    closed: bool
+    award_id: str
+    won_suppliers: int = Field(description="Awarded suppliers — award notices available.")
+    not_won_suppliers: int = Field(
+        description="Participants with a lost lot — rejection notices available."
+    )
+
+
 class AdjustmentLineChange(BaseModel):
     """One cell repriced by a post-award adjustment — the cell key + its new $/case."""
 
@@ -614,6 +630,39 @@ def freeze_award(
             status_code=400,
         ) from exc
     return FreezeAwardResponse(award_id=award_id, scenario_code=body.scenario_code)
+
+
+@router.post(
+    "/{slug}/finalize",
+    response_model=FinalizeRunResponse,
+    summary="Finalize & close out a run (governed terminal action)",
+)
+def finalize_run(
+    slug: str,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> FinalizeRunResponse:
+    """Terminal governed close-out of a run (`PilotService.finalize_run`) — the design's "Finalize
+    & close run" step.
+
+    After an award is FROZEN, the buyer takes this terminal action: the run is locked CLOSED (a
+    governed `CLOSED` audit event lands, entity = the cycle, actor = the authenticated user) and the
+    closing deliverables — the award notices (won) + rejection notices (not-won) — become available
+    (render-on-request; nothing is persisted, ADR-0018/E-42). This is NOT a delete (the run + its
+    governed records remain). 404 if the run doesn't exist; 409 (conflict) if it has no frozen award
+    yet (an un-awarded run can't be closed out). Idempotent: re-finalizing a closed run returns the
+    same summary and emits no second CLOSED event.
+    """
+
+    svc = service()
+    paths = resolve_paths(db, slug)
+    summary = svc.finalize_run(db, paths, actor=user.username)
+    return FinalizeRunResponse(
+        closed=summary.closed,
+        award_id=summary.award_id,
+        won_suppliers=summary.won_suppliers,
+        not_won_suppliers=summary.not_won_suppliers,
+    )
 
 
 @router.get(
