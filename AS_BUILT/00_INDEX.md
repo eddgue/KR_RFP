@@ -44,7 +44,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | B4 | `backend/app/domain/{eng,awd,norm,perf,audit}/**` | `files/B4_domain_eng_awd_norm_perf_audit.md` | ✅ DONE (1021 ln, 14 files) |
 | B5 | `backend/app/api/**` + `backend/app/core/**` | `files/B5_api_core.md` | ✅ DONE (896 ln, 33 files) |
 | B6 | `backend/app/{auth,comms,output,fiscal,cycle}/**` + any remaining `app/**` | `files/B6_auth_comms_output_fiscal_cycle.md` | ✅ DONE (1012 ln, 31 files) |
-| B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_schema.md` (+`B7_migrations.md`) | ◐ schema ✅ 1610 ln; migrations file in progress |
+| B7 | `backend/alembic/**` (20 migrations) + `db/baseline/**` (schema.sql, NAMING_MAP, README) | `files/B7_schema.md` + `files/B7_migrations.md` | ✅ DONE (1610+258 ln; 64 tables, 46 FKs, 20 migrations) |
 | B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | ✅ DONE (940 ln) |
 | B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | ✅ DONE (1047 ln, 44 files, 104 tests) |
 | B9 | `backend/scripts/**`, `backend/demo/**`, `backend/{pyproject.toml,Dockerfile,README,*.cfg,*.ini}` | `files/B9_scripts_demo_config.md` | ✅ DONE (1034 ln; converter mapped to the letter) |
