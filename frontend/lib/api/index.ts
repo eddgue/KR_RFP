@@ -3,7 +3,7 @@ export * from "./types";
 export { ApiError, apiFetch, apiUpload, apiDownload } from "./client";
 export type { ApiErrorCode } from "./client";
 export { login, logout, me } from "./auth";
-export { listRuns, createRun, getRun } from "./runs";
+export { listRuns, createRun, getRun, getStrategy, updateStrategy } from "./runs";
 export {
   listRunFiles,
   downloadRunFile,

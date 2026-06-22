@@ -64,6 +64,30 @@ export interface CreateRunRequest {
   rehearsal?: boolean;
 }
 
+// The run's EFFECTIVE engine strategy — resolved weights + the four safeties the
+// next analysis will use. GET /runs/{slug}/strategy.
+export interface Strategy {
+  weight_preset: string;
+  weight_price: number;
+  weight_coverage: number;
+  weight_historical: number;
+  weight_zrisk: number;
+  weight_continuity: number;
+  premium_ceiling: number;
+  coverage_floor: number;
+  conc_thresh: number;
+  max_sup_dc: number;
+}
+
+// PUT /runs/{slug}/strategy — set the preset + safeties (persisted onto the cycle).
+export interface UpdateStrategyPayload {
+  weight_preset: string;
+  premium_ceiling: number;
+  coverage_floor: number;
+  conc_thresh: number;
+  max_sup_dc: number;
+}
+
 // ---------------------------------------------------------------------------
 // Bid-intake contract (run files, setup, templates, bid import, bid review).
 // Field names mirror the backend exactly.

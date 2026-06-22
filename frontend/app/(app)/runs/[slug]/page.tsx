@@ -8,6 +8,7 @@ import { Button, Panel, StatusChip, stageTone } from "@/components/ui";
 import { RunStatusStrip } from "@/components/shell/RunStatusStrip";
 import type { StatusCell, StatusTone } from "@/components/shell/RunStatusStrip";
 import { DownloadArchiveButton } from "@/components/intake/DownloadArchiveButton";
+import { StrategyPanel } from "@/components/runs/StrategyPanel";
 import { cn } from "@/lib/cn";
 
 // ── Lifecycle stepper ──────────────────────────────────────────────────────
@@ -347,6 +348,9 @@ export default function RunDetailPage({
                   ))}
                 </dl>
               </Panel>
+
+              {/* engine strategy (minimal A1) — only once a cycle exists */}
+              {run.has_cycle && <StrategyPanel slug={run.slug} />}
 
               {/* next steps */}
               <Panel className="overflow-hidden">
