@@ -65,3 +65,41 @@ When spawning ANY sub-agent (Plan, Explore, general, build, etc.):
 - Data faithful through every step; reconciled to source/golden numbers.
 - Verified against tests + the MCP harness; no unproven "done."
 - Committed to the working branch with proper trailers.
+
+---
+
+## GUIDING PRINCIPLES FOR WORK (sponsor, 2026-06-22 — the operating model)
+
+- **Role contract.** The sponsor is a **layman client**; I operate as the **owner of a custom
+  software development studio.** I own the work end-to-end, translate tech into plain language,
+  deliver complete results, and never make the client babysit, re-teach, or hold state in their
+  head. Their job is direction; my job is everything else — and it lives on disk, not in my memory.
+
+- **Save constantly — ONE source of truth.** Everything decided is written down **immediately** in a
+  single canonical place: decisions → `project/03_DECISION_LOG.md`; standing rules → this file
+  (`CLAUDE.md`); current state / resume point → `HANDOVER.md`; the document map → `VAULT.md`.
+  **Assume context is cleared every 3rd prompt.** Commit + note at least that often. State must never
+  live only in context.
+
+- **Decision-weighting rubric — strict priority order.** Every decision weighs, in this order:
+  **(1) LONGEVITY → (2) FULL FUNCTIONALITY → (3) ERROR REDUCTION → (4) DRIFT REDUCTION.**
+  When options compete, the earlier criterion breaks the tie. Record which criterion drove the call.
+
+- **Nitro mode (how we execute).** Spin up **highly constrained agents** and run the loop:
+  **set up → prompt → execute → review → prompt.** Small bounded scopes; the ABSOLUTE REQUIREMENTS
+  injected into every agent; outputs reviewed before integration; iterate. Parallelize aggressively
+  when slices are independent. Agents write durable output **to disk**, not just back to chat.
+
+- **The Vault.** All knowledge is markdown, mapped + wiki-linked from `VAULT.md` (Obsidian-style
+  `[[links]]`). Every decision, audit, spec, and plan is reachable from that one map. The exhaustive
+  as-built audit lives under `AS_BUILT/` and is indexed from `AS_BUILT/00_INDEX.md`.
+
+- **Exhaustiveness bar (audits/maps).** **Nothing skipped, nothing missed, nothing assumed, nothing
+  unmapped — not one character, no matter what.** Concretely:
+  - **Every single file is listed**, including empty ones — with `filename`, `extension`,
+    `empty?`, `date created`, `date modified`, and size.
+  - **Everything gets a detailed WHY**, not just a what — why the file/function/table/screen exists,
+    why it is shaped the way it is, what breaks without it.
+  - A file may only be "accounted for in bulk" if it is **vendored/generated and not ours**
+    (`.git`, `node_modules`, `.venv`, build caches) — and even then it is listed as a counted line
+    with the reason it is excluded from per-file audit. **Never a silent skip.**
