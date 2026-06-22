@@ -86,6 +86,24 @@ Empty / loading / error / read-only(historic) for A1–A7 — the handoff alread
 - The **Closed / finalized** run state (run-status strip + Awards).
 - Consistent treatment for the run-status strip's four states and the `CLOSED`/`SIGNED_OFF` events in the audit trail.
 
+### B5 · Interaction-correctness rules (cross-cutting — "those sort of things")
+Apply to **every** data table / rollup (Alignment comparison, supplier comparison, the diligence
+tabs, awards, post-award). A **living list** — add as more surface; the spirit is *what you see is
+what's counted, never a stale full-table number.*
+- **Totals follow the filter** — when a table is filtered (DC / lot / supplier / TF), the totals,
+  subtotals, counts, %, and any rollup below reflect the **filtered set**, not the full table.
+  *(Sponsor's example.)*
+- **Percentages recompute against the filtered denominator** — supplier share, savings %, coverage %
+  recompute over the visible scope, not the full-table base.
+- **Sort preserves the locked grouping** — sorting orders rows *within* the DC primary grouping (per
+  the Handoff DataTable note); it never breaks the grouping.
+- **Empty filter → empty state, not a stale total** — a filter that yields no rows shows an empty
+  state; totals read 0 / "—", never the last full-table number.
+- **Selection reflects in the summary** — when cells are selected (e.g. the post-award reprice
+  picker), the running summary/impact reflects the selection, not the whole award.
+- **Drill / expand stays consistent** — counts and totals reconcile across grains (cell ↔ lot ↔ DC ↔
+  portfolio) when expanding/collapsing.
+
 ---
 
 ## C. MIDPOINTS — reconciliation-step surfaces (the "middle steps" no screen owns)

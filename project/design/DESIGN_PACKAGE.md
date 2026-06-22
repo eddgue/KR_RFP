@@ -63,6 +63,9 @@ In priority order (details, data bindings, decisions, access points + states are
 - Visualizations (B3): scenario capacity-feasibility, version-compare two-up + ROUND/FINAL marker +
   meeting/date labels (E-43), the deep-workbench diligence charts (E-41), price-movement (E-35, later).
 - Closed/finalized iconography + the run-status states (B4).
+- **Interaction-correctness rules (B5, cross-cutting):** **totals/%, counts, and rollups always follow
+  the filter/sort — never a stale full-table number** (sponsor's example); plus empty-filter states,
+  selection-reflects-summary, drill consistency. A living list ("those sort of things").
 
 ## 4b. Midpoints — the in-between reconciliation steps (full list in `DESIGN_REQUESTS.md` §C)
 
