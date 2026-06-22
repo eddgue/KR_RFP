@@ -49,9 +49,9 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | PENDING |
 | B9 | `backend/scripts/**`, `backend/demo/**`, `backend/{pyproject.toml,Dockerfile,README,*.cfg,*.ini}` | `files/B9_scripts_demo_config.md` | PENDING |
 | F1 | `frontend/app/**` (routes, layouts, globals) | `files/F1_app_routes.md` | ✅ DONE (794 ln) |
-| F2a | `frontend/components/{ui,shell,auth}/**` | `files/F2a_components_ui_shell_auth.md` | PENDING |
+| F2a | `frontend/components/{ui,shell,auth}/**` | `files/F2a_components_ui_shell_auth.md` | ✅ DONE (922 ln, 14 files) |
 | F2b | `frontend/components/{alignment,awards}/**` | `files/F2b_components_alignment_awards.md` | ✅ DONE (757 ln) |
-| F2c | `frontend/components/{intake,runs}/**` | `files/F2c_components_intake_runs.md` | PENDING |
+| F2c | `frontend/components/{intake,runs}/**` | `files/F2c_components_intake_runs.md` | ✅ DONE (915 ln) |
 | F3 | `frontend/lib/**` + `frontend/{next.config.mjs,tailwind.config.ts,package.json,tsconfig,Dockerfile,*.css}` | `files/F3_lib_config.md` | ✅ DONE (666 ln, 21 files) |
 | D1 | `project/0*_*.md` (charter→governance) + `project/{DATA_AND_PROCESS_MAP,DESIGN_BRIEF,NO_FILE_STORAGE_PLAN,PRE_TEST_READINESS,RECONCILIATION_SEAMS}.md` | `files/D1_project_governance.md` | PENDING |
 | D2 | `project/squads/**` | `files/D2_squads.md` | PENDING |
@@ -59,7 +59,7 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | D4 | `docs/adr/**` + `specs/**` | `files/D4_adr_specs.md` | PENDING |
 | D5 | `project/triage/**`, `reference/**`, `mcp/**`, `deploy/**`, `infra/**`, root `*.md`, `*.json`, `.mcp.json` | `files/D5_triage_ref_mcp_deploy_root.md` | PENDING |
 | D6 | `var/**` (design snapshots + run vault notes + demo outputs) | `files/D6_var_archives.md` | PENDING |
-| R1 | root config/dotfiles (`.gitignore`, `.dockerignore`, `.gcloudignore`, `.editorconfig`, `.github/**`, `docker-compose*.yml`, `.claude/**`) | `files/R1_root_config.md` | PENDING |
+| R1 | root config/dotfiles (`.gitignore`, `.dockerignore`, `.gcloudignore`, `.editorconfig`, `.github/**`, `docker-compose*.yml`, `.claude/**`) | `files/R1_root_config.md` | ✅ DONE (693 ln, 8 files; `.mcp.json` audited here — D5 should cross-ref not dup) |
 
 (Slices may be split further if a single agent can't be exhaustive within one pass — record the split here.)
 
