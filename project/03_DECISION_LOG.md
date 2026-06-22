@@ -294,6 +294,25 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D43 — Pricing modality + configurable cost breakdown, set on SETUP (governs the award) · **RATIFIED 2026-06-22, sub-decisions OPEN**
+**Why.** Today the price breakdown is a **hardcoded** set — `construct_price_from_parts` (E-39) fixes the arithmetic `FOB + delivery_surcharge + vegcool_surcharge − lot_discount − all_lot_discount` (All-In as override), and `template_schema.py` fixes the matching columns. Sponsor: the **basis of award is a buyer choice made on setup**, even when full data is available, and the cost lines that build a price are **not a fixed list** — some are optional and toggled, and new ones get added.
+**Decision (the parts that are settled).**
+- **Modality picker (on setup):** the buyer picks the award **basis** — **FOB / DELIVERED / XDOC** (cross-dock). The choice is deliberate even with full data (e.g. compare/award on a DELIVERED basis though FOB + freight are both held). The modality **governs price construction → scoring → supplier selection → the award**, so it is part of the strategy.
+- **Configurable cost breakdown (on setup):** the price breakdown is **extensible + toggleable**, not the hardcoded five — the buyer can **turn cost lines on/off** (e.g. **RPCs** — returnable plastic containers) and **add new cost lines** to the breakdown. Which lines are active is a setup choice that flows into the template (the columns suppliers fill), ingest (fan-in), and the construct-price sum.
+- **Absolute OR percent cost lines.** A cost line may come in as an **absolute $/case** or as a **percent applied at build** (a % of a defined base — e.g. a surcharge that is *N%* of FOB / of the running subtotal). So construct-price is no longer a flat sum of $ parts: a percent line **multiplies its base** in a defined order. Each cost line therefore carries a **unit ($ vs %)** and, when %, a **base + an apply-order**; the arithmetic must be deterministic and order-stable (E-39).
+- **Sealed + governing.** Modality + the active cost-line set are **part of `EngineConfig`** and therefore sealed into the input manifest (C2) — they govern awards, so they must be tamper-sealed and reproduced exactly.
+- **Where it lives:** the **setup / strategy screen (A1)** — alongside weights, safeties, exclusions, lenses.
+- **Interacts with D42 grain:** the modality decides which legs apply; the grain decides their period-vs-yearly collection (FOB by period, freight by period, others yearly). A toggled cost line inherits the grain rule for its type.
+**OPEN sub-decisions (the buyer's calls — confirm before building the engine/model):**
+1. **Modality scope** — one modality **per cycle**, or **per lot / per DC**, or a **comparison lens** (run FOB vs DELIVERED vs XDOC side by side like the A–G lenses)? Materially changes the data model + engine.
+2. **Modality ↔ supplier eligibility** — does modality **filter which suppliers can be picked** ("flows into the registry picking suppliers" — some suppliers only do FOB / only DELIVERED / can XDOC), or is it purely the comparison basis with all participants eligible?
+3. **XDOC cost legs** — what cost components define the cross-dock path, and are they collected (vs FOB/DELIVERED)?
+4. **Cost-line shape** — is the toggleable set a **fixed catalog** the buyer flips (FOB, Delivery, VegCool, RPC, …) or fully **user-defined** lines? Each line needs: **name · sign (add/subtract) · grain (D42 period-vs-yearly) · unit ($ vs %) · (if %) the base + apply-order**. The percent-base + ordering is the part most likely to need a sponsor rule.
+**Scope / build impact.** `EngineConfig` (add modality + active-cost-line config), `construct_price_from_parts` / `construct_price` (E-39 — modality-aware; **evaluate** a *configured* set instead of fixed params — sums **and** percent-of-base lines in a deterministic apply-order, not a flat sum), `template_schema.py` + `template_generator.py` (columns driven by the active set), `bid_ingester.py` + `period_fanout.py` (fan-in the active set at the D42 grain), the A1 setup/strategy UI (modality picker + cost-line manager), C2 (seal coverage). Build when setup/strategy + the template are next opened; current fixed model is not wrong, just not yet configurable.
+**Linked:** D42 (grain by surface), E-39 (canonical price construction), E-34 (supplier master / participant selection — modality eligibility), A1 (`project/design/DESIGN_REQUESTS.md` setup/strategy), C2 (config seal), `app/engine/formulas.py`, `app/domain/bid/template_schema.py`.
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |

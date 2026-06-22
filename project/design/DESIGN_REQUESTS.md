@@ -27,11 +27,14 @@ the 6 shipped screens — extend them). Ordered by the audit's tiers.
 
 ### A1 · Cycle Setup / Scope-review + Strategy config  — Tier 1 (the front-of-funnel hole)
 - **Purpose:** after the kickoff workbook is ingested, the buyer **reviews the cycle and sets the strategy** — today setup is a blind file upload with no review/config surface.
-- **Key elements:** the ingested scope read-back (DCs · lots · items · timeframes · invited suppliers · projected volumes); the **strategy panel** — weight preset (Balanced / Price / Coverage / Risk-averse / Custom + the 5 weights), the 4 safeties (premium ceiling, coverage floor, concentration threshold, max suppliers/DC), exclusions / preferred suppliers, lenses to run.
-- **User decision:** confirm scope · choose/tune the strategy before generating templates.
+- **Key elements:** the ingested scope read-back (DCs · lots · items · timeframes · invited suppliers · projected volumes); the **strategy panel** — weight preset (Balanced / Price / Coverage / Risk-averse / Custom + the 5 weights), the 4 safeties (premium ceiling, coverage floor, concentration threshold, max suppliers/DC), exclusions / preferred suppliers, lenses to run; **plus the pricing-basis controls (D43, below): the modality picker + the cost-line manager.**
+- **Pricing basis (D43) — part of the strategy panel:**
+  - **Modality picker** — **FOB / DELIVERED / XDOC** (cross-dock): the award **basis**. A deliberate choice even with full data; it **governs price construction → scoring → supplier selection → award**. Make the consequence legible ("awards will be decided on a DELIVERED basis").
+  - **Cost-line manager** — the price breakdown is **configurable**, not fixed: a list of cost lines the buyer can **toggle on/off** (e.g. **RPCs**) and **add to**. Each line shows: name · **add/subtract** · **grain** (per-period vs yearly, per D42) · **unit ($ /case or %)** · (if %) **the base it applies to + apply-order**. Changing the active set changes the template columns suppliers fill — surface that link.
+- **User decision:** confirm scope · choose the **modality** + the **active cost lines** · choose/tune the strategy — all before generating templates (the active cost lines drive the template columns).
 - **Access point:** the **"Overview"** nav slot (or a "Setup" tab on Run Detail). 
-- **Binds to:** `cyc.*` (scope) + `EngineConfig` (strategy). ADR-0016 strategy-agnostic.
-- **States:** pre-ingest (empty / "upload kickoff"), ingested (review), quarantined rows surfaced.
+- **Binds to:** `cyc.*` (scope) + `EngineConfig` (strategy **incl. modality + active cost-line set** — sealed by C2). ADR-0016 strategy-agnostic.
+- **States:** pre-ingest (empty / "upload kickoff"), ingested (review), quarantined rows surfaced; **pricing-basis: modality unset (must choose before templates) · cost line toggled off (greyed, won't appear in template) · percent line needing a base/order (flag).**
 
 ### A2 · Finalize / Close-out  — Tier 1 (backend is BUILT — C5)
 - **Purpose:** the terminal governed step — lock the run **Closed** and surface the **award (won) + rejection (not-won)** notices. Backend ready: `POST /runs/{slug}/finalize`, `CLOSED` event.
