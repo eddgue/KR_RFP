@@ -33,7 +33,7 @@ handled. New seams get added here the moment they're spotted; nothing in an in-b
 | Capacity statement → award cells | 1→1 | ✅ | E-38 (done) | Allocation vs stated ceiling, per dc×lot×tf. |
 | Price basis (FOB / all-in / landed) → scored price | n→1 | ✅ | E-39 (done) | `construct_price_from_parts`, defined once, referenced everywhere. |
 | **Routing modality (FOB / DELIVERED / XDOCK) → scored price** | n→1 | ◐ | **D43** | **Verified vs the manual potato model** (`MANUAL_MODEL_FINDINGS.md`): the manual's **"Routing"** = our modality; **XDOC = FOB + a supplier-stated VegCool XDOCK surcharge/case** (our `vegcool_surcharge`), via a named cross-dock — not a Kroger-second-leg split. Per lot/DC (D43). |
-| **Discount unit: manual `%` ↔ our `$`** | 1→1 | ◐ | **D43 / E-44** | **✅ RESOLVED (2026-06-22): discounts = percent-of-FOB.** Engine switches from `$`-subtraction to percent-of-FOB; the known-template adapter converts any legacy `$`. `MANUAL_MODEL_FINDINGS.md` finding A. |
+| **Discount unit: manual `%` ↔ our `$`** | 1→1 | ◐ | **D43 / E-44** | **✅ RESOLVED (2026-06-22):** a discount is a cost line (sign −) with a **buyer-selected base of one-or-many cost lines, set on setup**; unit `%` (preferred) or `$`. Engine: `−(pct × Σ selected base lines)`; adapter converts legacy `$`. `MANUAL_MODEL_FINDINGS.md` finding A. |
 | **RPC cost impact (+/- $/case) → scored price** | 1→1 | ⬜ | **D43** | Real toggleable cost line in the manual (gated by "RPCs? Y/N"); **no distinct engine field** today (rides inside All-In). Add as a D43 cost line. `MANUAL_MODEL_FINDINGS.md` finding B. |
 
 ## Newly-surfaced gaps (not previously on any list)
