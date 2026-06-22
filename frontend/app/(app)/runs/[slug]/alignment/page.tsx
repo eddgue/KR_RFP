@@ -26,6 +26,7 @@ import { ScenarioComparisonTable } from "@/components/alignment/ScenarioComparis
 import { ScenarioDetailPanel } from "@/components/alignment/ScenarioDetailPanel";
 import { FreezeAwardModal } from "@/components/alignment/FreezeAwardModal";
 import { SaveVersionModal } from "@/components/alignment/SaveVersionModal";
+import { ScenarioComparePanel } from "@/components/alignment/ScenarioComparePanel";
 
 // The alignment / scenario screen — the centerpiece. Run a round's analysis, pick
 // a sealed run, compare the seven lenses, inspect one cell-by-cell, and freeze the
@@ -71,6 +72,9 @@ export default function AlignmentPage({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savingVersion, setSavingVersion] = useState<AnalysisSummary | null>(null);
+
+  // Compare flow — the right-hand (saved) version to compare the working build against.
+  const [compareRightId, setCompareRightId] = useState<string | null>(null);
 
   const loadRun = useCallback(async () => {
     setRunLoading(true);
@@ -290,6 +294,16 @@ export default function AlignmentPage({
   const readOnly =
     !!selectedAnalysis && !!liveAnalysis && selectedAnalysis.version !== liveAnalysis.version;
 
+  // Compare: the other versions you can hold the working build against, + the chosen one.
+  const compareOptions = useMemo(
+    () => analyses.filter((a) => a.analysis_run_id !== selectedAnalysisId),
+    [analyses, selectedAnalysisId],
+  );
+  const compareRight = useMemo(
+    () => compareOptions.find((a) => a.analysis_run_id === compareRightId) ?? null,
+    [compareOptions, compareRightId],
+  );
+
   const anyFrozen = Object.keys(frozen).length > 0;
   const selectedComparisonRow = useMemo(
     () => comparison.find((r) => r.code === selectedCode) ?? null,
@@ -471,6 +485,35 @@ export default function AlignmentPage({
             onSaveVersion={handleSaveVersion}
             running={running}
           />
+
+          {/* compare the working build against a saved version (E-43, not a freeze) */}
+          {compareOptions.length > 0 && selectedAnalysis && (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-sm font-semibold text-text-strong">
+                Compare v{selectedAnalysis.version} with
+              </span>
+              <select
+                className="rounded-control border border-border bg-surface-card px-2.5 py-1.5 text-sm text-text focus:border-brand-primary"
+                value={compareRight?.analysis_run_id ?? ""}
+                onChange={(e) => setCompareRightId(e.target.value || null)}
+              >
+                <option value="">a saved version…</option>
+                {compareOptions.map((a) => (
+                  <option key={a.analysis_run_id} value={a.analysis_run_id}>
+                    {a.label ? `v${a.version} · ${a.label}` : `v${a.version}`}
+                  </option>
+                ))}
+              </select>
+              {compareRight && (
+                <Button variant="ghost" size="sm" onClick={() => setCompareRightId(null)}>
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
+          {compareRight && selectedAnalysis && (
+            <ScenarioComparePanel slug={slug} left={selectedAnalysis} right={compareRight} />
+          )}
 
           {selectedAnalysisId && (
             <>
