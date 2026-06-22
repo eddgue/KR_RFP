@@ -155,3 +155,132 @@ Strong, concrete evidence in Alignment (`passCell`/`passSup` filters, `matrixFoo
 - **B1 status-strip short labels + hash-chain drill-through**, **B5 totals-follow-the-filter** on Alignment.
 
 **Net:** Redesign3 closes nearly the whole lifecycle/midpoint/governance set on-baseline and is largely build-ready; the two outstanding gaps are both **E-44 (D43/D42) pricing items** — the A1 pricing basis and the B6 mixed-grain breakdown — which per **D44** are enhancements outside the first live test. A4 Comms stays parked.
+
+---
+
+## 5. Entry-points pass
+
+> **Scope:** §1–§4 reviewed each screen's **content**. This pass reviews **navigation / access** — can a
+> user actually *reach* each surface and action, and what entry points are **missing**? Read-and-assess
+> only; no frontend code changed. Sources: the Redesign3 sidebars/breadcrumbs/in-screen links
+> (`project/design/redesign3/*.dc.html`), the built `frontend/components/shell/AppShell.tsx`, the routes
+> under `frontend/app/`, and the "Access point" line in each `DESIGN_REQUESTS.md` brief.
+
+### How the Redesign3 IA is actually wired (the key finding)
+
+The sidebar is **two stacked nav groups** — a top **"Sourcing"** group (global) and, below a divider, a
+**run-scoped** group titled with the run name ("Field Tomatoes"). But the groups are **hard-coded per
+screen and are NOT consistent** — a surface generally appears only in *its own* file's sidebar plus a few
+neighbors:
+
+| Screen file | "Sourcing" (top) group | Run-scoped group |
+|---|---|---|
+| `Dashboard` / `Run Detail` | **Runs** only | Overview · Intake · Alignment · Awards — *(no Setup, Sign-off, Reconciliation)* |
+| `Cycle Setup` | Runs | **Setup** · Overview · Intake · Alignment · Awards |
+| `Bid Intake` / `Awards` | Runs | Overview · Intake · Alignment · Awards |
+| `Reconciliation` | Runs | Setup · Intake · **Reconciliation** · Alignment · Awards *(no Overview, no Sign-off)* |
+| `Sign-off` | Runs | Setup · Intake · Reconciliation · Alignment · Awards · **Sign-off** *(no Overview)* |
+| `Suppliers` / `Settings` | Runs · **Suppliers** · **Settings** | *(none — global screens)* |
+
+So the IA the designer *intends* is: **global** = Runs / Suppliers / Settings; **run-scoped tabs** = Setup ·
+Overview · Intake · Reconciliation · Alignment · Awards · Sign-off. But **no single sidebar shows that full
+set** — each file only self-links plus partial neighbors. Critically, the **hub a user lands on (`Run Detail`)
+omits Setup, Reconciliation, and Sign-off from its run-scoped tabs**, so in click-through those three are
+reachable only by already being on a sibling page that happens to list them. Breadcrumb is uniform
+(`Runs / <commodity> / <screen>`), but breadcrumbs only go *up*, never *across*.
+
+### 5.1 Surface / action → access-point table
+
+Legend: **R3 nav** = does a Redesign3 nav slot / run tab / per-row action reach it? · **Built** = present in
+the shipped console (`AppShell` + `frontend/app/` routes)?
+
+| Surface / action | Intended access point (DESIGN_REQUESTS) | In R3 nav/IA? | In BUILT console? | Verdict |
+|---|---|---|---|---|
+| **Cycle Setup** (A1) | "Overview" nav slot **or** a "Setup" tab on Run Detail | **partial** — a "Setup" run-tab exists, but **only on Cycle Setup / Recon / Sign-off**; **absent from Run Detail & Dashboard**, so unreachable from the landing hub | **no route** (`/runs/[slug]/setup` missing; minimal A1 lives inline as `StrategyPanel` on Run Detail) | **orphaned (from hub)** |
+| **Bid Intake** (A3/M1/M5) | Bid Intake → flexible import → mapping step | yes — "Intake" run-tab on every run screen | yes — `/runs/[slug]/intake` + "Bid intake" Next-step | **reachable** |
+| **Alignment** (B5/B6) | (workbench, run-scoped) | yes — "Alignment" run-tab everywhere | yes — `/runs/[slug]/alignment` | **reachable** |
+| **Awards / Finalize** (A2) | Awards screen + run-status "Closed" | yes — "Awards" run-tab everywhere | yes — `/runs/[slug]/awards` | **reachable** |
+| **Sign-off** (A5) | a "Sign-off" **step after Awards / before close-out** | **weak** — "Sign-off" tab appears **only in `Sign-off.dc.html`'s own sidebar**; **no Awards→Sign-off link**, not on Run Detail | **no route, no nav** | **orphaned** |
+| **Settings / Admin** (A6) | top-level "Settings/Admin" area | yes — global "Settings" slot (on Suppliers/Settings sidebars) | **no route, no nav** | **reachable in R3 / missing in build** |
+| **Suppliers** (A7) | a "Suppliers" area (master) **+ a step in Cycle Setup** | **partial** — global "Suppliers" slot exists; **the Cycle-Setup participant-pick step / link is not wired** | **no route, no nav** | **reachable (global) in R3 / missing in build** |
+| **Reconciliation** (M2/M3/M4) | rides with iTrade feed / Cycle Setup (no own brief slot) | **weak** — "Reconciliation" run-tab appears only on Recon & Sign-off sidebars; **not on Run Detail/Intake/Awards** | **no route, no nav** | **orphaned (from hub)** |
+| **finalize** (action) | "Finalize & close run" on Awards | yes — button on `Awards.dc.html` (`openFinalize`) | partial — Awards page exists; action TBD | **reachable** |
+| **freeze** (action) | Freeze on Alignment | yes — "Freeze award" on `Alignment` (`openFreeze`) | yes (Alignment) | **reachable** |
+| **record-adjustment** (action) | post-award on Awards | yes — "Record adjustment" on `Awards` (`openAdjust`) | partial (Awards) | **reachable** |
+| **generate template** (action) | gated button on Cycle Setup | yes — "Generate templates →" on `Cycle Setup` | **no** (no Setup surface built) | **reachable in R3 only** |
+| **run analysis** (action) | from Bid Intake | yes — "Run analysis →" link (Intake → Alignment) | n/a inline | **reachable** |
+| **save-version / compare** (action) | within Alignment | yes — version toggle + "Compare two versions" on `Alignment`; sealed v0 via Freeze | partial | **reachable** |
+
+> Note: all six **in-flow actions** are wired as **in-screen buttons** on the surface that owns them
+> (freeze→Alignment, finalize/record-adjustment→Awards, generate-template→Cycle Setup, run-analysis→Intake,
+> save-version→Alignment). None depends on a nav slot — so the action entry points are sound *as long as the
+> owning surface itself is reachable.* The risk is entirely at the **surface** level, not the action level.
+
+### 5.2 Orphaned surfaces (exist in R3, no reliable way in)
+
+- **Cycle Setup (A1)** — *the front-of-funnel surface.* Has a "Setup" run-tab, but that tab is **missing from
+  Run Detail and Dashboard** (the two screens a user actually lands on). There is **no per-row "Set up"
+  action** on the Dashboard run list and **no "Setup" link in Run Detail's body** (Run Detail jumps straight
+  to Intake/Alignment/Awards). Net: you can only reach Setup if you're *already* on Cycle Setup, Recon, or
+  Sign-off. **Effectively orphaned from the entry hub.**
+- **Sign-off (A5)** — **the worst case.** The brief says "a step *after Awards*," but **Awards has no
+  Sign-off link** (Awards' run-tabs are Overview/Intake/Alignment/Awards). Sign-off appears **only in its own
+  sidebar**. There is no governed hand-off from Awards/Freeze into the approver gate → a user who freezes an
+  award has **no in-product path** to the sign-off queue. **True orphan.**
+- **Reconciliation (M2/M3/M4)** — appears as a run-tab only on Recon's & Sign-off's own sidebars; **not on
+  Run Detail, Intake, or Awards.** Since the seams *ride with* intake/iTrade, the natural entry is "attention
+  needed → resolve," but **Run Detail's activity board and Intake do not surface a link into Reconciliation**
+  (only Cycle Setup's quarantine row has a generic "Resolve" → Bid Intake, not → Reconciliation). **Orphaned
+  from the hub.**
+- **Settings / Suppliers** — **not orphaned within R3** (they live in the global "Sourcing" group on the
+  Suppliers/Settings sidebars), but that group is only rendered on *those two* files — a user on a run screen
+  doesn't see Suppliers/Settings in their sidebar at all, so cross-navigation to the global area from inside a
+  run is **one-way-ish** (you can get to Runs, but the global Suppliers/Settings slots aren't present on
+  run-scoped screens' top group). Minor IA inconsistency rather than a true orphan.
+- **The Cycle-Setup participant-pick step (A7 half)** — the brief asks for Suppliers access **both** as a
+  global area **and** as "a step in Cycle Setup." The global area exists; the **in-Setup participant-picker
+  entry is not wired** (no link from Cycle Setup into the supplier picker). Half-covered.
+
+### 5.3 BUILT vs DESIGNED nav gap (what the build must add)
+
+The shipped `AppShell.tsx` has **exactly one nav item — "Runs"** (the `NAV` array has a single entry). Routes
+that exist: `login`, `/` (dashboard/runs list), `/runs/[slug]`, `/runs/[slug]/intake`, `/runs/[slug]/alignment`,
+`/runs/[slug]/awards`. Everything the redesign adds is **un-routed and un-navigated** today:
+
+| New surface | Where it belongs | Build work needed |
+|---|---|---|
+| **Settings / Admin** (A6) | **top-level** nav slot (global) | add `Settings` to `AppShell` `NAV` + route `frontend/app/(app)/settings/` |
+| **Suppliers** (A7) | **top-level** nav slot (global) | add `Suppliers` to `NAV` + route `frontend/app/(app)/suppliers/` |
+| **Cycle Setup** (A1) | **run-scoped tab** (and/or per-run-row action on Dashboard) | route `frontend/app/(app)/runs/[slug]/setup/` + a run-scoped tab bar (none exists today — Run Detail uses ad-hoc "Next steps" buttons, not tabs) |
+| **Reconciliation** (M2–M4) | **run-scoped tab** | route `frontend/app/(app)/runs/[slug]/reconciliation/` + tab + an "attention" entry from Intake/Run Detail |
+| **Sign-off** (A5) | **run-scoped tab** *after* Awards + an Awards→Sign-off action | route `frontend/app/(app)/runs/[slug]/sign-off/` + tab + a hand-off button on Awards |
+| (Comms A4) | run-scoped — **parked** | not now (D44 / parked) |
+
+Structural note: the built console has **no run-scoped tab component at all** — it navigates run sub-pages via
+the "Next steps" button stack and a back-breadcrumb on Run Detail. Redesign3 assumes a **persistent
+run-scoped tab rail** (Setup·Overview·Intake·Recon·Alignment·Awards·Sign-off). That rail is the single
+biggest *navigation* build item, separate from the per-surface page work.
+
+### 5.4 Global IA — open questions / unclear
+
+- **Is the run-scoped tab set canonical?** The designer's files imply a 7-tab run rail, but no two sidebars
+  agree on it. The designer should pin **one** ordered run-tab set and render it identically on every
+  run-scoped screen (incl. Run Detail), so Setup / Reconciliation / Sign-off aren't dependent on which sibling
+  you came from.
+- **Global Suppliers/Settings vs run scope:** Suppliers is meant to be **both** global (master) and a
+  per-run step (participant pick). The global half is shown; the **per-run entry is unwired** — clarify the
+  two access points and how they relate (does the Cycle-Setup picker deep-link into the global Suppliers area
+  filtered to the cycle, or is it an embedded step?).
+- **Reconciliation: run-scoped or global?** It's drawn as a run-tab (run-scoped), which fits the seams, but
+  the brief frames the midpoints as "ride with intake / iTrade feed." Confirm it's run-scoped, and decide the
+  **trigger**: how does a user *learn* a seam needs attention and get there — an attention badge on the
+  Run Detail activity board / Intake ("N reconciliations need attention → Reconciliation") is the missing
+  entry. Today only Cycle Setup's quarantine row has a "Resolve" link, and it points at **Bid Intake**, not
+  Reconciliation.
+- **How do you reach a midpoint (M1–M6) when a seam needs attention?** The §1 review confirmed M1/M5 live in
+  Intake, M2/M3/M4 in Reconciliation, M6 in Cycle Setup — but there is **no global "attention" surface** that
+  routes a user *to the right midpoint*. The nav has an "open-seam counter" badge concept (noted in §2) but
+  it isn't wired to a destination on the hub screens.
+- **Sign-off ordering:** if Sign-off is "after Awards / before close-out," the **finalize** action on Awards
+  should arguably be **gated behind Sign-off** (author≠approver) — but the two surfaces have no link between
+  them, so the governance sequence isn't expressed in the navigation.
