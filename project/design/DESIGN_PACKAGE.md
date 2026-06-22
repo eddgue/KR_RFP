@@ -17,6 +17,19 @@ gaps** — the missing lifecycle screens (**§3** here / **§A** in `DESIGN_REQU
 midpoints** — the in-between reconciliation steps no screen owns (**§4b** here / **§C** in
 `DESIGN_REQUESTS.md`). Everything else (corrections, visuals, interaction rules) supports these three.
 
+> ## STATUS — 2026-06-22: what's REBUILT vs what's still to DESIGN
+> - **✅ REBUILT in code (E-26):** the **six baseline screens** are now implemented in Next.js + Tailwind
+>   on the locked v2 tokens — **Login · Dashboard · Run Detail · Bid Intake · Alignment · Awards** — incl.
+>   the navy shell, the persistent run-status strip, and the governed **AssertModal** flow for
+>   **freeze / adjust / finalize (close-out)**. These are the **live-test surface**; the design baseline
+>   is locked, not re-opened.
+> - **🎨 STILL TO DESIGN (this pack):** the **missing lifecycle screens** (§3 / §A — esp. **A1 Cycle
+>   Setup / Strategy**, which now also carries the **modality picker + cost-line manager**, D43) + the
+>   **midpoints** (§4b / §C, M1–M6) + the grain-by-surface treatment (**§B6**, mixed-grain analysis).
+> - **Why it matters:** the rebuilt six let a cycle run end-to-end; the missing set is what makes setup,
+>   reconciliation, and comms complete. Decisions behind the new asks: **D42** (grain by surface), **D43**
+>   (pricing modality + configurable cost breakdown), **D44** (live-test spec freeze). See `03_DECISION_LOG.md`.
+
 ## 0. Guiding principle (read first) — data-driven: every control is a data operation
 
 **This is a data-driven process. A "button" is never just a UI state — it is a DATA operation.** For
