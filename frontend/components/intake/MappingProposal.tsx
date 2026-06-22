@@ -36,29 +36,29 @@ export function MappingProposal({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
-          <p className="text-2xs uppercase tracking-wide text-ink-subtle">Sheet</p>
-          <p className="mt-0.5 text-sm font-medium text-ink">
+          <p className="text-2xs uppercase tracking-wide text-text-subtle">Sheet</p>
+          <p className="mt-0.5 text-sm font-semibold text-text-strong">
             {proposal.sheet_name}
           </p>
         </div>
         <div>
-          <p className="text-2xs uppercase tracking-wide text-ink-subtle">
+          <p className="text-2xs uppercase tracking-wide text-text-subtle">
             Header row
           </p>
-          <p className="mt-0.5 text-sm font-medium text-ink tabular-nums">
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-text-strong">
             {proposal.header_row}
           </p>
         </div>
         <div>
-          <p className="text-2xs uppercase tracking-wide text-ink-subtle">
+          <p className="text-2xs uppercase tracking-wide text-text-subtle">
             Mappings
           </p>
-          <p className="mt-0.5 text-sm font-medium text-ink tabular-nums">
+          <p className="mt-0.5 text-sm font-semibold tabular-nums text-text-strong">
             {entries.length}
           </p>
         </div>
         <div>
-          <p className="text-2xs uppercase tracking-wide text-ink-subtle">
+          <p className="text-2xs uppercase tracking-wide text-text-subtle">
             Confidence
           </p>
           <p className="mt-0.5">
@@ -73,7 +73,7 @@ export function MappingProposal({
         <Alert tone="info">{proposal.summary}</Alert>
       )}
 
-      <div className="rounded-md border border-line">
+      <div className="overflow-hidden rounded-card border border-border">
         <Table>
           <THead>
             <TR>
@@ -87,19 +87,19 @@ export function MappingProposal({
           <TBody>
             {entries.length === 0 ? (
               <TR>
-                <TD className="text-ink-subtle" colSpan={5}>
+                <TD className="text-text-subtle" colSpan={5}>
                   No fields were mapped.
                 </TD>
               </TR>
             ) : (
               entries.map(([key, m]) => (
                 <TR key={key}>
-                  <TD className="font-medium">{m.field}</TD>
-                  <TD className="text-ink-muted">{m.source_header}</TD>
-                  <TD className="text-right tabular-nums text-ink-muted">
+                  <TD className="font-semibold">{m.field}</TD>
+                  <TD className="text-text-muted">{m.source_header}</TD>
+                  <TD className="text-right tabular-nums text-text-muted">
                     {m.column_index}
                   </TD>
-                  <TD className="text-ink-muted">{m.basis}</TD>
+                  <TD className="text-text-muted">{m.basis}</TD>
                   <TD>
                     <StatusChip tone={confidenceTone(m.confidence)}>
                       {m.confidence}
@@ -114,10 +114,10 @@ export function MappingProposal({
 
       {proposal.ambiguities.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-medium text-ink">Ambiguities</p>
-          <ul className="flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <p className="text-sm font-semibold text-text-strong">Ambiguities</p>
+          <ul className="flex flex-col gap-1 rounded-card border border-warning/30 bg-warning-bg px-4 py-3 text-sm text-warning">
             {proposal.ambiguities.map((a, i) => (
-              <li key={i} className="list-disc list-inside">
+              <li key={i} className="list-inside list-disc">
                 {a}
               </li>
             ))}

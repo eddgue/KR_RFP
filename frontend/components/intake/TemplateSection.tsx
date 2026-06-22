@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { ApiError, generateTemplate } from "@/lib/api";
 import type { KanbanResponse, RunFile } from "@/lib/api";
-import { Button, Panel, PanelHeader } from "@/components/ui";
+import { Button, Panel, StatusChip } from "@/components/ui";
 import { Alert } from "./Alert";
 import { RunFilesTable } from "./RunFilesTable";
+import { StepHeader } from "./StepHeader";
 
 export interface TemplateSectionProps {
   slug: string;
@@ -34,6 +35,8 @@ export function TemplateSection({
     (f) => f.kind === "input" && f.name.includes(`round${round}_bid_template`),
   );
 
+  const done = templateFiles.length > 0 || Boolean(lastFilename);
+
   async function onGenerate() {
     setError(null);
     setGate(null);
@@ -59,17 +62,24 @@ export function TemplateSection({
 
   return (
     <Panel>
-      <PanelHeader
-        title="2 · Bid template"
+      <StepHeader
+        step={2}
+        title="Bid template"
         description={`Generate the round ${round} bid template for suppliers, then download it.`}
+        state={disabled ? "todo" : done ? "done" : "current"}
         actions={
-          <Button
-            onClick={() => void onGenerate()}
-            loading={submitting}
-            disabled={disabled}
-          >
-            Generate template
-          </Button>
+          <>
+            {done && <StatusChip tone="green">Complete</StatusChip>}
+            <Button
+              variant={done ? "secondary" : "primary"}
+              size="sm"
+              onClick={() => void onGenerate()}
+              loading={submitting}
+              disabled={disabled}
+            >
+              {done ? "Regenerate" : "Generate template"}
+            </Button>
+          </>
         }
       />
       <div className="flex flex-col gap-4 px-5 py-5">

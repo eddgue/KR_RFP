@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ApiError, getRun, listRunFiles } from "@/lib/api";
 import type { Kanban, RunDetail, RunFile } from "@/lib/api";
 import { KANBAN_BUCKETS } from "@/lib/api";
-import { Button, Panel, StatusChip, stageTone } from "@/components/ui";
-import { KanbanBoard } from "@/components/runs/KanbanBoard";
+import { Button, Panel } from "@/components/ui";
+import { RunStatusStrip } from "@/components/shell/RunStatusStrip";
+import type { StatusCell } from "@/components/shell/RunStatusStrip";
+import { cn } from "@/lib/cn";
 import { SetupSection } from "@/components/intake/SetupSection";
 import { TemplateSection } from "@/components/intake/TemplateSection";
 import { ImportSection } from "@/components/intake/ImportSection";
@@ -24,6 +26,15 @@ function normalizeKanban(raw: Record<string, string[]>): Kanban {
 }
 
 const MAX_ROUND = 6;
+
+function statusCells(run: RunDetail, round: number): StatusCell[] {
+  return [
+    { label: "RUN STATE", value: `Round ${round} intake`, tone: "live" },
+    { label: "ANALYSIS", value: "Not yet sealed", tone: "idle" },
+    { label: "AWARD", value: "Not yet frozen", tone: "idle" },
+    { label: "AUDIT", value: "Current", tone: "live" },
+  ];
+}
 
 export default function RunIntakePage({
   params,
@@ -109,22 +120,22 @@ export default function RunIntakePage({
 
   return (
     <div className="flex flex-col gap-5">
-      <nav className="text-sm text-ink-muted">
-        <Link href="/" className="hover:text-accent">
+      <nav className="flex items-center gap-2 text-sm text-text-muted">
+        <Link href="/" className="hover:text-brand-primary">
           Runs
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <Link href={`/runs/${slug}`} className="hover:text-accent">
+        <span className="text-text-faint">/</span>
+        <Link href={`/runs/${slug}`} className="hover:text-brand-primary">
           {run?.commodity ?? slug}
         </Link>
-        <span className="px-1.5 text-ink-subtle">/</span>
-        <span className="text-ink">Bid intake</span>
+        <span className="text-text-faint">/</span>
+        <span className="font-bold text-text-strong">Bid intake</span>
       </nav>
 
       {loading && (
         <Panel>
-          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-ink-muted">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-text-muted">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-border-hairline border-t-brand-primary" />
             Loading run…
           </div>
         </Panel>
@@ -133,10 +144,10 @@ export default function RunIntakePage({
       {!loading && error && (
         <Panel>
           <div className="px-5 py-16 text-center">
-            <p className="text-sm font-medium text-ink">
+            <p className="text-sm font-semibold text-text-strong">
               {error.notFound ? "Run not found" : "Something went wrong"}
             </p>
-            <p className="mt-1 text-sm text-ink-muted">{error.message}</p>
+            <p className="mt-1 text-sm text-text-muted">{error.message}</p>
             <div className="mt-4 flex justify-center gap-2">
               {!error.notFound && (
                 <Button variant="secondary" size="sm" onClick={() => void loadRun()}>
@@ -155,50 +166,60 @@ export default function RunIntakePage({
 
       {!loading && !error && run && (
         <>
-          <Panel className="p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold text-ink">
-                    {run.commodity}
-                  </h1>
-                  {run.rehearsal && <StatusChip tone="amber">Rehearsal</StatusChip>}
-                  <StatusChip tone={stageTone(run.stage)}>{run.stage}</StatusChip>
-                </div>
-                <p className="mt-1 text-sm text-ink-muted">
-                  {run.label} · Bid intake
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-3">
-                <DownloadArchiveButton slug={slug} />
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="round-select"
-                    className="text-2xs uppercase tracking-wide text-ink-subtle"
-                  >
-                    Round
-                  </label>
-                  <select
-                    id="round-select"
-                    value={round}
-                    onChange={(e) => {
-                      setRound(Number(e.target.value));
-                      // Round-scoped progress resets when switching rounds.
-                      setTemplateDoneThisSession(false);
-                    }}
-                    className="h-8 rounded-md border border-line-strong bg-white px-2 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-                  >
-                    {Array.from({ length: MAX_ROUND }, (_, i) => i + 1).map((r) => (
-                      <option key={r} value={r}>
+          {/* page header + round selector */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-extrabold tracking-tight text-text-strong">
+                Bid intake
+              </h1>
+              <p className="mt-1 text-sm text-text-muted">
+                {run.commodity} · {run.label} — prepare templates, then load
+                supplier bids for analysis.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <DownloadArchiveButton slug={slug} size="sm" />
+              <div className="flex items-center gap-2">
+                <span className="text-2xs font-bold uppercase tracking-wider text-text-subtle">
+                  Round
+                </span>
+                <div
+                  role="group"
+                  aria-label="Select round"
+                  className="flex overflow-hidden rounded-control border border-border bg-surface-card"
+                >
+                  {Array.from({ length: MAX_ROUND }, (_, i) => i + 1).map((r) => {
+                    const active = r === round;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          setRound(r);
+                          // Round-scoped progress resets when switching rounds.
+                          setTemplateDoneThisSession(false);
+                        }}
+                        className={cn(
+                          "h-8 w-9 border-l border-border text-sm font-bold tabular-nums transition-colors first:border-l-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/40",
+                          active
+                            ? "bg-brand-primary text-white"
+                            : "bg-surface-card text-text-muted hover:bg-surface-muted",
+                        )}
+                      >
                         {r}
-                      </option>
-                    ))}
-                  </select>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          </Panel>
+          </div>
 
+          {/* persistent run-status strip */}
+          <RunStatusStrip cells={statusCells(run, round)} />
+
+          {/* sequential STEP cards (4-step wizard wiring preserved) */}
           <SetupSection
             slug={slug}
             files={files}
@@ -237,13 +258,6 @@ export default function RunIntakePage({
           />
 
           <ReviewSection slug={slug} round={round} refreshKey={bidsRefreshKey} />
-
-          {kanban && (
-            <div>
-              <h2 className="mb-3 text-sm font-semibold text-ink">Board</h2>
-              <KanbanBoard kanban={kanban} />
-            </div>
-          )}
         </>
       )}
     </div>

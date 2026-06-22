@@ -9,13 +9,12 @@ export interface AlertProps {
   className?: string;
 }
 
-// Inline message box — reuses the exact error treatment already used in the app
-// (rounded-md border bg-red-50 …) and extends it to success / info / warning.
+// Inline message box — locked v2 tokens. Colour is always backed by text.
 const tones: Record<AlertTone, string> = {
-  error: "border-red-200 bg-red-50 text-red-700",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  info: "border-line bg-surface-subtle text-ink-muted",
-  warning: "border-amber-200 bg-amber-50 text-amber-700",
+  error: "border-danger/30 bg-danger-bg text-danger",
+  success: "border-success/30 bg-success-bg text-success",
+  info: "border-border bg-surface-subtle text-text-muted",
+  warning: "border-warning/30 bg-warning-bg text-warning",
 };
 
 export function Alert({ tone, children, className }: AlertProps) {
@@ -23,7 +22,7 @@ export function Alert({ tone, children, className }: AlertProps) {
     <div
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "rounded-md border px-3 py-2 text-sm",
+        "rounded-control border px-3 py-2 text-sm",
         tones[tone],
         className,
       )}

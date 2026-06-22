@@ -46,7 +46,7 @@ export function RunFilesTable({ slug, files, emptyLabel }: RunFilesTableProps) {
 
   if (files.length === 0) {
     return (
-      <p className="px-1 py-6 text-center text-sm text-ink-subtle">
+      <p className="px-1 py-6 text-center text-sm text-text-subtle">
         {emptyLabel ?? "No files yet."}
       </p>
     );
@@ -68,16 +68,16 @@ export function RunFilesTable({ slug, files, emptyLabel }: RunFilesTableProps) {
         <TBody>
           {files.map((f) => (
             <TR key={f.name}>
-              <TD className="font-medium">{f.name}</TD>
+              <TD className="font-semibold">{f.name}</TD>
               <TD>
                 <StatusChip tone={f.kind === "output" ? "accent" : "slate"}>
                   {f.kind}
                 </StatusChip>
               </TD>
-              <TD className="text-right tabular-nums text-ink-muted">
+              <TD className="text-right tabular-nums text-text-muted">
                 {formatBytes(f.size_bytes)}
               </TD>
-              <TD className="text-ink-muted">{formatTimestamp(f.modified)}</TD>
+              <TD className="text-text-muted">{formatTimestamp(f.modified)}</TD>
               <TD className="text-right">
                 <Button
                   variant="secondary"
@@ -86,6 +86,17 @@ export function RunFilesTable({ slug, files, emptyLabel }: RunFilesTableProps) {
                   disabled={downloading !== null && downloading !== f.name}
                   onClick={() => void download(f.name)}
                 >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    aria-hidden
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
                   Download
                 </Button>
               </TD>
