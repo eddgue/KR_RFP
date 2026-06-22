@@ -327,11 +327,27 @@ deploy_frontend() {
 # 7. wire the backend CORS allowed-origin to the deployed frontend URL (a cheap env update)
 # --------------------------------------------------------------------------------------------
 wire_cors() {
-  say "Wiring backend CORS_ALLOW_ORIGINS to the frontend URL"
+  say "Wiring backend CORS_ALLOW_ORIGINS to the frontend URL(s)"
+  # Cloud Run serves each service under TWO interchangeable hostname spellings: the project-number
+  # form (SERVICE-PROJECTNUMBER.REGION.run.app) and a hashed form (SERVICE-HASH-REGIONCODE.a.run.app).
+  # status.url returns only ONE of them, but the browser may be on either, and credentialed CORS
+  # matches the EXACT origin string — so trusting just status.url breaks login from the other URL.
+  # Allow both: status.url AND the deterministic project-number form (the hashed form is not
+  # constructible, but is what status.url typically returns, so the pair covers both in practice).
+  local project_number alt_url origins
+  project_number="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+  alt_url="https://${FRONTEND_SVC}-${project_number}.${REGION}.run.app"
+  if [ "${alt_url}" = "${FRONTEND_URL}" ]; then
+    origins="${FRONTEND_URL}"
+  else
+    origins="${FRONTEND_URL},${alt_url}"
+  fi
+  # ^@^ switches gcloud's env-var delimiter to '@' so the comma stays INSIDE the value (one var,
+  # comma-separated origins) instead of being read as a separator between two env vars.
   gcloud run services update "${BACKEND_SVC}" \
     --region "${REGION}" --project "${PROJECT_ID}" \
-    --update-env-vars "CORS_ALLOW_ORIGINS=${FRONTEND_URL}"
-  info "CORS now allows ${FRONTEND_URL}"
+    --update-env-vars "^@^CORS_ALLOW_ORIGINS=${origins}"
+  info "CORS now allows: ${origins}"
 }
 
 # --------------------------------------------------------------------------------------------
