@@ -72,8 +72,10 @@ states, non-happy-path, field reference, a11y, Lucide). View locally via a quick
 In priority order (details, data bindings, decisions, access points + states are in `DESIGN_REQUESTS.md`):
 
 - **A1 · Cycle Setup / Scope-review + Strategy config** — the front-of-funnel hole: review the
-  ingested cycle + set the strategy (weights/preset, the 4 safeties, exclusions/preferred, lenses).
-  Today setup is a blind file upload. **Top ask.**
+  ingested cycle + set the strategy (weights/preset, the 4 safeties, exclusions/preferred, lenses)
+  **+ the pricing basis (E-44/D43): the modality picker (FOB / DELIVERED / XDOC, per lot/DC) + the
+  cost-line manager (buyer-selected, toggleable, extensible — sign · grain · $/% · per-line %-base;
+  never guesses).** Today setup is a blind file upload. **Top ask.**
 - **A2 · Finalize / Close-out** — the backend is **already built**; design the AssertModal + the
   "Closed" run state. After a FROZEN award, lock the run and surface the award (won) + rejection
   (not-won) notices.
@@ -90,6 +92,9 @@ In priority order (details, data bindings, decisions, access points + states are
 - Non-happy-path states (empty / loading / error / read-only) for the new screens (B2).
 - Visualizations (B3): scenario capacity-feasibility, version-compare two-up + ROUND/FINAL marker +
   meeting/date labels (E-43), the deep-workbench diligence charts (E-41), price-movement (E-35, later).
+- **Grain by surface (B6 / E-44):** the **mixed-grain analysis cost breakdown** — each cost component at
+  its own grain, **horizontal/chronological** (period columns + per-period total-landed + a toggleable
+  timeframe-total column; not stacked), while the scored price/awards stay timeframe-grain. Cross-cutting.
 - Closed/finalized iconography + the run-status states (B4).
 - **Interaction-correctness rules (B5, cross-cutting):** **totals/%, counts, and rollups always follow
   the filter/sort — never a stale full-table number** (sponsor's example); plus empty-filter states,
