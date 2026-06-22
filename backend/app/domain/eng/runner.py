@@ -470,21 +470,11 @@ def _inputs_manifest(inputs: EngineInputs) -> dict[str, object]:
     return {
         "cycle_id": inputs.cycle_id,
         "round_code": inputs.round_code,
-        "config": {
-            "preset": inputs.config.preset.value,
-            "weights": [
-                str(inputs.config.weight_price),
-                str(inputs.config.weight_coverage),
-                str(inputs.config.weight_historical),
-                str(inputs.config.weight_zrisk),
-                str(inputs.config.weight_continuity),
-            ],
-            "max_sup_dc": inputs.config.max_sup_dc,
-            "conc_thresh": str(inputs.config.conc_thresh),
-            "global_premium_threshold": str(inputs.config.global_premium_threshold),
-            "coverage_floor": str(inputs.config.coverage_floor),
-            "lenses": [c.value for c in inputs.config.lenses],
-        },
+        # Seal the FULL frozen config (not a hand-picked subset) so the input hash is tamper-evident
+        # over EVERY strategy input — weights, preset, all thresholds + premium bands, the safeties,
+        # exclusions, custom overrides, preferred rules, per-lot thresholds — and can't drift when a
+        # new config field is added (C2). The dump is canonical + stable; the hasher sorts keys.
+        "config": inputs.config.model_dump(mode="json"),
         "bids": sorted(
             [
                 [b.bid_id, b.supplier_id, b.dc_no, b.lot_id, b.tf_code, str(b.landed_cost_per_case)]

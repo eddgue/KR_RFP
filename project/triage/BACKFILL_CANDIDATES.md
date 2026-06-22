@@ -73,7 +73,7 @@ decided in layman terms; if not (internal / already covered), dropped.
 | Candidate | Decision | Date |
 |---|---|---|
 | C1 — auditor verdicts | **Dropped** — internal record, no user/analysis impact | 2026-06-22 |
-| C2 — input fingerprint completeness | **Pending** — re-explained in plain terms; awaiting sponsor yes/no on tightening the tamper-seal to cover exclusions/thresholds | 2026-06-22 |
+| C2 — input fingerprint completeness | **DONE** — sponsor approved; `_inputs_manifest` now seals the full `EngineConfig` (`model_dump`), tamper-evident over all inputs. 4 tests; As-Built v1.25 | 2026-06-22 |
 | C3 — CI hardening | **Dropped** — dev/infra, no user/analysis impact | 2026-06-22 |
 | C4 — "Breaches" label | **DONE** — renamed to "Over capacity" on the current comparison screen (`ScenarioComparisonTable.tsx`) | 2026-06-22 |
 | C5 — in-app close-out | **APPROVED → build** — finalize/close-out action + route (governed close event, award/rejection notices render on request, gated on a frozen award); pairs with E-22/E-43 + the design's finalize step. Promote to backlog on build. | 2026-06-22 |
