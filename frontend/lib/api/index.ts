@@ -20,5 +20,6 @@ export {
   getScenarioComparison,
   getScenarioDetail,
   freezeAward,
+  nameVersion,
 } from "./alignment";
 export { listAwards, getAward, recordAdjustment, finalizeRun } from "./awards";

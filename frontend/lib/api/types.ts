@@ -176,6 +176,8 @@ export interface AnalysisSummary {
   round_number: number;
   engine_version: string;
   sealed_at: string; // ISO timestamp
+  // Optional savepoint name (E-43); null for an unnamed run.
+  label: string | null;
 }
 
 // POST /runs/{slug}/rounds/{round}/analysis — seals eng.* + writes the workbook.

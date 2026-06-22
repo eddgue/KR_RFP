@@ -57,6 +57,18 @@ export function getScenarioDetail(
   );
 }
 
+// PATCH /runs/{slug}/analysis/{id} -> name a sealed version (savepoint, NOT a freeze).
+export function nameVersion(
+  slug: string,
+  analysisRunId: string,
+  label: string,
+): Promise<AnalysisSummary> {
+  return apiFetch<AnalysisSummary>(
+    `${run(slug)}/analysis/${encodeURIComponent(analysisRunId)}`,
+    { method: "PATCH", body: { label } },
+  );
+}
+
 // POST /runs/{slug}/awards/freeze -> { award_id, scenario_code }.
 export function freezeAward(
   slug: string,

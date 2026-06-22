@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Button,
   Panel,
   PanelHeader,
   StatusChip,
@@ -23,12 +24,15 @@ export function AnalysisRunsPanel({
   selectedId,
   onSelect,
   onRun,
+  onSaveVersion,
   running,
 }: {
   analyses: AnalysisSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onRun: (round: number) => void;
+  // Open the lightweight "save this version" (savepoint) flow for a sealed run.
+  onSaveVersion: (a: AnalysisSummary) => void;
   running: boolean;
 }) {
   // The live version is the most recently sealed (highest version); earlier seals are
@@ -61,6 +65,9 @@ export function AnalysisRunsPanel({
               <TH>Round</TH>
               <TH>Engine</TH>
               <TH>Sealed</TH>
+              <TH>
+                <span className="sr-only">Actions</span>
+              </TH>
             </TR>
           </THead>
           <TBody>
@@ -74,17 +81,32 @@ export function AnalysisRunsPanel({
                   className={selected ? "bg-accent-soft" : undefined}
                 >
                   <TD className="font-semibold text-text-strong">
-                    <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex flex-wrap items-center gap-2">
                       v{a.version}
                       <StatusChip tone={live ? "green" : "sealed"}>
                         {live ? "Live" : "Read-only"}
                       </StatusChip>
-                      {selected && <StatusChip tone="accent">Selected</StatusChip>}
+                      {a.label && <StatusChip tone="accent">{a.label}</StatusChip>}
+                      {selected && !a.label && (
+                        <StatusChip tone="accent">Selected</StatusChip>
+                      )}
                     </span>
                   </TD>
                   <TD className="text-text">Round {a.round_number}</TD>
                   <TD className="text-text-muted">{a.engine_version}</TD>
                   <TD className="text-text-muted">{formatTimestamp(a.sealed_at)}</TD>
+                  <TD className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSaveVersion(a);
+                      }}
+                    >
+                      {a.label ? "Rename" : "Save version"}
+                    </Button>
+                  </TD>
                 </TR>
               );
             })}

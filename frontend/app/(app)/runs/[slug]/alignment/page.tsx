@@ -9,6 +9,7 @@ import {
   getScenarioComparison,
   getScenarioDetail,
   listAnalyses,
+  nameVersion,
   runAnalysis,
 } from "@/lib/api";
 import type {
@@ -24,6 +25,7 @@ import { AnalysisRunsPanel } from "@/components/alignment/AnalysisRunsPanel";
 import { ScenarioComparisonTable } from "@/components/alignment/ScenarioComparisonTable";
 import { ScenarioDetailPanel } from "@/components/alignment/ScenarioDetailPanel";
 import { FreezeAwardModal } from "@/components/alignment/FreezeAwardModal";
+import { SaveVersionModal } from "@/components/alignment/SaveVersionModal";
 
 // The alignment / scenario screen — the centerpiece. Run a round's analysis, pick
 // a sealed run, compare the seven lenses, inspect one cell-by-cell, and freeze the
@@ -63,6 +65,12 @@ export default function AlignmentPage({
   const [freezing, setFreezing] = useState(false);
   const [freezeError, setFreezeError] = useState<string | null>(null);
   const [frozen, setFrozen] = useState<Record<string, string>>({});
+
+  // Save-version (savepoint) flow — a lightweight name on a sealed version (NOT a freeze).
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savingVersion, setSavingVersion] = useState<AnalysisSummary | null>(null);
 
   const loadRun = useCallback(async () => {
     setRunLoading(true);
@@ -199,6 +207,32 @@ export default function AlignmentPage({
     setSelectedCode(null);
     setDetail(null);
   }, []);
+
+  const handleSaveVersion = useCallback((a: AnalysisSummary) => {
+    setSavingVersion(a);
+    setSaveError(null);
+    setSaveOpen(true);
+  }, []);
+
+  const handleSaveConfirm = useCallback(
+    async (label: string) => {
+      if (!savingVersion) return;
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await nameVersion(slug, savingVersion.analysis_run_id, label);
+        await loadAnalyses(savingVersion.analysis_run_id);
+        setSaveOpen(false);
+      } catch (err) {
+        setSaveError(
+          err instanceof ApiError ? err.detail : "Could not save the version.",
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [slug, savingVersion, loadAnalyses],
+  );
 
   const handleFreezeConfirm = useCallback(
     async (awardCode: string) => {
@@ -434,6 +468,7 @@ export default function AlignmentPage({
             selectedId={selectedAnalysisId}
             onSelect={handleSelectAnalysis}
             onRun={handleRun}
+            onSaveVersion={handleSaveVersion}
             running={running}
           />
 
@@ -497,6 +532,16 @@ export default function AlignmentPage({
             scenarioCode={selectedCode ?? ""}
             scenarioLabel={detail?.code === selectedCode ? (detail?.label ?? "") : ""}
             suggestedCode={suggestedAwardCode}
+          />
+
+          <SaveVersionModal
+            open={saveOpen}
+            onClose={() => setSaveOpen(false)}
+            onConfirm={handleSaveConfirm}
+            submitting={saving}
+            error={saveError}
+            version={savingVersion?.version ?? null}
+            currentLabel={savingVersion?.label ?? null}
           />
         </>
       )}
