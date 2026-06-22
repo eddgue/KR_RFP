@@ -48,11 +48,11 @@ functions/tables/exports · inputs→outputs · dependencies · gotchas · cross
 | B8a | `backend/tests/**` part 1 (api, auth, pilot) | `files/B8a_tests_1.md` | PENDING |
 | B8b | `backend/tests/**` part 2 (engine, output, domain, conftest) | `files/B8b_tests_2.md` | PENDING |
 | B9 | `backend/scripts/**`, `backend/demo/**`, `backend/{pyproject.toml,Dockerfile,README,*.cfg,*.ini}` | `files/B9_scripts_demo_config.md` | PENDING |
-| F1 | `frontend/app/**` (routes, layouts, globals) | `files/F1_app_routes.md` | PENDING |
+| F1 | `frontend/app/**` (routes, layouts, globals) | `files/F1_app_routes.md` | ✅ DONE (794 ln) |
 | F2a | `frontend/components/{ui,shell,auth}/**` | `files/F2a_components_ui_shell_auth.md` | PENDING |
-| F2b | `frontend/components/{alignment,awards}/**` | `files/F2b_components_alignment_awards.md` | PENDING |
+| F2b | `frontend/components/{alignment,awards}/**` | `files/F2b_components_alignment_awards.md` | ✅ DONE (757 ln) |
 | F2c | `frontend/components/{intake,runs}/**` | `files/F2c_components_intake_runs.md` | PENDING |
-| F3 | `frontend/lib/**` + `frontend/{next.config.mjs,tailwind.config.ts,package.json,tsconfig,Dockerfile,*.css}` | `files/F3_lib_config.md` | PENDING |
+| F3 | `frontend/lib/**` + `frontend/{next.config.mjs,tailwind.config.ts,package.json,tsconfig,Dockerfile,*.css}` | `files/F3_lib_config.md` | ✅ DONE (666 ln, 21 files) |
 | D1 | `project/0*_*.md` (charter→governance) + `project/{DATA_AND_PROCESS_MAP,DESIGN_BRIEF,NO_FILE_STORAGE_PLAN,PRE_TEST_READINESS,RECONCILIATION_SEAMS}.md` | `files/D1_project_governance.md` | PENDING |
 | D2 | `project/squads/**` | `files/D2_squads.md` | PENDING |
 | D3 | `project/design/**` (canonical; redesign3 uploads = note as snapshots) | `files/D3_design.md` | PENDING |
