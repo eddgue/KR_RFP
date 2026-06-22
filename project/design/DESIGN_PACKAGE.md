@@ -11,6 +11,28 @@ created: 2026-06-22
 This is the **full design deliverable**: what to keep, what to fix, what to build next, and the
 context to ground it. Read this cover, then the included docs.
 
+## 0. Guiding principle (read first) — data-driven: every control is a data operation
+
+**This is a data-driven process. A "button" is never just a UI state — it is a DATA operation.** For
+every control (toggle · filter · sort · lens selector · supplier picker · version picker · freeze ·
+finalize · record-adjustment), the design must make explicit **how the data is treated when its state
+changes** — what recomputes, from what source, what's sealed, and what's audited. Classify every
+control:
+
+- **View ops** (filter · sort · lens-inspect · drill) — **reshape the view, never mutate.** All derived
+  values (totals, %, counts, rollups) **recompute against the visible set** (see B5); the data is untouched.
+- **Live-edit ops** (Custom build / Scenario-F per-cell change) — **recompute live** (re-score, re-total,
+  re-flag capacity/concentration) against the live working scenario; clearly marked **live / unsaved**.
+- **Version switch** (the picker: live ↔ sealed snapshot) — swaps the **data source**: live = editable +
+  recomputing; a sealed version = **read-only immutable snapshot.** Which one you're on must be unmistakable.
+- **Governed ops** (import · freeze · record-adjustment · finalize/close) — **seal/mutate the system of
+  record + write an audit event** (the human asserts); gated, confirmed, append-only / irreversible.
+
+Two invariants under all of them: **the DB is the source of truth and outputs derive on request** (a
+state change recomputes/derives — it never shows a cached/stale number), and **governed ops are
+audit-evented + tamper-sealed** while view/edit ops are transient and never silently alter sealed data.
+Design (and build) every control through this lens.
+
 ## 1. Verdict — the baseline is LOCKED. Extend it, don't redesign.
 
 The v2 handoff is the **UI baseline** (you + the auditor agreed: *calm by default, gravity only at

@@ -14,6 +14,13 @@ key elements · the user DECISION(s) · access point in nav · the data it binds
 **visuals/elements** to produce beyond whole screens. Built on the locked v2 baseline (do not redesign
 the 6 shipped screens — extend them). Ordered by the audit's tiers.
 
+> **Guiding principle (governs everything below):** this is a **data-driven** process — every control is
+> a **data operation**, so each screen/control below must define **how the data is treated** on a state
+> change: **view ops** (filter/sort/drill) reshape + recompute against the visible set, never mutate;
+> **live-edit ops** (custom build) recompute live, marked unsaved; **version switch** swaps live ↔ a
+> read-only sealed snapshot; **governed ops** (import/freeze/adjust/finalize) seal/mutate + write an
+> audit event. DB is the source of truth; outputs derive on request (never a stale cached number).
+
 ---
 
 ## A. Missing SCREENS to request
