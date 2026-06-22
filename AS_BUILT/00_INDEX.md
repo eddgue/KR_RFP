@@ -8,6 +8,10 @@ contract: see /CLAUDE.md (ABSOLUTE REQUIREMENTS + GUIDING PRINCIPLES). Every aud
 
 # As-Built Exhaustive Audit — index & tracker
 
+**⚠️ THE BAR IS `AUDIT_STANDARD.md` — read it first.** This file (the census + slice tracker) is the
+SKELETON. `AUDIT_STANDARD.md` defines the SUBSTANCE: the 3 layers, flow charts, every transformation /
+decimal mapped, every process edge case, per-file detailed WHY. A file list is NOT the audit.
+
 **Scope:** every one of the **896 owned files** (see `FILE_CENSUS.md` — full metadata: name, ext,
 bytes, empty-flag, created, modified). Vendored/generated trees (`.git`, `node_modules`, `.venv`,
 caches) are counted in the census, not per-file audited (not ours).
