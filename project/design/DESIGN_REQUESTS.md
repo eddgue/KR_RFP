@@ -111,6 +111,21 @@ what's counted, never a stale full-table number.*
 - **Drill / expand stays consistent** — counts and totals reconcile across grains (cell ↔ lot ↔ DC ↔
   portfolio) when expanding/collapsing.
 
+### B6 · Grain by surface (per-period vs timeframe) — UX behaviors to establish (D42)
+Prices are stored flat at 13 periods, but the engine/awards are **timeframe-grain** (D38/D42). The
+grain you SHOW (and CREATE records at) depends on the surface — **per-period on three surfaces, timeframe
+everywhere else:**
+- **Collection (bid template / intake):** **FOB by period + freight by period** (the 13), **all other
+  costs yearly** (one value). Fan-in at the period grain for FOB/freight only.
+- **Record creation (per-period):** when records are **created/entered** — the bid template the supplier
+  fills + any manual per-period data entry — the inputs are at **period grain** (the records are born at 13).
+- **Period-movement / timeframe-discovery display** (E-35) + the **timeframe build / regroup** UX:
+  **per-period** grain (the curves, ▲/▼ movement, histogram, the period→timeframe grouping).
+- **Analysis data tables · scenarios · awards:** **timeframe-grain only** (the roll-up the engine
+  reads) — **never per-period in these tables.**
+- This tracks the ingestion **fan-in / fan-out**: collect + create + store per-period → roll up to
+  timeframe for the tables/engine → expand to per-period only for collection, record creation, and movement.
+
 ---
 
 ## C. MIDPOINTS — reconciliation-step surfaces (the "middle steps" no screen owns)

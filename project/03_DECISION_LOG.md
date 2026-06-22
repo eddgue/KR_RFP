@@ -282,6 +282,18 @@ Status: **OPEN** (awaiting sponsor) · **RATIFIED** · **SUPERSEDED**.
 
 ---
 
+### D42 — Price-component grain by surface (collection / storage / display / tables) · **RATIFIED 2026-06-22**
+**Why.** D35/D38 store offers flat at the 13 periods while the engine/awards stay timeframe-grain. The open question was *which components are collected per-period, and where the period grain is shown.* Sponsor call: not every component is per-period, and the period grain is a **collection + movement-display** concern — **not** a data-table concern.
+**Decision.**
+- **Collection (fan-in):** **FOB by period, freight by period; all other costs yearly** (cycle-level, one value). Don't ask suppliers for the yearly costs 13 times.
+- **Storage:** flat-13 per period (D38) — FOB/freight land per period; the yearly costs apply across the periods.
+- **Display = grain by surface.** The **per-period** grain appears on **three surfaces**: (1) **collection** (fan-in); (2) **record creation** — generating/entering the per-period records (the bid template the supplier fills + any manual per-period data entry; the records get created *at* period grain); (3) **display** — the **period-movement / timeframe-discovery view** (E-35) and the **timeframe build/regroup UX**. It does **NOT** appear in the **analysis data tables**: those, plus **scenarios and awards, stay timeframe-grain** (the roll-up the engine reads); per-period never appears there.
+- These are **UX behaviors to establish** (when per-period vs timeframe-grain shows), and they **track directly to the ingestion fan-in/fan-out** (D38): collect/create/store per-period → roll up to timeframe for the engine/tables → expand to per-period only for collection, record creation, and movement display.
+**Scope.** A refinement of D35/D38; affects the bid template (FOB/freight per-period columns + yearly-cost columns), ingest, the engine's price construction across grains, and the design (the grain-by-surface display behaviors). Build when the template/collection is next touched; the current model over-collects (fans every component to 13) but is not wrong.
+**Linked:** D35/D38 (flat-13), E-35 (movement/discovery display), E-36 (timeframe-grain awards / regroup), the bid template (`template_schema.py`), `app/domain/bid/bid_ingester.py` (fan-out), `app/domain/eng/runner.py` (timeframe roll-up), the design deliverable (`project/design/DESIGN_REQUESTS.md` — grain-by-surface UX behavior).
+
+---
+
 ## Dependencies (logistics blockers)
 
 | ID | Dependency | Blocks | Owner | Status |
