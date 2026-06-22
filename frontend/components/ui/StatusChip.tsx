@@ -1,7 +1,17 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-type Tone = "neutral" | "accent" | "amber" | "green" | "slate";
+type Tone =
+  | "neutral"
+  | "accent"
+  | "amber"
+  | "green"
+  | "slate"
+  // governed status language (locked v2 — always colour + text, never hue alone)
+  | "frozen"
+  | "sealed"
+  | "modeled"
+  | "gated";
 
 export interface StatusChipProps {
   children: ReactNode;
@@ -10,11 +20,15 @@ export interface StatusChipProps {
 }
 
 const tones: Record<Tone, string> = {
-  neutral: "bg-surface-muted text-ink-muted ring-line-strong",
+  neutral: "bg-surface-muted text-text-muted ring-border",
   accent: "bg-accent-soft text-accent ring-accent/25",
-  amber: "bg-amber-50 text-amber-700 ring-amber-200",
-  green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  amber: "bg-warning-bg text-warning ring-warning/30",
+  green: "bg-success-bg text-success ring-success/30",
   slate: "bg-slate-100 text-slate-600 ring-slate-300",
+  frozen: "bg-success-bg text-success ring-success/30",
+  sealed: "bg-sealed-bg text-sealed ring-sealed/25",
+  modeled: "bg-warning-bg text-warning ring-warning/30",
+  gated: "bg-danger-bg text-danger ring-danger/30",
 };
 
 export function StatusChip({

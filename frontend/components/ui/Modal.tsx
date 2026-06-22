@@ -58,7 +58,7 @@ export function Modal({
         aria-modal="true"
         tabIndex={-1}
         className={cn(
-          "mt-12 w-full max-w-md rounded-panel border border-line bg-surface shadow-modal outline-none",
+          "mt-12 w-full max-w-md rounded-modal border border-border bg-surface-card shadow-modal outline-none",
           className,
         )}
       >
