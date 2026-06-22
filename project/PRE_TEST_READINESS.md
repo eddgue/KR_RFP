@@ -64,3 +64,10 @@ design** for a first pre-test and a clean comparison to the harness + manual mod
 deferred items (E-44 modality/cost, full A1, M1 mapper, comms-send, GCP deploy, the 3 design
 corrections) block *that* scoped run — but each is a real limitation to acknowledge before a *wider*
 live test (esp. M1 messy-file import and deployment).
+
+**Test tiers — DRY vs LIVE (sponsor, 2026-06-22).** The **dry test (this first pre-test) is approved as
+is** — the fixed timeframe-grain model is fine. The **LIVE tests additionally require the fan-in /
+fan-out per-period granulation** (D42 / D38 / E-35): collect **FOB by period + freight by period**
+(fan-in), store flat-13, **roll up to timeframe** for the engine (fan-out), and the per-period display
+surfaces (movement + the mixed-grain analysis breakdown). Build that **before the live tests, not the
+dry one.** (Tracked on D44 + the backlog grain note.)
