@@ -114,20 +114,27 @@ what's counted, never a stale full-table number.*
 - **Drill / expand stays consistent** — counts and totals reconcile across grains (cell ↔ lot ↔ DC ↔
   portfolio) when expanding/collapsing.
 
-### B6 · Grain by surface (per-period vs timeframe) — UX behaviors to establish (D42)
-Prices are stored flat at 13 periods, but the engine/awards are **timeframe-grain** (D38/D42). The
-grain you SHOW (and CREATE records at) depends on the surface — **per-period on three surfaces, timeframe
-everywhere else:**
+### B6 · Grain by surface (per-period vs timeframe) — UX behaviors to establish (D42 + D43)
+Prices are stored flat at 13 periods. The grain you SHOW (and CREATE records at) depends on the surface,
+and — per **D43** — **each cost component carries its own grain.** Establish:
 - **Collection (bid template / intake):** **FOB by period + freight by period** (the 13), **all other
-  costs yearly** (one value). Fan-in at the period grain for FOB/freight only.
+  costs yearly** (one value) by default — but the **active cost lines (D43) drive this**: each line
+  declares its grain (period / timeframe / yearly), so collect at the line's grain.
 - **Record creation (per-period):** when records are **created/entered** — the bid template the supplier
   fills + any manual per-period data entry — the inputs are at **period grain** (the records are born at 13).
 - **Period-movement / timeframe-discovery display** (E-35) + the **timeframe build / regroup** UX:
   **per-period** grain (the curves, ▲/▼ movement, histogram, the period→timeframe grouping).
-- **Analysis data tables · scenarios · awards:** **timeframe-grain only** (the roll-up the engine
-  reads) — **never per-period in these tables.**
+- **Analysis cost-component breakdown (D43) — MIXED grain, displayed as-is:** show **each cost component
+  at its own grain** — e.g. **RPC at timeframe, FOB at timeframe, delivery cost per period** side by side.
+  **Layout: horizontal + chronological, NOT stacked** — periods run left→right in time order as columns,
+  with a **per-period "total landed" column** and a **toggleable "timeframe total" column** (the roll-up);
+  per-period components fill the period columns, timeframe/yearly components show against the
+  timeframe-total. The buyer toggles the timeframe-total column to flip period-detail ↔ rolled-up.
+  **Label each component's grain** so the mix is legible.
+- **Scored price · scenarios · awards:** **strictly timeframe-grain** (the number the engine reads/awards)
+  — per-period never drives these. (The *breakdown* above can be per-period; the *award number* cannot.)
 - This tracks the ingestion **fan-in / fan-out**: collect + create + store per-period → roll up to
-  timeframe for the tables/engine → expand to per-period only for collection, record creation, and movement.
+  timeframe for the scored price/engine → show each component at its native grain in the breakdown.
 
 ---
 
